@@ -22,6 +22,16 @@ Use the PRD whenever feature scope, behavior, naming, or tradeoffs are unclear. 
 - Keep user-facing language practical, local, and easy to understand.
 - Be explicit when data is estimated, incomplete, or community-submitted.
 
+## Design Language
+- Keep the app visually clean, airy, and modern, consistent with the Sakai commute-assistant positioning in the PRD.
+- Preserve the established mobile design system in `client/src/constants/theme.ts` when adding or revising UI.
+- Use the blue-led palette intentionally:
+  - Primary Blue `#007AFF` for links, badges, and focused highlights
+  - Midnight Navy `#102033` for premium Sakai-branded surfaces such as hero cards
+  - Soft background gradient `#F7FBFE -> #DDEBF4` for the main app atmosphere
+  - Stark Black `#000000` for high-contrast primary buttons and strong calls to action
+- Favor high-clarity layouts, soft backgrounds, bold key actions, and trust-building dark feature surfaces over noisy or overly playful styling.
+
 ## Working Style
 - Check the PRD before adding or changing product behavior.
 - When making a product-facing change, reference the relevant PRD section in your reasoning or implementation notes when useful.
