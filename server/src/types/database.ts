@@ -1,6 +1,30 @@
 export interface Database {
   public: {
     Tables: {
+      user_preferences: {
+        Row: {
+          user_id: string;
+          default_preference: "fastest" | "cheapest" | "balanced";
+          passenger_type: "regular" | "student" | "senior" | "pwd";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          default_preference: "fastest" | "cheapest" | "balanced";
+          passenger_type: "regular" | "student" | "senior" | "pwd";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          default_preference?: "fastest" | "cheapest" | "balanced";
+          passenger_type?: "regular" | "student" | "senior" | "pwd";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       area_updates: {
         Row: {
           id: string;
@@ -48,30 +72,6 @@ export interface Database {
           traffic_status?: string | null;
           raw_text?: string;
           scraped_at?: string;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
-      courses: {
-        Row: {
-          id: string;
-          code: string;
-          title: string;
-          description: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          code: string;
-          title: string;
-          description?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          code?: string;
-          title?: string;
-          description?: string | null;
           created_at?: string;
         };
         Relationships: [];

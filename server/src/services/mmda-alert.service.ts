@@ -135,14 +135,28 @@ export const refreshMmdaAlerts = async (
   const alerts = new Map<string, ScrapedMmdaAlert>();
 
   for (const sourceUrl of sourceUrls) {
-    const response = await fetchImpl(sourceUrl, {
-      headers: {
-        "user-agent": "Mozilla/5.0 (compatible; Sakai MMDA scraper/1.0)",
-        "accept-language": "en-US,en;q=0.9"
-      }
-    });
+    let response: Response;
+
+    try {
+      response = await fetchImpl(sourceUrl, {
+        headers: {
+          "user-agent": "Mozilla/5.0 (compatible; Sakai MMDA scraper/1.0)",
+          "accept-language": "en-US,en;q=0.9"
+        }
+      });
+    } catch (error) {
+      console.warn("Failed to fetch MMDA source", {
+        sourceUrl,
+        reason: error instanceof Error ? error.message : "unknown fetch error"
+      });
+      continue;
+    }
 
     if (!response.ok) {
+      console.warn("MMDA source returned a non-success status", {
+        sourceUrl,
+        status: response.status
+      });
       continue;
     }
 

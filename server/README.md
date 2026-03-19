@@ -1,6 +1,6 @@
 # server
 
-Express + TypeScript backend starter for Sakai with a controller/model/route/middleware structure and Supabase-backed example resource.
+Express + TypeScript backend for Sakai with a controller/model/route/middleware structure and Supabase-backed auth plus MMDA area-update support.
 
 ## Requirements
 
@@ -41,17 +41,16 @@ src/
   app.ts        Express app assembly
   server.ts     process entrypoint
 supabase/
-  schema.sql    starter schema for the sample resource
+  schema.sql    Supabase schema for Sakai backend tables
 tests/
   app.test.ts
-  course.model.test.ts
 ```
 
 ## API
 
 - `GET /api/health`
 - `GET /api/area-updates`
-- `POST /api/area-updates/refresh`
+- `POST /api/area-updates/refresh` (auth required)
 - `POST /api/auth/sign-up`
 - `POST /api/auth/sign-in`
 - `POST /api/auth/refresh`
@@ -59,22 +58,11 @@ tests/
 - `GET /api/auth/me`
 - `GET /api/auth/google/start`
 - `GET /api/auth/google/callback`
-- `GET /api/courses`
-- `GET /api/courses/:id`
-- `POST /api/courses`
+- `GET /api/me/preferences` (auth required)
+- `PUT /api/me/preferences` (auth required)
 
 ### Google OAuth Callback Behavior
 
 - `GET /api/auth/google/callback` exchanges the Supabase auth code on the backend
 - On success, it redirects to `AUTH_APP_REDIRECT_URI` with auth data in the URL fragment
 - On failure, it redirects to `AUTH_APP_REDIRECT_URI` with an error fragment instead of returning JSON
-
-### Sample `POST /api/courses` body
-
-```json
-{
-  "code": "CS101",
-  "title": "Introduction to Sakai",
-  "description": "Course starter record"
-}
-```
