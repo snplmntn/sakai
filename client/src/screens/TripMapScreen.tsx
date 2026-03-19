@@ -70,11 +70,6 @@ const DEFAULT_REGION: Region = {
 };
 
 const SEARCH_EXAMPLES = ['Pasay', 'Magallanes', 'Gate 3'];
-const PREFERENCES: Array<{ label: string; value: RoutePreference }> = [
-  { label: 'Balanced', value: 'balanced' },
-  { label: 'Cheapest', value: 'cheapest' },
-  { label: 'Fastest', value: 'fastest' },
-];
 const ALARM_MODES: Array<{ label: string; value: AlarmMode }> = [
   { label: 'Sound', value: 'sound' },
   { label: 'Vibrate', value: 'vibration' },
@@ -877,10 +872,10 @@ export default function TripMapScreen() {
 
   return (
     <SafeScreen
-      backgroundColor={COLORS.surface}
+      backgroundColor={COLORS.white}
       topInsetBackgroundColor="#102033"
       statusBarStyle="light"
-      useGradient={true}
+      useGradient={false}
     >
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
@@ -1062,29 +1057,7 @@ export default function TripMapScreen() {
           </View>
         </View>
 
-        <View style={styles.preferenceRow}>
-          {PREFERENCES.map((item) => (
-            <Pressable
-              key={item.value}
-              style={[
-                styles.preferenceChip,
-                preference === item.value && styles.preferenceChipActive,
-              ]}
-              onPress={() => setPreference(item.value)}
-            >
-              <Text
-                style={[
-                  styles.preferenceText,
-                  preference === item.value && styles.preferenceTextActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, styles.navigationSectionCard]}>
           <View style={styles.navigationHeader}>
             <View>
               <Text style={styles.sectionTitle}>Navigation alarm</Text>
@@ -1123,9 +1096,14 @@ export default function TripMapScreen() {
               </Text>
             </View>
           ) : null}
-          <View style={styles.navigationControlBlock}>
-            <View style={styles.row}>
-              <Text style={styles.navigationLabel}>Near-destination alert</Text>
+          <View style={styles.navigationSettingCard}>
+            <View style={styles.navigationSettingHeader}>
+              <View style={styles.navigationSettingCopy}>
+                <Text style={styles.navigationSettingTitle}>Near-destination alert</Text>
+                <Text style={styles.navigationSettingDescription}>
+                  Alerts you before your selected stop.
+                </Text>
+              </View>
               <Pressable
                 style={[
                   styles.toggleChip,
@@ -1144,12 +1122,12 @@ export default function TripMapScreen() {
                 </Text>
               </Pressable>
             </View>
-            <Text style={styles.navigationHint}>
+            <Text style={styles.navigationHintCompact}>
               Silent mode and Do Not Disturb can still mute sound. Vibration is best-effort.
             </Text>
           </View>
-          <View style={styles.navigationControlBlock}>
-            <Text style={styles.navigationLabel}>Alarm mode</Text>
+          <View style={styles.navigationOptionGroup}>
+            <Text style={styles.navigationGroupTitle}>Alert style</Text>
             <View style={styles.navigationChipRow}>
               {ALARM_MODES.map((item) => (
                 <Pressable
@@ -1173,8 +1151,8 @@ export default function TripMapScreen() {
               ))}
             </View>
           </View>
-          <View style={styles.navigationControlBlock}>
-            <Text style={styles.navigationLabel}>Alert radius</Text>
+          <View style={styles.navigationOptionGroup}>
+            <Text style={styles.navigationGroupTitle}>Alert radius</Text>
             <View style={styles.navigationChipRow}>
               {ALERT_RADIUS_OPTIONS.map((item) => (
                 <Pressable
@@ -1240,10 +1218,12 @@ export default function TripMapScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, styles.mapSectionCard]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Map canvas</Text>
-            <Text style={styles.sectionMeta}>Google Maps</Text>
+            <View style={styles.sectionTag}>
+              <Text style={styles.sectionTagText}>Google Maps</Text>
+            </View>
           </View>
           {isGoogleMapsConfigured ? (
             <MapView
@@ -1283,79 +1263,83 @@ export default function TripMapScreen() {
           )}
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Suggested routes</Text>
-          <Text style={styles.sectionMeta}>Jeepney-first</Text>
-        </View>
-        <View style={styles.sectionCard}>
-          {isSearchingRoutes ? <ActivityIndicator color={COLORS.primary} /> : null}
-          <Text style={styles.statusText}>{statusMessage}</Text>
-          {coordinateFallbackNote ? (
-            <View style={styles.fallbackNote}>
-              <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
+        <View style={styles.routesSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Suggested routes</Text>
+            <View style={styles.sectionTag}>
+              <Text style={styles.sectionTagText}>Jeepney-first</Text>
             </View>
-          ) : null}
-        </View>
-
-        {routeResult?.options.map((option) => (
-          <Pressable
-            key={option.id}
-            style={[
-              styles.routeCard,
-              selectedRoute?.id === option.id && styles.routeCardSelected,
-            ]}
-            onPress={() => {
-              if (isNavigationActive && activeNavigationRouteId !== option.id) {
-                showToast({
-                  tone: 'info',
-                  title: 'Navigation active',
-                  message: 'Stop the current trip before switching to another route.',
-                });
-                return;
-              }
-
-              setSelectedRouteId(option.id);
-            }}
-          >
-            <View style={styles.routeHeader}>
-              <Text style={styles.routeTitle}>{option.recommendationLabel}</Text>
-              <Text style={styles.routeBadge}>{option.fareConfidence}</Text>
-            </View>
-            <Text style={styles.routeSummary}>{option.summary}</Text>
-            <Text style={styles.routeMeta}>
-              {option.highlights.join(' · ') || 'Route option'}
-            </Text>
-            {option.relevantIncidents.length > 0 ? (
-              <View style={styles.incidentList}>
-                <Text style={styles.incidentTitle}>Area updates</Text>
-                {option.relevantIncidents.map((incident) => (
-                  <Text key={incident.id} style={styles.incidentText}>
-                    {incident.summary}
-                  </Text>
-                ))}
+          </View>
+          <View style={[styles.sectionCard, styles.routeStatusCard]}>
+            {isSearchingRoutes ? <ActivityIndicator color={COLORS.primary} /> : null}
+            <Text style={styles.statusText}>{statusMessage}</Text>
+            {coordinateFallbackNote ? (
+              <View style={styles.fallbackNote}>
+                <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
               </View>
             ) : null}
-            <View style={styles.stats}>
-              <Text style={styles.stat}>{formatDuration(option.totalDurationMinutes)}</Text>
-              <Text style={styles.stat}>{formatFare(option.totalFare)}</Text>
-              <Text style={styles.stat}>
-                {option.transferCount} transfer{option.transferCount === 1 ? '' : 's'}
+          </View>
+
+          {routeResult?.options.map((option) => (
+            <Pressable
+              key={option.id}
+              style={[
+                styles.routeCard,
+                selectedRoute?.id === option.id && styles.routeCardSelected,
+              ]}
+              onPress={() => {
+                if (isNavigationActive && activeNavigationRouteId !== option.id) {
+                  showToast({
+                    tone: 'info',
+                    title: 'Navigation active',
+                    message: 'Stop the current trip before switching to another route.',
+                  });
+                  return;
+                }
+
+                setSelectedRouteId(option.id);
+              }}
+            >
+              <View style={styles.routeHeader}>
+                <Text style={styles.routeTitle}>{option.recommendationLabel}</Text>
+                <Text style={styles.routeBadge}>{option.fareConfidence}</Text>
+              </View>
+              <Text style={styles.routeSummary}>{option.summary}</Text>
+              <Text style={styles.routeMeta}>
+                {option.highlights.join(' · ') || 'Route option'}
               </Text>
-            </View>
-          </Pressable>
-        ))}
+              {option.relevantIncidents.length > 0 ? (
+                <View style={styles.incidentList}>
+                  <Text style={styles.incidentTitle}>Area updates</Text>
+                  {option.relevantIncidents.map((incident) => (
+                    <Text key={incident.id} style={styles.incidentText}>
+                      {incident.summary}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+              <View style={styles.stats}>
+                <Text style={styles.stat}>{formatDuration(option.totalDurationMinutes)}</Text>
+                <Text style={styles.stat}>{formatFare(option.totalFare)}</Text>
+                <Text style={styles.stat}>
+                  {option.transferCount} transfer{option.transferCount === 1 ? '' : 's'}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
       </ScrollView>
     </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: SPACING.xl, gap: SPACING.lg },
+  content: { paddingBottom: SPACING.xl, gap: SPACING.xl },
   hero: {
     backgroundColor: '#102033',
     padding: SPACING.lg,
-    borderBottomLeftRadius: RADIUS.lg,
-    borderBottomRightRadius: RADIUS.lg,
+    borderBottomLeftRadius: RADIUS.md,
+    borderBottomRightRadius: RADIUS.md,
     gap: SPACING.md,
   },
   title: { fontSize: TYPOGRAPHY.fontSizes.hero, fontFamily: FONTS.bold, color: COLORS.white },
@@ -1367,16 +1351,26 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-    gap: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    padding: SPACING.lg,
+    gap: SPACING.md,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.xs,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
   modeChip: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    borderRadius: 999,
+    borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   modeChipActive: { backgroundColor: COLORS.white },
@@ -1394,9 +1388,9 @@ const styles = StyleSheet.create({
   link: { fontSize: TYPOGRAPHY.fontSizes.small, fontFamily: FONTS.semibold, color: COLORS.white },
   input: {
     backgroundColor: COLORS.white,
-    borderRadius: RADIUS.md,
+    borderRadius: 6,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 4,
+    paddingVertical: SPACING.md,
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.medium,
     color: '#102033',
@@ -1410,7 +1404,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    borderRadius: 999,
+    borderRadius: 12,
     backgroundColor: COLORS.primary,
   },
   voiceButtonActive: { backgroundColor: COLORS.warning },
@@ -1422,7 +1416,7 @@ const styles = StyleSheet.create({
   askButton: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    borderRadius: 999,
+    borderRadius: 12,
     backgroundColor: COLORS.white,
   },
   askButtonDisabled: { opacity: 0.5 },
@@ -1437,15 +1431,20 @@ const styles = StyleSheet.create({
     color: '#FFD2D2',
     lineHeight: 20,
   },
-  examples: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  examples: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.md,
+    marginTop: SPACING.xs,
+  },
   exampleChip: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 999,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   exampleText: { fontSize: TYPOGRAPHY.fontSizes.small, fontFamily: FONTS.medium, color: COLORS.white },
-  suggestionPanel: { backgroundColor: COLORS.white, borderRadius: RADIUS.md, overflow: 'hidden' },
+  suggestionPanel: { backgroundColor: COLORS.white, borderRadius: 6, overflow: 'hidden' },
   suggestionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1470,27 +1469,13 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
   },
-  preferenceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, paddingHorizontal: SPACING.md },
-  preferenceChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 999,
-    backgroundColor: '#E8EEF3',
-  },
-  preferenceChipActive: { backgroundColor: '#102033' },
-  preferenceText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#415466',
-  },
-  preferenceTextActive: { color: COLORS.white },
   sectionCard: {
     marginHorizontal: SPACING.md,
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
+    borderRadius: 16,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: '#E2EAF0',
+    borderColor: '#EEF2F6',
     gap: SPACING.sm,
   },
   sectionHeader: {
@@ -1498,6 +1483,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  mapSectionCard: { gap: SPACING.md },
+  routesSection: {
+    gap: SPACING.md,
+    marginTop: -SPACING.sm,
+  },
+  sectionTag: {
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: 10,
+    backgroundColor: '#F6F8FB',
+    borderWidth: 1,
+    borderColor: '#E9EEF4',
+  },
+  sectionTagText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#6A7D90',
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSizes.large,
@@ -1514,10 +1517,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  navigationSectionCard: {
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
   navigationLiveBadge: {
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: SPACING.xs + 1,
-    borderRadius: 999,
+    borderRadius: 10,
     backgroundColor: '#EAF7EE',
     borderWidth: 1,
     borderColor: '#BEE3C8',
@@ -1528,12 +1535,12 @@ const styles = StyleSheet.create({
     color: COLORS.success,
   },
   navigationSummaryCard: {
-    borderRadius: RADIUS.md,
-    backgroundColor: '#F3F8FC',
+    borderRadius: 6,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#D7E5EF',
-    padding: SPACING.md,
-    gap: SPACING.xs,
+    borderColor: '#E8EDF3',
+    padding: SPACING.lg,
+    gap: SPACING.sm,
   },
   navigationSummaryTitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
@@ -1551,24 +1558,51 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
   },
-  navigationControlBlock: { gap: SPACING.sm },
-  navigationLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+  navigationSettingCard: {
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E8EDF3',
+    backgroundColor: '#FAFBFC',
+    padding: SPACING.lg,
+    gap: SPACING.md,
   },
-  navigationHint: {
+  navigationSettingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  navigationSettingCopy: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  navigationSettingTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.semibold,
+    color: '#102033',
+  },
+  navigationSettingDescription: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
-    color: '#5D7286',
+    color: '#6A7D90',
     lineHeight: 20,
+  },
+  navigationOptionGroup: { gap: SPACING.md },
+  navigationGroupTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#102033',
+  },
+  navigationHintCompact: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: '#6A7D90',
+    lineHeight: 22,
   },
   toggleChip: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    borderRadius: 999,
+    borderRadius: 10,
     backgroundColor: '#F4F8FB',
     borderWidth: 1,
     borderColor: '#D7E5EF',
@@ -1583,11 +1617,11 @@ const styles = StyleSheet.create({
     color: '#415466',
   },
   toggleChipTextActive: { color: COLORS.white },
-  navigationChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  navigationChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md },
   navigationChip: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    borderRadius: 999,
+    borderRadius: 10,
     backgroundColor: '#F4F8FB',
     borderWidth: 1,
     borderColor: '#D7E5EF',
@@ -1603,12 +1637,12 @@ const styles = StyleSheet.create({
   },
   navigationChipTextActive: { color: COLORS.white },
   navigationStatsCard: {
-    borderRadius: RADIUS.md,
+    borderRadius: 6,
     backgroundColor: '#FFF6EC',
     borderWidth: 1,
     borderColor: '#F5D3AA',
-    padding: SPACING.md,
-    gap: SPACING.xs,
+    padding: SPACING.lg,
+    gap: SPACING.sm,
   },
   navigationStatsTitle: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -1629,10 +1663,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   navigationButton: {
-    borderRadius: RADIUS.md,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 52,
+    marginTop: SPACING.xs,
   },
   navigationButtonStart: { backgroundColor: COLORS.black },
   navigationButtonStop: { backgroundColor: COLORS.danger },
@@ -1642,19 +1677,28 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bold,
     color: COLORS.white,
   },
-  map: { width: '100%', height: 320, borderRadius: RADIUS.md },
+  map: {
+    width: '100%',
+    height: 360,
+    borderRadius: 6,
+    backgroundColor: '#F7F8FA',
+  },
+  routeStatusCard: {
+    minHeight: 76,
+    justifyContent: 'center',
+  },
   statusText: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: '#5D7286',
+    color: '#657789',
     lineHeight: 22,
   },
   fallbackNote: {
-    borderRadius: RADIUS.md,
-    backgroundColor: '#F3F8FC',
-    padding: SPACING.sm,
+    borderRadius: 6,
+    backgroundColor: '#FAFBFC',
+    padding: SPACING.md,
     borderWidth: 1,
-    borderColor: '#D7E5EF',
+    borderColor: '#EEF2F6',
   },
   fallbackNoteText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -1665,13 +1709,15 @@ const styles = StyleSheet.create({
   routeCard: {
     marginHorizontal: SPACING.md,
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
+    borderRadius: 16,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: '#E2EAF0',
+    borderColor: '#EEF2F6',
     gap: SPACING.sm,
   },
-  routeCardSelected: { borderColor: COLORS.primary },
+  routeCardSelected: {
+    borderColor: '#102033',
+  },
   routeHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1686,8 +1732,8 @@ const styles = StyleSheet.create({
   },
   routeBadge: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.primary,
+    fontFamily: FONTS.semibold,
+    color: '#6A7D90',
   },
   routeSummary: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
@@ -1702,7 +1748,7 @@ const styles = StyleSheet.create({
   },
   incidentList: {
     gap: SPACING.xs,
-    borderRadius: RADIUS.md,
+    borderRadius: 6,
     backgroundColor: '#FFF6EC',
     borderWidth: 1,
     borderColor: '#F5D3AA',
@@ -1722,4 +1768,3 @@ const styles = StyleSheet.create({
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md },
   stat: { fontSize: TYPOGRAPHY.fontSizes.small, fontFamily: FONTS.semibold, color: '#102033' },
 });
-
