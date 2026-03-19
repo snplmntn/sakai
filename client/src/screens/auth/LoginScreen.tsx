@@ -1,14 +1,56 @@
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { ViewIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useAuth } from '../../auth/AuthContext';
+import { ApiError } from '../../auth/api';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../../constants/theme';
 import SafeScreen from '../../components/SafeScreen';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
+type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-export default function LoginScreen({ navigation }: { navigation: NavigationProp }) {
-  const handleSubmit = () => {
-    navigation.replace('MainTabs');
+export default function LoginScreen({ navigation, route }: LoginScreenProps) {
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(
+    route.params?.successMessage ?? null
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setSuccessMessage(route.params?.successMessage ?? null);
+  }, [route.params?.successMessage]);
+
+  const handleSubmit = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    if (email.trim().length === 0 || password.length === 0) {
+      setErrorMessage('Enter both your email and password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      await signIn(email, password);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError
+          ? error.message
+          : 'Unable to sign in right now. Please try again.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -23,26 +65,57 @@ export default function LoginScreen({ navigation }: { navigation: NavigationProp
 
         {/* Form */}
         <View style={styles.form}>
+          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
           <TextInput
             style={styles.input}
             placeholder="Email address"
             autoCapitalize="none"
             keyboardType="email-address"
+            autoCorrect={false}
             placeholderTextColor={COLORS.subText}
+            value={email}
+            onChangeText={setEmail}
+            editable={!isSubmitting}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            secureTextEntry
-            placeholderTextColor={COLORS.subText}
-          />
+          <View style={styles.passwordField}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Password"
+              secureTextEntry={!isPasswordVisible}
+              placeholderTextColor={COLORS.subText}
+              value={password}
+              onChangeText={setPassword}
+              editable={!isSubmitting}
+            />
+            <TouchableOpacity
+              onPress={() => setIsPasswordVisible((currentValue) => !currentValue)}
+              style={styles.eyeButton}
+              activeOpacity={0.85}
+              disabled={isSubmitting}
+            >
+              <HugeiconsIcon
+                icon={isPasswordVisible ? ViewOffIcon : ViewIcon}
+                size={20}
+                color={COLORS.subText}
+              />
+            </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity style={styles.forgotButton}>
-            <Text style={styles.forgotText}>Forgot password?</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.button} onPress={handleSubmit} activeOpacity={0.85}>
-            <Text style={styles.buttonText}>Sign In</Text>
+          <TouchableOpacity
+            style={[styles.button, isSubmitting && styles.buttonDisabled]}
+            onPress={() => {
+              void handleSubmit();
+            }}
+            activeOpacity={0.85}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.buttonText}>Sign In</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -88,6 +161,18 @@ const styles = StyleSheet.create({
   form: {
     paddingBottom: SPACING.lg,
   },
+  successText: {
+    marginBottom: SPACING.md,
+    color: COLORS.success,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.medium,
+  },
+  errorText: {
+    marginBottom: SPACING.md,
+    color: COLORS.danger,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.medium,
+  },
   input: {
     backgroundColor: COLORS.white,
     borderRadius: RADIUS.lg,
@@ -102,20 +187,37 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginBottom: SPACING.lg,
+  passwordField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
+    marginBottom: SPACING.md,
+    paddingLeft: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  forgotText: {
-    color: COLORS.primary,
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
+  passwordInput: {
+    flex: 1,
+    paddingVertical: SPACING.md + 2,
+    fontFamily: FONTS.regular,
+    color: COLORS.text,
+  },
+  eyeButton: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
   },
   button: {
     backgroundColor: COLORS.black,
     paddingVertical: SPACING.md + 2,
     borderRadius: RADIUS.xl,
     alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   buttonText: {
     color: COLORS.white,

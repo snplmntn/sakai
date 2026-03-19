@@ -1,6 +1,10 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { useAuth } from '../auth/AuthContext';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 
 const PROFILE_STATS = [
   { value: '08', label: 'Saved routes' },
@@ -25,13 +29,102 @@ const ACCOUNT_SECTIONS = [
   },
 ];
 
-export default function ProfileScreen({ navigation }: { navigation: any }) {
-  const handleLogout = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Welcome' }],
-    });
+type ProfileScreenProps = BottomTabScreenProps<MainTabParamList, 'Profile'>;
+
+const getMetadataString = (
+  metadata: Record<string, unknown> | null,
+  fieldName: string
+): string | null => {
+  const value = metadata?.[fieldName];
+
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+};
+
+const getDisplayName = (
+  email: string | null,
+  metadata: Record<string, unknown> | null
+): string => {
+  const fullName = getMetadataString(metadata, 'full_name') ?? getMetadataString(metadata, 'name');
+
+  if (fullName) {
+    return fullName;
+  }
+
+  const firstName = getMetadataString(metadata, 'first_name');
+  const lastName = getMetadataString(metadata, 'last_name');
+
+  if (firstName && lastName) {
+    return `${firstName} ${lastName}`;
+  }
+
+  if (firstName) {
+    return firstName;
+  }
+
+  if (email) {
+    return email.split('@')[0];
+  }
+
+  return 'Sakai commuter';
+};
+
+const getInitial = (label: string): string => label.trim().charAt(0).toUpperCase() || 'S';
+
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : 'Unable to refresh your profile right now.';
+
+export default function ProfileScreen(_props: ProfileScreenProps) {
+  const { user, refreshUser, signOut } = useAuth();
+  const [isRefreshing, setIsRefreshing] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncProfile = async () => {
+      try {
+        await refreshUser();
+
+        if (isMounted) {
+          setErrorMessage(null);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(getErrorMessage(error));
+        }
+      } finally {
+        if (isMounted) {
+          setIsRefreshing(false);
+        }
+      }
+    };
+
+    void syncProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    if (isSigningOut) {
+      return;
+    }
+
+    setIsSigningOut(true);
+
+    try {
+      await signOut();
+    } finally {
+      setIsSigningOut(false);
+    }
   };
+
+  const displayName = getDisplayName(user?.email ?? null, user?.userMetadata ?? null);
+  const emailAddress = user?.email ?? 'No email available';
 
   return (
     <SafeScreen backgroundColor={COLORS.surface} useGradient={true}>
@@ -46,18 +139,27 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
           <View style={styles.card}>
             <View style={styles.avatarRing}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>S</Text>
+                <Text style={styles.avatarText}>{getInitial(displayName)}</Text>
               </View>
             </View>
             <View style={styles.identityBlock}>
-              <Text style={styles.name}>Sakai Commuter</Text>
-              <Text style={styles.email}>commuter@sakai.app</Text>
+              <Text style={styles.name}>{displayName}</Text>
+              <Text style={styles.email}>{emailAddress}</Text>
               <View style={styles.memberBadge}>
-                <Text style={styles.memberBadgeText}>Community rider</Text>
+                <Text style={styles.memberBadgeText}>Authenticated rider</Text>
               </View>
             </View>
           </View>
         </View>
+
+        {isRefreshing ? (
+          <View style={styles.syncRow}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+            <Text style={styles.syncText}>Syncing your profile</Text>
+          </View>
+        ) : null}
+
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
         <View style={styles.statsRow}>
           {PROFILE_STATS.map((item) => (
@@ -97,8 +199,19 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.85}>
-          <Text style={styles.logoutText}>Log Out</Text>
+        <TouchableOpacity
+          style={[styles.logoutButton, isSigningOut && styles.logoutButtonDisabled]}
+          onPress={() => {
+            void handleLogout();
+          }}
+          activeOpacity={0.85}
+          disabled={isSigningOut}
+        >
+          {isSigningOut ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.logoutText}>Log Out</Text>
+          )}
         </TouchableOpacity>
 
         <Text style={styles.logoutHint}>
@@ -111,16 +224,16 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xxl + 32,
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xl + 24,
   },
   headerCard: {
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: '#102033',
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
     marginBottom: SPACING.lg,
   },
   headerGlow: {
@@ -142,8 +255,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
   },
@@ -201,11 +314,28 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     marginBottom: SPACING.lg,
   },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  syncText: {
+    marginLeft: SPACING.sm,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.medium,
+    color: COLORS.subText,
+  },
+  errorText: {
+    marginBottom: SPACING.md,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.medium,
+    color: COLORS.danger,
+  },
   statCard: {
     flex: 1,
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.lg,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.sm,
     alignItems: 'center',
     borderWidth: 1,
@@ -230,8 +360,8 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
     marginBottom: SPACING.lg,
     borderWidth: 1,
     borderColor: '#E4ECF2',
@@ -295,9 +425,12 @@ const styles = StyleSheet.create({
   logoutButton: {
     backgroundColor: '#101828',
     paddingVertical: SPACING.md + 2,
-    borderRadius: RADIUS.xl,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
     marginTop: SPACING.xs,
+  },
+  logoutButtonDisabled: {
+    opacity: 0.7,
   },
   logoutText: {
     color: COLORS.white,
