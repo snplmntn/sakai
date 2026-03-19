@@ -155,6 +155,7 @@ describe("route query service", () => {
       destinationText: "PUP Sta. Mesa",
       preference: null,
       passengerType: null,
+      modifiers: [],
       requiresClarification: false,
       clarificationField: null,
       confidence: "high"
@@ -304,6 +305,7 @@ describe("route query service", () => {
       destinationText: "PUP Sta. Mesa",
       preference: "cheapest",
       passengerType: "student",
+      modifiers: ["less_walking"],
       requiresClarification: false,
       clarificationField: null,
       confidence: "high"
@@ -395,6 +397,8 @@ describe("route query service", () => {
     expect(result.normalizedQuery.preferenceSource).toBe("ai_parsed");
     expect(result.normalizedQuery.passengerType).toBe("student");
     expect(result.normalizedQuery.passengerTypeSource).toBe("ai_parsed");
+    expect(result.normalizedQuery.modifiers).toEqual(["less_walking"]);
+    expect(result.normalizedQuery.modifierSource).toBe("ai_parsed");
   });
 
   it("keeps explicit overrides ahead of AI-parsed hints", async () => {
@@ -412,6 +416,7 @@ describe("route query service", () => {
       destinationText: "Somewhere Else",
       preference: "fastest",
       passengerType: "student",
+      modifiers: ["jeep_if_possible"],
       requiresClarification: false,
       clarificationField: null,
       confidence: "high"
@@ -502,7 +507,8 @@ describe("route query service", () => {
         },
         queryText: "fastest route from Gateway to Somewhere Else for students",
         preference: "balanced",
-        passengerType: "regular"
+        passengerType: "regular",
+        modifiers: ["less_walking"]
       }
     });
 
@@ -510,6 +516,8 @@ describe("route query service", () => {
     expect(result.normalizedQuery.preferenceSource).toBe("request_override");
     expect(result.normalizedQuery.passengerType).toBe("regular");
     expect(result.normalizedQuery.passengerTypeSource).toBe("request_override");
+    expect(result.normalizedQuery.modifiers).toEqual(["less_walking"]);
+    expect(result.normalizedQuery.modifierSource).toBe("request_override");
   });
 
   it("builds a one-transfer route with an explicit walk leg", async () => {
@@ -877,6 +885,7 @@ describe("route query service", () => {
       destinationText: "PUP Sta. Mesa",
       preference: null,
       passengerType: null,
+      modifiers: [],
       requiresClarification: true,
       clarificationField: "origin",
       confidence: "low"

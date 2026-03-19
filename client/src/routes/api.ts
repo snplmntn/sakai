@@ -3,6 +3,7 @@ import type { PlaceMatchSource, SelectedPlace } from '../places/types';
 import type {
   FareBreakdown,
   PassengerType,
+  RouteModifier,
   RideMode,
   RoutePreference,
   RouteQueryIncident,
@@ -85,6 +86,19 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       toLabel: parseString(value.toLabel, 'walk.toLabel'),
       distanceMeters: parseNumber(value.distanceMeters, 'walk.distanceMeters'),
       durationMinutes: parseNumber(value.durationMinutes, 'walk.durationMinutes'),
+      fare: parseFareBreakdown(value.fare),
+    };
+  }
+
+  if (value.type === 'drive') {
+    return {
+      type: 'drive',
+      id: parseString(value.id, 'drive.id'),
+      mode: 'car',
+      fromLabel: parseString(value.fromLabel, 'drive.fromLabel'),
+      toLabel: parseString(value.toLabel, 'drive.toLabel'),
+      distanceKm: parseNumber(value.distanceKm, 'drive.distanceKm'),
+      durationMinutes: parseNumber(value.durationMinutes, 'drive.durationMinutes'),
       fare: parseFareBreakdown(value.fare),
     };
   }
@@ -188,6 +202,12 @@ const parseRouteQueryResult = (value: unknown): RouteQueryResult => {
       passengerType: parseString(value.normalizedQuery.passengerType, 'normalized.passengerType') as RouteQueryResult['normalizedQuery']['passengerType'],
       preferenceSource: parseString(value.normalizedQuery.preferenceSource, 'normalized.preferenceSource'),
       passengerTypeSource: parseString(value.normalizedQuery.passengerTypeSource, 'normalized.passengerTypeSource'),
+      modifiers: Array.isArray(value.normalizedQuery.modifiers)
+        ? value.normalizedQuery.modifiers.map(
+            (item) => parseString(item, 'normalized.modifiers') as RouteModifier
+          )
+        : [],
+      modifierSource: parseString(value.normalizedQuery.modifierSource, 'normalized.modifierSource'),
     },
     options: Array.isArray(value.options) ? value.options.map(parseRouteOption) : [],
     message: typeof value.message === 'string' ? value.message : undefined,
@@ -207,6 +227,7 @@ export const queryRoutes = async (input: {
   destination: SelectedPlace;
   preference: RoutePreference;
   passengerType?: 'regular' | 'student' | 'senior' | 'pwd';
+  modifiers?: RouteModifier[];
   accessToken?: string;
 }): Promise<RouteQueryResult> =>
   requestData(
@@ -219,6 +240,7 @@ export const queryRoutes = async (input: {
         destination: toPointInput(input.destination),
         preference: input.preference,
         passengerType: input.passengerType ?? 'regular',
+        modifiers: input.modifiers,
       },
     },
     parseRouteQueryResult
@@ -228,6 +250,7 @@ export const queryRoutesByText = async (input: {
   queryText: string;
   preference: RoutePreference;
   passengerType?: PassengerType;
+  modifiers?: RouteModifier[];
   accessToken?: string;
 }): Promise<RouteQueryResult> =>
   requestData(
@@ -239,6 +262,7 @@ export const queryRoutesByText = async (input: {
         queryText: input.queryText,
         preference: input.preference,
         passengerType: input.passengerType ?? 'regular',
+        modifiers: input.modifiers,
       },
     },
     parseRouteQueryResult
