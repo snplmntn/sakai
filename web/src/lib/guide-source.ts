@@ -3,10 +3,8 @@ import path from "node:path";
 
 const GUIDE_SOURCE_PATH = path.resolve(
   process.cwd(),
-  "..",
-  "..",
-  "commuting_guides",
-  "guides.md",
+  "public",
+  "commuting-guides.md",
 );
 
 const VEHICLE_CONFIG = [
@@ -16,6 +14,7 @@ const VEHICLE_CONFIG = [
     slug: "walking-guide",
     imageSrc: "/walking.jpg",
     stepImageDir: "/walking",
+    sectionHeading: "Walking",
   },
   {
     label: "Jeepney",
@@ -23,6 +22,7 @@ const VEHICLE_CONFIG = [
     slug: "jeepney-guide",
     imageSrc: "/jeepney.jpg",
     stepImageDir: "/jeep",
+    sectionHeading: "Jeepney",
   },
   {
     label: "MRT/LRT",
@@ -30,6 +30,7 @@ const VEHICLE_CONFIG = [
     slug: "mrt-lrt-guide",
     imageSrc: "/mrt-lrt.jpg",
     stepImageDir: "/mrt-lrt",
+    sectionHeading: "MRT/LRT",
   },
   {
     label: "Bus",
@@ -37,6 +38,7 @@ const VEHICLE_CONFIG = [
     slug: "bus-guide",
     imageSrc: "/bus.jpg",
     stepImageDir: "/bus",
+    sectionHeading: "Bus",
   },
   {
     label: "Tricycle",
@@ -44,6 +46,7 @@ const VEHICLE_CONFIG = [
     slug: "tricycle-guide",
     imageSrc: "/tricycle.jpg",
     stepImageDir: "/tricycle",
+    sectionHeading: "Tricycle",
   },
   {
     label: "FX",
@@ -51,6 +54,7 @@ const VEHICLE_CONFIG = [
     slug: "fx-guide",
     imageSrc: "/fx.jpg",
     stepImageDir: "/fx-",
+    sectionHeading: "FX (UV Express)",
   },
   {
     label: "Taxi",
@@ -58,6 +62,7 @@ const VEHICLE_CONFIG = [
     slug: "taxi-guide",
     imageSrc: "/taxi.jpg",
     stepImageDir: "/taxi",
+    sectionHeading: "Taxi",
   },
   {
     label: "Comet E-Jeep",
@@ -65,6 +70,7 @@ const VEHICLE_CONFIG = [
     slug: "comet-e-jeep-guide",
     imageSrc: "/ejeep.jpg",
     stepImageDir: "/e-jeep",
+    sectionHeading: "Comet E-Jeep",
   },
 ] as const;
 
@@ -84,174 +90,78 @@ export interface ParsedGuideSource {
 
 let parsedGuideCache: ParsedGuideSource[] | null = null;
 
-function decodeMojibake(value: string) {
-  const decoded = Buffer.from(value, "latin1").toString("utf8");
-  return decoded.includes("\uFFFD") ? value : decoded;
-}
-
 function normalizeText(value: string) {
-  return decodeMojibake(value)
+  return value
     .replace(/\r/g, "")
     .replace(/\u00a0/g, " ")
-    .replace(/\uFFFD/g, "'")
-    .replace(/\u2019/g, "'")
-    .replace(/\u2018/g, "'")
-    .replace(/\u201c/g, '"')
-    .replace(/\u201d/g, '"')
-    .replace(/\u2013/g, "-")
-    .replace(/\u2014/g, "-")
-    .replace(/\u2026/g, "...")
-    .replace(/â€™/g, "'")
-    .replace(/â€˜/g, "'")
-    .replace(/â€œ/g, '"')
-    .replace(/â€/g, '"')
-    .replace(/â€“/g, "-")
-    .replace(/â€”/g, "-")
-    .replace(/â€¦/g, "...")
-    .replace(/singlejourney/g, "single-journey")
-    .replace(/shortdistance/g, "short-distance")
+    .replace(/\uFFFD/g, "")
+    .trimEnd();
+}
+
+function extractSectionContent(source: string, heading: string) {
+  const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `^##\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^##\\s+|\\Z)`,
+    "m",
+  );
+  const match = source.match(pattern);
+  return match?.[1]?.trim() ?? "";
+}
+
+function splitSectionBlocks(section: string) {
+  return normalizeText(section)
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
+function normalizeBlock(block: string) {
+  return block
+    .replace(/[“”]/g, "")
+    .replace(/[‘’]/g, "'")
+    .replace(/\b(Bayad po|Para po|Thank you)\b/g, "**$1**")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function splitIntoSections(source: string) {
-  const lines = source.split("\n").map((line) => line.trimEnd());
-  const sections = new Map<string, string[]>();
-  let current: string | null = null;
-
-  for (const rawLine of lines) {
-    const line = normalizeText(rawLine);
-
-    if (!line) {
-      if (current) {
-        sections.get(current)?.push("");
-      }
-      continue;
-    }
-
-    const heading = VEHICLE_CONFIG.find((item) => item.label === line);
-    if (heading) {
-      current = heading.label;
-      sections.set(current, []);
-      continue;
-    }
-
-    if (current) {
-      sections.get(current)?.push(line);
-    }
+function buildMarkdown(config: VehicleConfig, section: string) {
+  const blocks = splitSectionBlocks(section);
+  if (blocks.length === 0) {
+    return { markdown: "", summary: "" };
   }
 
-  return sections;
-}
-
-function isSubheading(line: string) {
-  return (
-    line.startsWith("How to Ride the ") ||
-    line.startsWith("Tips for ") ||
-    line === "Tips:"
-  );
-}
-
-function buildMarkdown(title: string, lines: string[]) {
   const markdown: string[] = [];
-  const introParagraphs: string[] = [];
-  let paragraph: string[] = [];
-  let listItems: string[] = [];
-  let listType: "ol" | "ul" | null = null;
+  const summary = normalizeBlock(blocks[0]);
 
-  const flushParagraph = () => {
-    if (paragraph.length === 0) {
-      return;
+  markdown.push(summary, "");
+
+  for (const block of blocks.slice(1)) {
+    const lines = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      continue;
     }
 
-    const text = paragraph.join(" ").replace(/\s+/g, " ").trim();
-    if (text) {
-      markdown.push(text, "");
-      if (introParagraphs.length === 0) {
-        introParagraphs.push(text);
+    if (lines[0].startsWith("### ")) {
+      markdown.push(lines[0], "");
+
+      for (const line of lines.slice(1)) {
+        markdown.push(normalizeBlock(line));
       }
-    }
-    paragraph = [];
-  };
 
-  const flushList = () => {
-    if (listItems.length === 0 || !listType) {
-      listItems = [];
-      listType = null;
-      return;
+      markdown.push("");
+      continue;
     }
 
-    listItems.forEach((item, index) => {
-      const normalized = item.replace(/\s+/g, " ").trim();
-      markdown.push(
-        listType === "ol" ? `${index + 1}. ${normalized}` : `- ${normalized}`,
-      );
-    });
+    for (const line of lines) {
+      markdown.push(normalizeBlock(line));
+    }
     markdown.push("");
-    listItems = [];
-    listType = null;
-  };
-
-  const appendToActiveBlock = (value: string) => {
-    if (listItems.length > 0) {
-      const lastIndex = listItems.length - 1;
-      listItems[lastIndex] = `${listItems[lastIndex]} ${value}`.trim();
-      return true;
-    }
-
-    if (paragraph.length > 0) {
-      paragraph.push(value);
-      return true;
-    }
-
-    return false;
-  };
-
-  for (const line of lines) {
-    if (!line) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-
-    if (isSubheading(line)) {
-      flushParagraph();
-      flushList();
-      markdown.push(`## ${line === "Tips:" ? `${title} Tips` : line}`, "");
-      continue;
-    }
-
-    const orderedMatch = line.match(/^(\d+)\.\s+(.*)$/);
-    if (orderedMatch) {
-      flushParagraph();
-      if (listType && listType !== "ol") {
-        flushList();
-      }
-      listType = "ol";
-      listItems.push(orderedMatch[2]);
-      continue;
-    }
-
-    const bulletMatch = line.match(/^-\s+(.*)$/);
-    if (bulletMatch) {
-      flushParagraph();
-      if (listType && listType !== "ul") {
-        flushList();
-      }
-      listType = "ul";
-      listItems.push(bulletMatch[1]);
-      continue;
-    }
-
-    if (!appendToActiveBlock(line)) {
-      paragraph.push(line);
-    }
   }
 
-  flushParagraph();
-  flushList();
-
-  const summary = introParagraphs[0] ?? `${title} commuter guide`;
   return {
     markdown: markdown.join("\n").trim(),
     summary,
@@ -259,8 +169,8 @@ function buildMarkdown(title: string, lines: string[]) {
 }
 
 function getGuideTitle(config: VehicleConfig, markdown: string) {
-  const headingMatch = markdown.match(/^##\s+(.+)$/m);
-  if (headingMatch && headingMatch[1].startsWith("How to Ride")) {
+  const headingMatch = markdown.match(/^###\s+(.+)$/m);
+  if (headingMatch) {
     return headingMatch[1];
   }
 
@@ -292,16 +202,19 @@ export function getParsedGuideSource(): ParsedGuideSource[] {
     return parsedGuideCache;
   }
 
-  const source = fs.readFileSync(GUIDE_SOURCE_PATH, "utf8");
-  const sections = splitIntoSections(source);
+  const source = normalizeText(fs.readFileSync(GUIDE_SOURCE_PATH, "utf8"));
 
   parsedGuideCache = VEHICLE_CONFIG.flatMap((config) => {
-    const lines = sections.get(config.label);
-    if (!lines || lines.length === 0) {
+    const section = extractSectionContent(source, config.sectionHeading);
+    if (!section) {
       return [];
     }
 
-    const { markdown, summary } = buildMarkdown(config.label, lines);
+    const { markdown, summary } = buildMarkdown(config, section);
+    if (!markdown) {
+      return [];
+    }
+
     const title = getGuideTitle(config, markdown);
     const searchText = `${title} ${config.label} ${summary} ${markdown}`.toLowerCase();
 

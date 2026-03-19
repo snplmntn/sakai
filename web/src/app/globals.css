@@ -470,6 +470,13 @@ a {
   overflow-wrap: break-word;
 }
 
+.guide-step-text strong,
+.guide-prose p strong {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-style: italic;
+}
+
 .guide-step-image {
   display: block;
   width: 100%;

@@ -1,13 +1,16 @@
 function normalizeInlineText(value: string) {
   return value
-    .replace(/\uFFFD/g, "'")
+    .replace(/([A-Za-z])\uFFFD([A-Za-z])/g, "$1'$2")
+    .replace(/\uFFFD/g, "")
     .replace(/\u2019/g, "'")
     .replace(/\u2018/g, "'")
     .replace(/\u201c/g, '"')
     .replace(/\u201d/g, '"')
     .replace(/\u2013/g, "-")
     .replace(/\u2014/g, "-")
-    .replace(/\u2026/g, "...");
+    .replace(/\u2026/g, "...")
+    .replace(/[“”]/g, "")
+    .replace(/[‘’]/g, "'");
 }
 
 function escapeHtml(value: string) {
