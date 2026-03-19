@@ -9,8 +9,8 @@ import {
 
 const { PORT } = getEnv();
 
-const server = app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server listening on 0.0.0.0:${PORT}`);
   startMmdaRefreshScheduler();
 });
 

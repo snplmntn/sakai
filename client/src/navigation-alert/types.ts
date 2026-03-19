@@ -8,6 +8,15 @@ export interface NavigationTarget {
   label: string;
 }
 
+export interface NavigationRouteCandidate {
+  routeId: string;
+  routeLabel: string;
+  summary: string;
+  durationLabel: string;
+  fareLabel: string;
+  destination: NavigationTarget;
+}
+
 export interface ActiveNavigationSession {
   routeId: string;
   routeLabel: string;
@@ -17,4 +26,3 @@ export interface ActiveNavigationSession {
   nearDestinationEnabled: boolean;
   startedAt: string;
 }
-
