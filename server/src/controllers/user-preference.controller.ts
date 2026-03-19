@@ -16,8 +16,11 @@ const buildDefaultUserPreference = (userId: string) => ({
 });
 
 export const getUserPreferences: RequestHandler = async (_req, res) => {
-  const { user } = getAuthenticatedLocals(res);
-  const preferences = await userPreferenceModel.getUserPreferenceByUserId(user.id);
+  const { accessToken, user } = getAuthenticatedLocals(res);
+  const preferences = await userPreferenceModel.getUserPreferenceByUserId(
+    user.id,
+    accessToken
+  );
 
   res.status(200).json({
     success: true,
@@ -31,12 +34,12 @@ export const getUserPreferences: RequestHandler = async (_req, res) => {
 };
 
 export const upsertUserPreferences: RequestHandler = async (req, res) => {
-  const { user } = getAuthenticatedLocals(res);
+  const { accessToken, user } = getAuthenticatedLocals(res);
   const preferences = await userPreferenceModel.upsertUserPreference({
     userId: user.id,
     defaultPreference: req.body.defaultPreference,
     passengerType: req.body.passengerType
-  });
+  }, accessToken);
 
   res.status(200).json({
     success: true,

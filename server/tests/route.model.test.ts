@@ -23,6 +23,7 @@ describe("route model", () => {
         {
           id: "variant-1",
           route_id: "route-1",
+          code: "JEEP-CUBAO-PUP:EASTBOUND",
           display_name: "Cubao to PUP",
           direction_label: "Eastbound",
           origin_place_id: "place-1",
@@ -103,6 +104,7 @@ describe("route model", () => {
         {
           id: "variant-1",
           route_id: "route-1",
+          code: "JEEP-CUBAO-PUP:EASTBOUND",
           display_name: "Cubao to PUP",
           direction_label: "Eastbound",
           origin_place_id: "place-1",
@@ -264,6 +266,7 @@ describe("route model", () => {
         {
           id: "variant-1",
           route_id: "route-missing",
+          code: "BROKEN-VARIANT:EASTBOUND",
           display_name: "Broken Variant",
           direction_label: "Eastbound",
           origin_place_id: "place-1",

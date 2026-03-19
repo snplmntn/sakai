@@ -1,0 +1,204 @@
+import { isRecord, requestData } from '../api/base';
+import { readGooglePlacesApiKey } from '../config/env';
+import type {
+  GooglePlaceSuggestion,
+  PlaceSuggestion,
+  SakaiPlaceSuggestion,
+  SelectedPlace,
+} from './types';
+
+const parseString = (value: unknown, field: string): string => {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Invalid ${field} in place response`);
+  }
+
+  return value;
+};
+
+const parseNumber = (value: unknown, field: string): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new Error(`Invalid ${field} in place response`);
+  }
+
+  return value;
+};
+
+const parseNullableString = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return parseString(value, 'string');
+};
+
+const parseSakaiSuggestion = (value: unknown): SakaiPlaceSuggestion => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid Sakai place suggestion');
+  }
+
+  return {
+    source: 'sakai',
+    id: parseString(value.id, 'id'),
+    label: parseString(value.canonicalName, 'canonicalName'),
+    city: parseString(value.city, 'city'),
+    kind: parseString(value.kind, 'kind') as SakaiPlaceSuggestion['kind'],
+    latitude: parseNumber(value.latitude, 'latitude'),
+    longitude: parseNumber(value.longitude, 'longitude'),
+    googlePlaceId: parseNullableString(value.googlePlaceId),
+    matchedBy: parseString(value.matchedBy, 'matchedBy') as SakaiPlaceSuggestion['matchedBy'],
+    matchedText: parseString(value.matchedText, 'matchedText'),
+  };
+};
+
+const parseSakaiSuggestions = (value: unknown): SakaiPlaceSuggestion[] => {
+  if (!Array.isArray(value)) {
+    throw new Error('Invalid Sakai place search response');
+  }
+
+  return value.map(parseSakaiSuggestion);
+};
+
+const parseGoogleSuggestion = (value: unknown): GooglePlaceSuggestion => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid Google place suggestion');
+  }
+
+  return {
+    source: 'google',
+    googlePlaceId: parseString(value.place_id, 'place_id'),
+    label: isRecord(value.structured_formatting)
+      ? parseString(value.structured_formatting.main_text, 'structured_formatting.main_text')
+      : parseString(value.description, 'description'),
+    secondaryText: isRecord(value.structured_formatting)
+      ? typeof value.structured_formatting.secondary_text === 'string'
+        ? value.structured_formatting.secondary_text
+        : ''
+      : '',
+  };
+};
+
+const buildGoogleUrl = (path: string, params: Record<string, string>): string => {
+  const query = new URLSearchParams(params).toString();
+  return `${path}?${query}`;
+};
+
+export const searchSakaiPlaces = async (
+  query: string,
+  limit = 5
+): Promise<SakaiPlaceSuggestion[]> =>
+  requestData(
+    {
+      method: 'GET',
+      path: `/api/places/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    },
+    parseSakaiSuggestions
+  );
+
+export const searchGooglePlaces = async (
+  query: string,
+  limit = 5
+): Promise<GooglePlaceSuggestion[]> => {
+  const response = await fetch(
+    buildGoogleUrl('https://maps.googleapis.com/maps/api/place/autocomplete/json', {
+      input: query,
+      key: readGooglePlacesApiKey(),
+      components: 'country:ph',
+      language: 'en',
+    })
+  );
+  const body = (await response.json()) as unknown;
+
+  if (!isRecord(body) || !Array.isArray(body.predictions)) {
+    throw new Error('Invalid Google autocomplete response');
+  }
+
+  return body.predictions
+    .map(parseGoogleSuggestion)
+    .slice(0, limit);
+};
+
+export const getGooglePlaceDetails = async (
+  googlePlaceId: string
+): Promise<SelectedPlace> => {
+  const response = await fetch(
+    buildGoogleUrl('https://maps.googleapis.com/maps/api/place/details/json', {
+      place_id: googlePlaceId,
+      key: readGooglePlacesApiKey(),
+      fields: 'place_id,name,formatted_address,geometry',
+    })
+  );
+  const body = (await response.json()) as unknown;
+
+  if (!isRecord(body) || !isRecord(body.result) || !isRecord(body.result.geometry)) {
+    throw new Error('Invalid Google place details response');
+  }
+
+  const location = body.result.geometry.location;
+
+  if (!isRecord(location)) {
+    throw new Error('Invalid Google place geometry response');
+  }
+
+  return {
+    source: 'google',
+    googlePlaceId: parseString(body.result.place_id, 'result.place_id'),
+    label:
+      typeof body.result.name === 'string' && body.result.name.trim().length > 0
+        ? body.result.name
+        : parseString(body.result.formatted_address, 'result.formatted_address'),
+    latitude: parseNumber(location.lat, 'result.geometry.location.lat'),
+    longitude: parseNumber(location.lng, 'result.geometry.location.lng'),
+  };
+};
+
+export const reverseGeocodeCurrentLocation = async (input: {
+  latitude: number;
+  longitude: number;
+}): Promise<SelectedPlace> => {
+  const response = await fetch(
+    buildGoogleUrl('https://maps.googleapis.com/maps/api/geocode/json', {
+      latlng: `${input.latitude},${input.longitude}`,
+      key: readGooglePlacesApiKey(),
+      language: 'en',
+    })
+  );
+  const body = (await response.json()) as unknown;
+
+  if (!isRecord(body) || !Array.isArray(body.results)) {
+    throw new Error('Invalid Google reverse geocode response');
+  }
+
+  const firstResult = body.results.find((result) => isRecord(result));
+
+  return {
+    source: 'current-location',
+    label:
+      firstResult && typeof firstResult.formatted_address === 'string'
+        ? firstResult.formatted_address
+        : 'Current location',
+    latitude: input.latitude,
+    longitude: input.longitude,
+  };
+};
+
+export const toSelectedPlace = (suggestion: PlaceSuggestion): SelectedPlace => {
+  if (suggestion.source === 'sakai') {
+    return {
+      source: 'sakai',
+      label: suggestion.label,
+      placeId: suggestion.id,
+      googlePlaceId: suggestion.googlePlaceId ?? undefined,
+      latitude: suggestion.latitude,
+      longitude: suggestion.longitude,
+      city: suggestion.city,
+      kind: suggestion.kind,
+      matchedBy: suggestion.matchedBy,
+    };
+  }
+
+  return {
+    source: 'google',
+    label: suggestion.label,
+    googlePlaceId: suggestion.googlePlaceId,
+  };
+};

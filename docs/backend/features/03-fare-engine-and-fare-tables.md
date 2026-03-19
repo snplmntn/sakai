@@ -135,7 +135,7 @@ Passenger-type rules:
 MVP fare baselines from the PRD:
 - traditional PUJ:
   - regular minimum `13.00` for first `4 km`
-  - discounted minimum `10.40`
+  - discounted minimum `13.00`
   - regular succeeding `1.80`
   - discounted succeeding `1.44`
 - modern/electric PUJ non-aircon:
@@ -148,6 +148,15 @@ MVP fare baselines from the PRD:
   - traditional `2.40/km`
   - modern `2.50/km`
   - with 20% discount handling when applicable
+- LRT-1 hackathon baseline:
+  - local Sakai station table
+  - estimated regular fare = `20 + (stations_traveled - 1)`
+  - discounted fare for `student | senior | pwd` = `50%` of regular fare
+- LRT-2 hackathon baseline:
+  - local Sakai station table for the full line
+  - estimated fare rows currently cover only the provided `Recto/D. Jose -> Legarda -> Pureza` formula slice
+  - segment fares for that slice are `13.00` then `15.00`
+  - discounted fare for `student | senior | pwd` = `50%` of regular fare
 
 Staleness policy:
 - if an active fare version is older than the current product policy threshold, do not fail the query

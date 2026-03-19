@@ -15,6 +15,11 @@ import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Mic01Icon, RouteIcon, UserGroupIcon } from '@hugeicons/core-free-icons';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
+import { usePreferences } from '../preferences/PreferencesContext';
+import {
+  PASSENGER_TYPE_OPTIONS,
+  ROUTE_PREFERENCE_OPTIONS,
+} from '../preferences/types';
 
 const { width } = Dimensions.get('window');
 const CARD_HORIZONTAL_PADDING = SPACING.lg;
@@ -46,8 +51,10 @@ const ONBOARDING_STEPS = [
 export default function WelcomeScreen({ navigation }: { navigation: NavigationProp }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const { preferences, status, updatePreferences } = usePreferences();
 
   const isLastStep = currentIndex === ONBOARDING_STEPS.length - 1;
+  const isPreferencesReady = status === 'ready';
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / width);
@@ -80,10 +87,8 @@ export default function WelcomeScreen({ navigation }: { navigation: NavigationPr
 
   return (
     <SafeScreen backgroundColor={COLORS.white} useGradient={true}>
-      {/* Minimal Header */}
       <View style={styles.header} />
 
-      {/* Carousel */}
       <FlatList
         ref={flatListRef}
         data={ONBOARDING_STEPS}
@@ -98,6 +103,85 @@ export default function WelcomeScreen({ navigation }: { navigation: NavigationPr
       />
 
       <View style={styles.footer}>
+        <View style={styles.preferenceCard}>
+          <Text style={styles.preferenceTitle}>Set your default commute style</Text>
+          <Text style={styles.preferenceSubtitle}>
+            Sakai uses these choices to rank routes and price eligible jeepney fares.
+          </Text>
+
+          <View style={styles.preferenceGroup}>
+            <Text style={styles.preferenceGroupLabel}>Route preference</Text>
+            <View style={styles.chipRow}>
+              {ROUTE_PREFERENCE_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.selectionChip,
+                    preferences.defaultPreference === option.value &&
+                      styles.selectionChipActive,
+                  ]}
+                  activeOpacity={0.85}
+                  disabled={!isPreferencesReady}
+                  onPress={() => {
+                    void updatePreferences({
+                      defaultPreference: option.value,
+                      passengerType: preferences.passengerType,
+                    });
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.selectionChipText,
+                      preferences.defaultPreference === option.value &&
+                        styles.selectionChipTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.preferenceGroup}>
+            <Text style={styles.preferenceGroupLabel}>Passenger type</Text>
+            <View style={styles.chipRow}>
+              {PASSENGER_TYPE_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.selectionChip,
+                    preferences.passengerType === option.value &&
+                      styles.selectionChipActive,
+                  ]}
+                  activeOpacity={0.85}
+                  disabled={!isPreferencesReady}
+                  onPress={() => {
+                    void updatePreferences({
+                      defaultPreference: preferences.defaultPreference,
+                      passengerType: option.value,
+                    });
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.selectionChipText,
+                      preferences.passengerType === option.value &&
+                        styles.selectionChipTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <Text style={styles.preferenceHint}>
+            You can change these later in Profile after signing in.
+          </Text>
+        </View>
+
         <View style={styles.dotsContainer}>
           {ONBOARDING_STEPS.map((_, index) => (
             <View
@@ -183,6 +267,70 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.xl,
     paddingHorizontal: SPACING.lg,
     alignItems: 'center',
+  },
+  preferenceCard: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#E2EAF0',
+    marginBottom: SPACING.lg,
+  },
+  preferenceTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontFamily: FONTS.bold,
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  preferenceSubtitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.regular,
+    color: COLORS.subText,
+    lineHeight: 22,
+    marginBottom: SPACING.md,
+  },
+  preferenceGroup: {
+    marginBottom: SPACING.md,
+  },
+  preferenceGroupLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.subText,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: SPACING.sm,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  selectionChip: {
+    borderRadius: 999,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    backgroundColor: '#F4F8FB',
+    borderWidth: 1,
+    borderColor: '#DCE7EF',
+  },
+  selectionChipActive: {
+    backgroundColor: '#102033',
+    borderColor: '#102033',
+  },
+  selectionChipText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#415466',
+  },
+  selectionChipTextActive: {
+    color: COLORS.white,
+  },
+  preferenceHint: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: '#5D7286',
+    lineHeight: 20,
   },
   dotsContainer: {
     flexDirection: 'row',
