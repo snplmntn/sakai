@@ -1,5 +1,5 @@
 import type { RoutePreference } from "../models/user-preference.model.js";
-import type { RouteQueryOption } from "../types/route-query.js";
+import type { RouteModifier, RouteQueryOption } from "../types/route-query.js";
 
 const getBalancedMetricScore = (value: number, minimum: number, maximum: number) => {
   if (maximum === minimum) {
@@ -24,30 +24,108 @@ const getRecommendationLabel = (preference: RoutePreference) => {
   return "Balanced option";
 };
 
+const getModifierSet = (modifiers: RouteModifier[]) => new Set(modifiers);
+
+const getWalkingMetrics = (option: RouteQueryOption) =>
+  option.legs.reduce(
+    (metrics, leg) => {
+      if (leg.type !== "walk") {
+        return metrics;
+      }
+
+      return {
+        distanceMeters: metrics.distanceMeters + leg.distanceMeters,
+        durationMinutes: metrics.durationMinutes + leg.durationMinutes
+      };
+    },
+    {
+      distanceMeters: 0,
+      durationMinutes: 0
+    }
+  );
+
+const getJeepneyRideCount = (option: RouteQueryOption) =>
+  option.legs.filter((leg) => leg.type === "ride" && leg.mode === "jeepney").length;
+
+const compareByModifiers = (
+  left: RouteQueryOption,
+  right: RouteQueryOption,
+  modifiers: RouteModifier[]
+) => {
+  const modifierSet = getModifierSet(modifiers);
+
+  if (modifierSet.has("jeep_if_possible")) {
+    const leftJeepneyCount = getJeepneyRideCount(left);
+    const rightJeepneyCount = getJeepneyRideCount(right);
+
+    if ((leftJeepneyCount > 0 ? 1 : 0) !== (rightJeepneyCount > 0 ? 1 : 0)) {
+      return (rightJeepneyCount > 0 ? 1 : 0) - (leftJeepneyCount > 0 ? 1 : 0);
+    }
+
+    if (leftJeepneyCount !== rightJeepneyCount) {
+      return rightJeepneyCount - leftJeepneyCount;
+    }
+  }
+
+  if (modifierSet.has("less_walking")) {
+    const leftWalking = getWalkingMetrics(left);
+    const rightWalking = getWalkingMetrics(right);
+
+    if (leftWalking.distanceMeters !== rightWalking.distanceMeters) {
+      return leftWalking.distanceMeters - rightWalking.distanceMeters;
+    }
+
+    if (leftWalking.durationMinutes !== rightWalking.durationMinutes) {
+      return leftWalking.durationMinutes - rightWalking.durationMinutes;
+    }
+  }
+
+  return 0;
+};
+
 export const rankRouteOptions = (
   options: RouteQueryOption[],
-  preference: RoutePreference
+  preference: RoutePreference,
+  modifiers: RouteModifier[] = []
 ): RouteQueryOption[] => {
   if (options.length === 0) {
     return [];
   }
+
+  const compareWithModifiers = (
+    left: RouteQueryOption,
+    right: RouteQueryOption,
+    fallbackCompare: (leftOption: RouteQueryOption, rightOption: RouteQueryOption) => number
+  ) =>
+    compareByModifiers(left, right, modifiers) ||
+    fallbackCompare(left, right);
 
   const rankedOptions =
     preference === "fastest"
       ? sortRouteOptions(
           options,
           (left, right) =>
-            left.totalDurationMinutes - right.totalDurationMinutes ||
-            left.totalFare - right.totalFare ||
-            left.transferCount - right.transferCount
+            compareWithModifiers(
+              left,
+              right,
+              (leftOption, rightOption) =>
+                leftOption.totalDurationMinutes - rightOption.totalDurationMinutes ||
+                leftOption.totalFare - rightOption.totalFare ||
+                leftOption.transferCount - rightOption.transferCount
+            )
         )
       : preference === "cheapest"
         ? sortRouteOptions(
             options,
             (left, right) =>
-              left.totalFare - right.totalFare ||
-              left.totalDurationMinutes - right.totalDurationMinutes ||
-              left.transferCount - right.transferCount
+              compareWithModifiers(
+                left,
+                right,
+                (leftOption, rightOption) =>
+                  leftOption.totalFare - rightOption.totalFare ||
+                  leftOption.totalDurationMinutes - rightOption.totalDurationMinutes ||
+                  leftOption.transferCount - rightOption.transferCount
+              )
           )
         : (() => {
             const durations = options.map((option) => option.totalDurationMinutes);
@@ -61,41 +139,43 @@ export const rankRouteOptions = (
             const transferMaximum = Math.max(...transferCounts);
 
             return sortRouteOptions(options, (left, right) => {
-              const leftScore =
-                getBalancedMetricScore(
-                  left.totalDurationMinutes,
-                  durationMinimum,
-                  durationMaximum
-                ) *
-                  0.45 +
-                getBalancedMetricScore(left.totalFare, fareMinimum, fareMaximum) * 0.35 +
-                getBalancedMetricScore(
-                  left.transferCount,
-                  transferMinimum,
-                  transferMaximum
-                ) *
-                  0.2;
-              const rightScore =
-                getBalancedMetricScore(
-                  right.totalDurationMinutes,
-                  durationMinimum,
-                  durationMaximum
-                ) *
-                  0.45 +
-                getBalancedMetricScore(right.totalFare, fareMinimum, fareMaximum) * 0.35 +
-                getBalancedMetricScore(
-                  right.transferCount,
-                  transferMinimum,
-                  transferMaximum
-                ) *
-                  0.2;
+              return compareWithModifiers(left, right, (leftOption, rightOption) => {
+                const leftScore =
+                  getBalancedMetricScore(
+                    leftOption.totalDurationMinutes,
+                    durationMinimum,
+                    durationMaximum
+                  ) *
+                    0.45 +
+                  getBalancedMetricScore(leftOption.totalFare, fareMinimum, fareMaximum) * 0.35 +
+                  getBalancedMetricScore(
+                    leftOption.transferCount,
+                    transferMinimum,
+                    transferMaximum
+                  ) *
+                    0.2;
+                const rightScore =
+                  getBalancedMetricScore(
+                    rightOption.totalDurationMinutes,
+                    durationMinimum,
+                    durationMaximum
+                  ) *
+                    0.45 +
+                  getBalancedMetricScore(rightOption.totalFare, fareMinimum, fareMaximum) * 0.35 +
+                  getBalancedMetricScore(
+                    rightOption.transferCount,
+                    transferMinimum,
+                    transferMaximum
+                  ) *
+                    0.2;
 
-              return (
-                leftScore - rightScore ||
-                left.totalDurationMinutes - right.totalDurationMinutes ||
-                left.totalFare - right.totalFare ||
-                left.transferCount - right.transferCount
-              );
+                return (
+                  leftScore - rightScore ||
+                  leftOption.totalDurationMinutes - rightOption.totalDurationMinutes ||
+                  leftOption.totalFare - rightOption.totalFare ||
+                  leftOption.transferCount - rightOption.transferCount
+                );
+              });
             });
           })();
 
@@ -114,6 +194,8 @@ export const rankRouteOptions = (
 
   return rankedOptions.map((option, index) => {
     const highlights: string[] = [];
+    const firstLeg = option.legs[0];
+    const lastLeg = option.legs.at(-1);
 
     if (fewestTransferOptions.length === 1 && option.transferCount === minimumTransferCount) {
       highlights.push("Fewest transfers");
@@ -125,6 +207,14 @@ export const rankRouteOptions = (
       mostJeepneyFriendlyOptions[0]?.id === option.id
     ) {
       highlights.push("Most jeepney-friendly");
+    }
+
+    if (firstLeg?.type === "drive") {
+      highlights.push("Car-first");
+    }
+
+    if (lastLeg?.type === "drive") {
+      highlights.push("Car-last");
     }
 
     return {

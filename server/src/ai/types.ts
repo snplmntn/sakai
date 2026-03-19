@@ -2,9 +2,11 @@ import { z } from "zod";
 
 import type { RoutePreference } from "../models/user-preference.model.js";
 import type { PassengerType } from "../types/fare.js";
+import type { RouteModifier } from "../types/route-query.js";
 
 const routePreferenceValues = ["fastest", "cheapest", "balanced"] as const satisfies RoutePreference[];
 const passengerTypeValues = ["regular", "student", "senior", "pwd"] as const satisfies PassengerType[];
+const routeModifierValues = ["jeep_if_possible", "less_walking"] as const satisfies RouteModifier[];
 const incidentSeverityValues = ["low", "medium", "high"] as const;
 
 export const routeIntentSchema = z.object({
@@ -12,6 +14,7 @@ export const routeIntentSchema = z.object({
   destinationText: z.string().trim().min(1).max(160).nullable(),
   preference: z.enum(routePreferenceValues).nullable(),
   passengerType: z.enum(passengerTypeValues).nullable(),
+  modifiers: z.array(z.enum(routeModifierValues)).max(routeModifierValues.length),
   requiresClarification: z.boolean(),
   clarificationField: z.enum(["origin", "destination", "both"]).nullable(),
   confidence: z.enum(["high", "medium", "low"])
@@ -62,6 +65,13 @@ export const routeIntentResponseSchema = {
       enum: passengerTypeValues,
       nullable: true
     },
+    modifiers: {
+      type: "ARRAY",
+      items: {
+        type: "STRING",
+        enum: routeModifierValues
+      }
+    },
     requiresClarification: {
       type: "BOOLEAN"
     },
@@ -80,6 +90,7 @@ export const routeIntentResponseSchema = {
     "destinationText",
     "preference",
     "passengerType",
+    "modifiers",
     "requiresClarification",
     "clarificationField",
     "confidence"

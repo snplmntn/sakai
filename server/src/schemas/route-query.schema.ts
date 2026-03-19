@@ -37,7 +37,11 @@ export const routeQuerySchema = z
     destination: routeQueryPointSchema.optional(),
     queryText: z.string().trim().min(1).max(500).optional(),
     preference: z.enum(["fastest", "cheapest", "balanced"]).optional(),
-    passengerType: z.enum(["regular", "student", "senior", "pwd"]).optional()
+    passengerType: z.enum(["regular", "student", "senior", "pwd"]).optional(),
+    modifiers: z
+      .array(z.enum(["jeep_if_possible", "less_walking"]))
+      .max(2)
+      .optional()
   })
   .strict()
   .superRefine((value, context) => {
