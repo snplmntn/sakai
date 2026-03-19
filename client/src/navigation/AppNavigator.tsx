@@ -24,12 +24,12 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Login"
         component={LoginScreen}
-        options={{ title: 'Login' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Signup"
         component={SignupScreen}
-        options={{ title: 'Sign Up' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="MainTabs"
