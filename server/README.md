@@ -34,6 +34,8 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
    For the current Expo app this should be `sakai://auth/callback`.
 9. Apply `supabase/schema.sql` to your Supabase database
    The schema is designed to upgrade the legacy one-table `public.routes(stop_id, stop_name, latitude, longitude)` import automatically, so you can run this directly on both fresh and older projects.
+   If MMDA refresh still fails with `permission denied for table area_updates`, run:
+   `supabase/fix-mmda-permissions.sql`.
 10. Apply `supabase/seeds/fare-baseline.sql` for the feature 03 fare baseline
    This seeds fare versions, fare products, local LRT-1 and LRT-2 station places and stops, and deterministic train-fare lookups. LRT-1 is seeded as a full estimated station-step baseline, while LRT-2 currently seeds the exact Recto/Legarda/Pureza slice covered by the provided demo formula.
 11. Apply `supabase/seeds/alabang-pasay-route.sql` to import the current Alabang-to-Pasay jeepney line into the normalized route graph
