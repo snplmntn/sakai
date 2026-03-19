@@ -5,7 +5,8 @@ vi.mock("../src/models/fare.model.js", () => ({
 }));
 
 vi.mock("../src/models/place.model.js", () => ({
-  resolvePlaceReference: vi.fn()
+  resolvePlaceReference: vi.fn(),
+  getPlaceById: vi.fn()
 }));
 
 vi.mock("../src/models/route.model.js", () => ({
@@ -56,6 +57,7 @@ const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
 const createStop = (id: string, stopName: string, mode: "jeepney" | "lrt2", placeId: string | null = null) => ({
   id,
   placeId,
+  externalStopCode: null,
   stopName,
   mode,
   area: "Metro Manila",
@@ -102,7 +104,7 @@ const jeepneyFareCatalog = {
       vehicleClass: "traditional",
       minimumDistanceKm: 4,
       minimumFareRegular: 13,
-      minimumFareDiscounted: 10.4,
+      minimumFareDiscounted: 13,
       succeedingDistanceKm: 1,
       succeedingFareRegular: 1.8,
       succeedingFareDiscounted: 1.44,
@@ -136,6 +138,7 @@ describe("route query service", () => {
       confidence: "high"
     });
     mockedRouteSummary.generateRouteSummary.mockImplementation(async () => "Route summary");
+    mockedPlaceModel.getPlaceById.mockResolvedValue(null);
     mockedStopModel.findNearestStops.mockResolvedValue([]);
     mockedTransferPointModel.listTransferPointsByStopIds.mockResolvedValue([]);
     mockedFareModel.getActiveFareCatalog.mockResolvedValue(jeepneyFareCatalog);
@@ -191,6 +194,7 @@ describe("route query service", () => {
       {
         id: "variant-1",
         routeId: "route-1",
+        code: "JEEP-CUBAO-PUP:EASTBOUND",
         displayName: "Cubao to PUP",
         directionLabel: "Eastbound",
         originPlaceId: "place-origin",
@@ -258,7 +262,7 @@ describe("route query service", () => {
     expect(result.normalizedQuery.preferenceSource).toBe("saved_preference");
     expect(result.normalizedQuery.passengerType).toBe("student");
     expect(result.options).toHaveLength(1);
-    expect(result.options[0]?.totalFare).toBe(13.28);
+    expect(result.options[0]?.totalFare).toBe(15.88);
     expect(result.options[0]?.transferCount).toBe(0);
     expect(result.options[0]?.recommendationLabel).toBe("Cheapest option");
   });
@@ -320,6 +324,7 @@ describe("route query service", () => {
       {
         id: "variant-1",
         routeId: "route-1",
+        code: "JEEP-CUBAO-PUP:EASTBOUND",
         displayName: "Cubao to PUP",
         directionLabel: "Eastbound",
         originPlaceId: "place-origin",
@@ -427,6 +432,7 @@ describe("route query service", () => {
       {
         id: "variant-1",
         routeId: "route-1",
+        code: "JEEP-CUBAO-PUP:EASTBOUND",
         displayName: "Cubao to PUP",
         directionLabel: "Eastbound",
         originPlaceId: "place-origin",
@@ -528,6 +534,7 @@ describe("route query service", () => {
       {
         id: "variant-jeep",
         routeId: "route-jeep",
+        code: "JEEP-CUBAO-LRT:SOUTHBOUND",
         displayName: "Cubao to LRT-2 Cubao",
         directionLabel: "Southbound",
         originPlaceId: "place-origin",
@@ -566,6 +573,7 @@ describe("route query service", () => {
       {
         id: "variant-lrt",
         routeId: "route-lrt",
+        code: "LRT2-CUBAO-RECTO:WESTBOUND",
         displayName: "LRT-2 Cubao to Recto",
         directionLabel: "Westbound",
         originPlaceId: null,
@@ -785,5 +793,111 @@ describe("route query service", () => {
     expect(result.message).toBe(
       "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
     );
+  });
+
+  it("falls back to nearby coordinates when a google-selected label is not stored internally", async () => {
+    const originStop = createStop("stop-origin", "Alabang", "jeepney", "place-origin");
+    const destinationStop = createStop("stop-destination", "Pasay", "jeepney", "place-destination");
+
+    mockedUserPreferenceModel.getUserPreferenceByUserId.mockResolvedValue(null);
+    mockedPlaceModel.resolvePlaceReference
+      .mockResolvedValueOnce({
+        status: "resolved",
+        place: {
+          id: "place-origin",
+          canonicalName: "Alabang",
+          city: "Muntinlupa",
+          kind: "terminal",
+          latitude: 14.423127,
+          longitude: 121.045653,
+          googlePlaceId: null,
+          createdAt: "2026-03-19T00:00:00.000Z",
+          matchedBy: "canonicalName",
+          matchedText: "Alabang"
+        }
+      })
+      .mockResolvedValueOnce({
+        status: "unresolved"
+      });
+    mockedPlaceModel.getPlaceById.mockResolvedValue({
+      id: "place-destination",
+      canonicalName: "Pasay",
+      city: "Pasay",
+      kind: "terminal",
+      latitude: 14.537745,
+      longitude: 121.001557,
+      googlePlaceId: null,
+      createdAt: "2026-03-19T00:00:00.000Z"
+    });
+    mockedStopModel.listStopsByPlaceId
+      .mockResolvedValueOnce([originStop])
+      .mockResolvedValueOnce([destinationStop]);
+    mockedStopModel.findNearestStops.mockResolvedValueOnce([
+      {
+        ...destinationStop,
+        distanceMeters: 35
+      }
+    ]);
+    mockedRouteModel.listActiveRouteVariants.mockResolvedValue([
+      {
+        id: "variant-1",
+        routeId: "route-1",
+        code: "JEEP-ALABANG-PASAY:OUTBOUND",
+        displayName: "Alabang to Pasay",
+        directionLabel: "Outbound",
+        originPlaceId: "place-origin",
+        destinationPlaceId: "place-destination",
+        isActive: true,
+        createdAt: "2026-03-19T00:00:00.000Z",
+        route: {
+          id: "route-1",
+          code: "JEEP-ALABANG-PASAY",
+          displayName: "Alabang - Pasay",
+          primaryMode: "jeepney",
+          operatorName: null,
+          sourceName: "seed",
+          sourceUrl: null,
+          trustLevel: "trusted_seed",
+          isActive: true,
+          createdAt: "2026-03-19T00:00:00.000Z"
+        },
+        legs: [
+          {
+            id: "leg-1",
+            routeVariantId: "variant-1",
+            sequence: 1,
+            mode: "jeepney",
+            fromStop: originStop,
+            toStop: destinationStop,
+            routeLabel: "Alabang - Pasay",
+            distanceKm: 18,
+            durationMinutes: 48,
+            fareProductCode: "puj_traditional",
+            corridorTag: "alabang-pasay",
+            createdAt: "2026-03-19T00:00:00.000Z"
+          }
+        ]
+      }
+    ]);
+
+    const result = await queryRoutes({
+      request: {
+        origin: {
+          label: "Alabang"
+        },
+        destination: {
+          googlePlaceId: "google-place-pasay",
+          label: "Pasay Rotonda",
+          latitude: 14.53775,
+          longitude: 121.00156
+        },
+        preference: "balanced",
+        passengerType: "regular"
+      }
+    });
+
+    expect(result.normalizedQuery.destination.placeId).toBe("place-destination");
+    expect(result.normalizedQuery.destination.matchedBy).toBe("coordinates");
+    expect(result.options).toHaveLength(1);
   });
 });

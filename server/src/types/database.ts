@@ -141,10 +141,59 @@ export interface Database {
         };
         Relationships: [];
       };
+      route_stop_import_rows: {
+        Row: {
+          id: string;
+          import_batch: string;
+          route_code: string;
+          variant_code: string;
+          direction_label: string;
+          sequence: number;
+          external_stop_code: string;
+          stop_name: string;
+          latitude: number | null;
+          longitude: number | null;
+          source_name: string;
+          source_url: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          import_batch: string;
+          route_code: string;
+          variant_code: string;
+          direction_label: string;
+          sequence: number;
+          external_stop_code: string;
+          stop_name: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          source_name: string;
+          source_url?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          import_batch?: string;
+          route_code?: string;
+          variant_code?: string;
+          direction_label?: string;
+          sequence?: number;
+          external_stop_code?: string;
+          stop_name?: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          source_name?: string;
+          source_url?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       stops: {
         Row: {
           id: string;
           place_id: string | null;
+          external_stop_code: string | null;
           stop_name: string;
           mode: StopMode;
           area: string;
@@ -156,6 +205,7 @@ export interface Database {
         Insert: {
           id?: string;
           place_id?: string | null;
+          external_stop_code?: string | null;
           stop_name: string;
           mode: StopMode;
           area: string;
@@ -167,6 +217,7 @@ export interface Database {
         Update: {
           id?: string;
           place_id?: string | null;
+          external_stop_code?: string | null;
           stop_name?: string;
           mode?: StopMode;
           area?: string;
@@ -220,6 +271,7 @@ export interface Database {
         Row: {
           id: string;
           route_id: string;
+          code: string;
           display_name: string;
           direction_label: string;
           origin_place_id: string | null;
@@ -230,6 +282,7 @@ export interface Database {
         Insert: {
           id?: string;
           route_id: string;
+          code: string;
           display_name: string;
           direction_label: string;
           origin_place_id?: string | null;
@@ -240,6 +293,7 @@ export interface Database {
         Update: {
           id?: string;
           route_id?: string;
+          code?: string;
           display_name?: string;
           direction_label?: string;
           origin_place_id?: string | null;

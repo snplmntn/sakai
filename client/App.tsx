@@ -5,6 +5,7 @@ import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_7
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
 import { AuthProvider } from './src/auth/AuthContext';
+import { PreferencesProvider } from './src/preferences/PreferencesContext';
 import { ToastProvider } from './src/toast/ToastContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
@@ -33,9 +34,11 @@ export default function App() {
     <SafeAreaProvider onLayout={onLayoutRootView}>
       <ToastProvider>
         <AuthProvider>
-          <NavigationContainer>
-            <AppNavigator />
-          </NavigationContainer>
+          <PreferencesProvider>
+            <NavigationContainer>
+              <AppNavigator />
+            </NavigationContainer>
+          </PreferencesProvider>
         </AuthProvider>
       </ToastProvider>
     </SafeAreaProvider>

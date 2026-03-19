@@ -10,6 +10,7 @@ import apiRouter from "./routes/index.js";
 const app = express();
 
 app.disable("x-powered-by");
+app.set("trust proxy", true);
 app.use(helmet());
 app.use(cors());
 app.use(morgan("dev"));
