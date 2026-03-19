@@ -43,7 +43,7 @@ export default function GuidesPage() {
           </section>
 
           <section className="mt-8">
-            <GuidesExplorer guides={guides} vehicleGroups={vehicleGroups} />
+            <GuidesExplorer guides={guides} />
           </section>
         </div>
       </main>

@@ -14,11 +14,10 @@ export function GuideCard({ guide }: { guide: GuideSummary }) {
           className="guide-card-image"
         />
       </div>
-      <div className="flex items-start justify-between gap-3">
-        <span className="guide-vehicle-tag">{guide.label}</span>
+      <div className="guide-card-header">
+        <h3 className="guide-card-title">{guide.title}</h3>
         <span className="guide-read-time">{guide.readTimeLabel}</span>
       </div>
-      <h3 className="guide-card-title">{guide.title}</h3>
       <p className="guide-card-preview">{guide.preview}</p>
     </Link>
   );

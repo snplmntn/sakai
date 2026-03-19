@@ -3,35 +3,28 @@
 import Link from "next/link";
 import { useDeferredValue, useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import type { GuideSummary, VehicleGroup } from "@/lib/guides";
+import type { GuideSummary } from "@/lib/guides";
 import { GuideCard } from "@/components/GuideCard";
 
 interface GuidesExplorerProps {
   guides: GuideSummary[];
-  vehicleGroups: VehicleGroup[];
 }
 
-export function GuidesExplorer({
-  guides,
-  vehicleGroups,
-}: GuidesExplorerProps) {
+export function GuidesExplorer({ guides }: GuidesExplorerProps) {
   const [query, setQuery] = useState("");
-  const [activeVehicle, setActiveVehicle] = useState("all");
   const deferredQuery = useDeferredValue(query);
 
   const filteredGuides = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
 
     return guides.filter((guide) => {
-      const matchesVehicle =
-        activeVehicle === "all" || guide.vehicleType === activeVehicle;
       const matchesQuery =
         normalizedQuery.length === 0 ||
         guide.searchText.includes(normalizedQuery);
 
-      return matchesVehicle && matchesQuery;
+      return matchesQuery;
     });
-  }, [activeVehicle, deferredQuery, guides]);
+  }, [deferredQuery, guides]);
 
   return (
     <section className="space-y-6">
@@ -47,31 +40,6 @@ export function GuidesExplorer({
               aria-label="Search guides"
             />
           </label>
-          <div className="guide-filters">
-            <button
-              type="button"
-              onClick={() => setActiveVehicle("all")}
-              className={`guide-filter-pill ${
-                activeVehicle === "all" ? "guide-filter-pill-active" : ""
-              }`}
-            >
-              All guides
-            </button>
-            {vehicleGroups.map((group) => (
-              <button
-                key={group.vehicleType}
-                type="button"
-                onClick={() => setActiveVehicle(group.vehicleType)}
-                className={`guide-filter-pill ${
-                  activeVehicle === group.vehicleType
-                    ? "guide-filter-pill-active"
-                    : ""
-                }`}
-              >
-                {group.label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -93,7 +61,7 @@ export function GuidesExplorer({
             No guides matched that search
           </h2>
           <p className="mt-2 text-sm" style={{ color: "var(--text-sub)" }}>
-            Try a vehicle name like Jeepney or Taxi, or clear the filters.
+            Try a vehicle name like Jeepney or Taxi, or clear the search.
           </p>
           <Link
             href="/guides"

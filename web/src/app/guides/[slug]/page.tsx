@@ -33,7 +33,6 @@ export default async function GuideDetailPage({
 
           <article className="card-surface rounded-[28px] p-6 sm:p-8 mt-4">
             <header className="guide-detail-header">
-              <span className="guide-vehicle-tag">{guide.label}</span>
               <h1 className="guide-detail-title">{guide.title}</h1>
               <p className="guide-detail-summary">{guide.summary}</p>
               <div className="guide-meta">
