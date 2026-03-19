@@ -180,17 +180,17 @@ export default function RoutesScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xxl + 32,
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xl + 24,
   },
   heroCard: {
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: '#102033',
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
-    marginBottom: SPACING.xl,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
   },
   heroGlow: {
     position: 'absolute',
@@ -231,8 +231,8 @@ const styles = StyleSheet.create({
   },
   searchPanel: {
     backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
   },
@@ -268,9 +268,9 @@ const styles = StyleSheet.create({
   },
   searchInputShell: {
     backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm + 4,
     marginBottom: SPACING.md,
   },
   searchInputLabel: {
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     color: '#102033',
   },
   section: {
-    marginBottom: SPACING.xl,
+    marginBottom: SPACING.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -339,9 +339,9 @@ const styles = StyleSheet.create({
   actionCard: {
     minWidth: '30%',
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm + 4,
+    paddingHorizontal: SPACING.sm + 4,
     marginHorizontal: SPACING.xs,
     marginBottom: SPACING.xs,
     borderWidth: 1,
@@ -360,9 +360,9 @@ const styles = StyleSheet.create({
   },
   mapPreviewCard: {
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
-    marginBottom: SPACING.xl,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
     borderWidth: 1,
     borderColor: '#E4ECF2',
     shadowColor: '#0F172A',
@@ -379,9 +379,9 @@ const styles = StyleSheet.create({
   },
   mapSurface: {
     height: 180,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     backgroundColor: '#EAF3F8',
-    padding: SPACING.lg,
+    padding: SPACING.md,
     justifyContent: 'center',
   },
   mapPinRow: {
@@ -420,9 +420,9 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
-    marginBottom: SPACING.md,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm + 4,
     borderWidth: 1,
     borderColor: '#E4ECF2',
     shadowColor: '#0F172A',
@@ -503,8 +503,8 @@ const styles = StyleSheet.create({
   statPill: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm + 4,
   },
   statLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -519,8 +519,8 @@ const styles = StyleSheet.create({
   },
   insightCard: {
     backgroundColor: '#EFF4F7',
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
   },
   insightTitle: {
     fontSize: TYPOGRAPHY.fontSizes.xlarge,
@@ -542,8 +542,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm + 4,
   },
   alertDot: {
     width: 10,
