@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
     "build": "tsc -p tsconfig.build.json",
+    "import:route-csv": "tsx scripts/import-route-csv.ts",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"

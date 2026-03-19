@@ -5,7 +5,7 @@ import type {
 } from "../types/route-query.js";
 import {
   generateJson,
-  getPrimaryModel,
+  getLightModel,
   isAiEnabled,
   type AiInvalidResponseError,
   type AiUnavailableError
@@ -66,7 +66,7 @@ export const generateRouteSummary = async (input: {
 
   try {
     const result = await generateJson({
-      model: getPrimaryModel(),
+      model: getLightModel(),
       prompt: buildSummaryPrompt(input.option, input.normalizedQuery),
       outputSchema: routeSummarySchema,
       responseSchema: routeSummaryResponseSchema,
@@ -78,7 +78,7 @@ export const generateRouteSummary = async (input: {
     if (isRecoverableSummaryError(error)) {
       console.warn("Falling back to deterministic route summary", {
         operation: "route_summary",
-        model: getPrimaryModel(),
+        model: getLightModel(),
         reason: error.message
       });
       return fallbackSummary;

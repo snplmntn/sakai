@@ -14,8 +14,8 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
    Optional auth override:
    - `AUTH_GOOGLE_REDIRECT_URI` if you want to force a fixed backend callback URL instead of using the current request origin
    Optional AI envs:
-   - `AI_PROVIDER=gemini_developer` with `GEMINI_API_KEY`
    - `AI_PROVIDER=vertex_express` with `VERTEX_API_KEY`
+   - `AI_PROVIDER=gemini_developer` with `GEMINI_API_KEY`
    - optional shared model envs: `GEMINI_MODEL_PRIMARY` and `GEMINI_MODEL_LIGHT`
 3. Run `npm install`
 4. In Supabase Auth, enable the Email provider
@@ -31,6 +31,28 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
    This seeds fare versions, fare products, local LRT-1 and LRT-2 station places and stops, and deterministic train-fare lookups. LRT-1 is seeded as a full estimated station-step baseline, while LRT-2 currently seeds the exact Recto/Legarda/Pureza slice covered by the provided demo formula.
 10. Apply `supabase/seeds/alabang-pasay-route.sql` to import the current Alabang-to-Pasay jeepney line into the normalized route graph
 11. Run `npm run dev`
+
+### Importing A Route CSV
+
+Use the route importer when you have an ordered stop CSV like `Ruta.csv`:
+
+```bash
+npm run import:route-csv -- --file ..\\Ruta.csv --route-code JEEP-ALABANG-PASAY --route-name "Alabang - Pasay" --variant-code JEEP-ALABANG-PASAY:OUTBOUND --variant-name "Alabang to Pasay via SLEX" --direction-label "Alabang to Pasay"
+```
+
+The importer writes to:
+- `route_stop_import_rows` for the raw ordered stop import
+- `places` for searchable routeable destinations
+- `stops` for boarding and alighting nodes
+- `routes` and `route_variants` for the logical route family and direction
+- `route_legs` for the ordered ride sequence used by `POST /api/routes/query`
+
+CSV requirements:
+- header must be exactly `id,name,lat,lng`
+- rows must be ordered in travel sequence
+- every row must have valid coordinates
+
+Defaults are tuned for the current `Ruta.csv`, but every route-level field can be overridden through CLI flags.
 
 ## Scripts
 
@@ -121,17 +143,19 @@ The backend now also includes versioned fare tables and an internal fare-pricing
 
 Feature 03 does not add public `/api/fares/*` endpoints yet. Route-query work should compose ride legs and transfer walks first, then call the internal fare engine to attach leg-by-leg fare breakdowns and totals.
 
-## AI Route Parsing And Summaries
+## AI Route Parsing, MMDA Structuring, And Summaries
 
-The backend now supports optional Gemini-powered intent parsing and route summaries for `POST /api/routes/query`.
+The backend now supports optional Vertex/Gemini-powered route intent parsing, MMDA alert structuring, and rider-facing route summaries.
 
 - Supported provider modes:
-  - `AI_PROVIDER=gemini_developer` with `GEMINI_API_KEY`
   - `AI_PROVIDER=vertex_express` with `VERTEX_API_KEY`
+  - `AI_PROVIDER=gemini_developer` with `GEMINI_API_KEY`
+- The backend defaults to `vertex_express` when `AI_PROVIDER` is omitted.
 - Shared model envs still default to `gemini-2.5-flash` and `gemini-2.5-flash-lite`.
 - Explicit request fields still win over AI hints.
 - If the selected AI provider is unavailable and the request already has explicit origin and destination fields, route query continues deterministically.
 - Route summaries fall back to a deterministic template when AI is disabled or unavailable.
+- MMDA refresh uses AI to classify `severity`, build a short `summary`, normalize `corridorTags`, and compute `displayUntil`.
 
 ### Google OAuth Callback Behavior
 
