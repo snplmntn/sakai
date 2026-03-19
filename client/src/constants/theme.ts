@@ -24,6 +24,7 @@ export const RADIUS = {
   md: 12,
   lg: 20,
   xl: 32,
+  full: 999,
 };
 
 export const SPACING = {
@@ -50,6 +51,7 @@ export const TYPOGRAPHY = {
   fontSizes: {
     small: 12,
     medium: 16,
+    body: 16,
     large: 20,
     xlarge: 24,
     title: 28,

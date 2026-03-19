@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Cancel01Icon, Mic01Icon } from '@hugeicons/core-free-icons';
@@ -24,6 +25,7 @@ import {
   resolvePlaceSuggestion,
   searchMergedPlaceSuggestions,
 } from '../places/search';
+import { reverseGeocodeCurrentLocation } from '../places/api';
 import { usePreferences } from '../preferences/PreferencesContext';
 import { queryRoutes, queryRoutesByText } from '../routes/api';
 import {
@@ -63,6 +65,7 @@ const MODE_LABELS: Record<string, string> = {
   mrt3: 'MRT3',
   lrt1: 'LRT1',
   lrt2: 'LRT2',
+  car: 'Car',
   bus: 'Bus',
 };
 
@@ -87,6 +90,25 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
           <Text style={styles.legMeta}>
             {leg.distanceMeters}m · {formatDuration(leg.durationMinutes)}
           </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (leg.type === 'drive') {
+    return (
+      <View style={styles.legRow}>
+        <View style={[styles.legBadge, styles.legBadgeRide]}>
+          <Text style={styles.legBadgeText}>Drive</Text>
+        </View>
+        <View style={styles.legInfo}>
+          <Text style={styles.legName}>
+            {leg.fromLabel} → {leg.toLabel}
+          </Text>
+          <Text style={styles.legMeta}>
+            {leg.distanceKm.toFixed(1)} km · {formatDuration(leg.durationMinutes)}
+          </Text>
+          <Text style={styles.legFare}>{formatFare(leg.fare.amount)}</Text>
         </View>
       </View>
     );
@@ -188,6 +210,26 @@ function RouteCard({
   );
 }
 
+const buildDriveContextNote = (option: RouteQueryOption | null): string | null => {
+  if (!option) {
+    return null;
+  }
+
+  const messages: string[] = [];
+  const firstLeg = option.legs[0];
+  const lastLeg = option.legs.at(-1);
+
+  if (firstLeg?.type === 'drive') {
+    messages.push(`Starts with a car segment to ${firstLeg.toLabel}.`);
+  }
+
+  if (lastLeg?.type === 'drive') {
+    messages.push(`Ends with a car segment from ${lastLeg.fromLabel} to your destination.`);
+  }
+
+  return messages.length > 0 ? messages.join(' ') : null;
+};
+
 function SuggestionRow({
   suggestion,
   onSelect,
@@ -242,6 +284,7 @@ export default function RoutesScreen() {
 
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const [routeResult, setRouteResult] = useState<RouteQueryResult | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
@@ -266,6 +309,7 @@ export default function RoutesScreen() {
     origin: createGooglePlacesSessionToken(),
     destination: createGooglePlacesSessionToken(),
   });
+  const hasResolvedInitialOriginRef = useRef(false);
 
   const activeText = activeField === 'origin' ? originText : destText;
   const accessToken = session?.accessToken;
@@ -346,6 +390,46 @@ export default function RoutesScreen() {
     }, 300);
   }, [routeResult, selectedOptionId, origin, destination]);
 
+  const resolveCurrentOrigin = useCallback(async () => {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (permission.status !== 'granted') {
+        setLocationNotice('Location access is off. Choose your origin manually to search routes.');
+        return null;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const place = await reverseGeocodeCurrentLocation({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+
+      setOrigin(place);
+      setOriginText(place.label);
+      setLocationNotice(null);
+      return place;
+    } catch (error) {
+      setLocationNotice(
+        error instanceof Error
+          ? error.message
+          : 'Current location could not be loaded. Choose your origin manually.'
+      );
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (voiceMode || origin !== null || hasResolvedInitialOriginRef.current) {
+      return;
+    }
+
+    hasResolvedInitialOriginRef.current = true;
+    void resolveCurrentOrigin();
+  }, [origin, resolveCurrentOrigin, voiceMode]);
+
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleSuggestionSelect = useCallback(
@@ -366,6 +450,7 @@ export default function RoutesScreen() {
         if (field === 'origin') {
           setOrigin(resolved);
           setOriginText(resolved.label);
+          setLocationNotice(null);
         } else {
           setDestination(resolved);
           setDestText(resolved.label);
@@ -469,6 +554,7 @@ export default function RoutesScreen() {
     if (field === 'origin') {
       setOrigin(null);
       setOriginText('');
+      setLocationNotice(null);
     } else {
       setDestination(null);
       setDestText('');
@@ -488,6 +574,7 @@ export default function RoutesScreen() {
     origin,
     destination,
   });
+  const driveContextNote = buildDriveContextNote(selectedOption);
   const canSearch = voiceMode
     ? voiceQuery.trim().length > 0
     : origin !== null && destination !== null;
@@ -586,7 +673,7 @@ export default function RoutesScreen() {
                         setActiveField('origin');
                       }}
                       onFocus={() => setActiveField('origin')}
-                      placeholder="Origin"
+                      placeholder="Current location or a stop"
                       placeholderTextColor="rgba(255,255,255,0.35)"
                       returnKeyType="next"
                     />
@@ -748,6 +835,12 @@ export default function RoutesScreen() {
               </View>
             )}
 
+            {locationNotice && (
+              <View style={styles.messageCard}>
+                <Text style={styles.fallbackNoteText}>{locationNotice}</Text>
+              </View>
+            )}
+
             {/* Map */}
             {routeResult && (
               <View style={styles.mapContainer}>
@@ -786,12 +879,14 @@ export default function RoutesScreen() {
                 {coordinateFallbackNote && (
                   <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
                 )}
+                {driveContextNote && <Text style={styles.fallbackNoteText}>{driveContextNote}</Text>}
               </View>
             )}
 
-            {routeResult && routeResult.options.length > 0 && coordinateFallbackNote && (
+            {routeResult && routeResult.options.length > 0 && (coordinateFallbackNote || driveContextNote) && (
               <View style={styles.messageCard}>
-                <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
+                {coordinateFallbackNote && <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>}
+                {driveContextNote && <Text style={styles.fallbackNoteText}>{driveContextNote}</Text>}
               </View>
             )}
 
