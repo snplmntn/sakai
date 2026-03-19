@@ -25,3 +25,15 @@ export const getSupabaseAdminClient = (): SupabaseClient<Database> => {
 
   return supabaseAdminClient;
 };
+
+export const createSupabaseAuthClient = (): SupabaseClient<Database> => {
+  const env = getEnv();
+
+  return createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false
+    }
+  });
+};
