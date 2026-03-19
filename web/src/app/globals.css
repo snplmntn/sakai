@@ -85,6 +85,18 @@ a {
   -webkit-backdrop-filter: blur(16px);
 }
 
+.nav-guides-link {
+  color: var(--text-primary);
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.dark .nav-guides-link {
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-bg);
+}
+
 .guide-hero {
   display: block;
 }
