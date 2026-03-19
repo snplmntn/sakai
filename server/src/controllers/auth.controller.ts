@@ -1,21 +1,8 @@
 import type { RequestHandler } from "express";
 
 import * as authModel from "../models/auth.model.js";
+import { getAuthenticatedLocals } from "../middlewares/auth.middleware.js";
 import { HttpError } from "../types/http-error.js";
-
-const getBearerToken = (authorizationHeader?: string): string => {
-  if (!authorizationHeader) {
-    throw new HttpError(401, "Missing authorization header");
-  }
-
-  const [scheme, token] = authorizationHeader.split(" ");
-
-  if (scheme !== "Bearer" || !token) {
-    throw new HttpError(401, "Authorization header must use Bearer token format");
-  }
-
-  return token;
-};
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof HttpError) {
@@ -57,7 +44,7 @@ export const refreshSession: RequestHandler = async (req, res) => {
 };
 
 export const signOut: RequestHandler = async (req, res) => {
-  const accessToken = getBearerToken(req.headers.authorization);
+  const { accessToken } = getAuthenticatedLocals(res);
   await authModel.signOutAuthSession(accessToken);
 
   res.status(200).json({
@@ -66,8 +53,7 @@ export const signOut: RequestHandler = async (req, res) => {
 };
 
 export const getMe: RequestHandler = async (req, res) => {
-  const accessToken = getBearerToken(req.headers.authorization);
-  const user = await authModel.getCurrentUser(accessToken);
+  const { user } = getAuthenticatedLocals(res);
 
   res.status(200).json({
     success: true,
