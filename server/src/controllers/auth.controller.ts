@@ -44,6 +44,7 @@ const getGoogleCallbackUrl = (req: Request): string => {
 };
 
 export const signUp: RequestHandler = async (req, res) => {
+  console.log(`[Server Auth] signUp request received for ${req.body.email}`);
   const authPayload = await authModel.signUpWithEmailAndPassword(req.body);
 
   res.status(201).json({
@@ -53,12 +54,19 @@ export const signUp: RequestHandler = async (req, res) => {
 };
 
 export const signIn: RequestHandler = async (req, res) => {
-  const authPayload = await authModel.signInWithEmailAndPassword(req.body);
+  console.log(`[Server Auth] signIn request received for ${req.body.email}`);
+  try {
+    const authPayload = await authModel.signInWithEmailAndPassword(req.body);
+    console.log(`[Server Auth] signIn successful for ${req.body.email}`);
 
-  res.status(200).json({
-    success: true,
-    data: authPayload
-  });
+    res.status(200).json({
+      success: true,
+      data: authPayload
+    });
+  } catch (error) {
+    console.error(`[Server Auth] signIn error for ${req.body.email}:`, error);
+    throw error;
+  }
 };
 
 export const refreshSession: RequestHandler = async (req, res) => {
