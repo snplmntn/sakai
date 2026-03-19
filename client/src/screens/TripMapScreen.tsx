@@ -62,26 +62,79 @@ import {
 } from '../navigation-alert/notification-service';
 import { useToast } from '../toast/ToastContext';
 
+const SEARCH_EXAMPLES = ['Pasay', 'Magallanes', 'Gate 3'];
 const DEFAULT_REGION: Region = {
   latitude: 14.517,
   longitude: 121.024,
   latitudeDelta: 0.18,
   longitudeDelta: 0.12,
 };
-
-const SEARCH_EXAMPLES = ['Pasay', 'Magallanes', 'Gate 3'];
+const PREFERENCES: Array<{ label: string; value: RoutePreference }> = [
+  { label: 'Balanced', value: 'balanced' },
+  { label: 'Cheapest', value: 'cheapest' },
+  { label: 'Fastest', value: 'fastest' },
+];
 const ALARM_MODES: Array<{ label: string; value: AlarmMode }> = [
   { label: 'Sound', value: 'sound' },
   { label: 'Vibrate', value: 'vibration' },
   { label: 'Both', value: 'both' },
 ];
 const ALERT_VIBRATION_PATTERN = getNotificationAlertPattern();
+const MODE_LABELS: Record<string, string> = {
+  jeepney: 'Jeepney',
+  mrt3: 'MRT',
+  lrt1: 'LRT-1',
+  lrt2: 'LRT-2',
+  uv: 'UV',
+  walk: 'Walk',
+};
+const DEMO_ROUTE_CARDS: SuggestedRouteCard[] = [
+  {
+    id: 'demo-best',
+    eyebrow: 'BEST FOR YOUR PREFERENCE',
+    badge: 'Estimated',
+    title: 'España to BGC',
+    summary: 'Jeep to MRT, then a short BGC Bus transfer with less walking near the end.',
+    modes: 'Jeepney • MRT • Bus',
+    duration: '52 min',
+    fare: 'PHP 34',
+    transfers: '2 transfers',
+    option: null,
+    isDemo: true,
+  },
+  {
+    id: 'demo-lower-fare',
+    eyebrow: 'LOWER FARE OPTION',
+    badge: 'Estimated',
+    title: 'España to BGC',
+    summary: 'Longer jeepney segment with one transfer and a slightly longer final walk.',
+    modes: 'Jeepney • Jeepney • Walk',
+    duration: '61 min',
+    fare: 'PHP 24',
+    transfers: '1 transfer',
+    option: null,
+    isDemo: true,
+  },
+];
 
 type ActiveField = 'origin' | 'destination' | null;
 type SearchMode = 'structured' | 'ai';
 type LiveCoordinate = {
   latitude: number;
   longitude: number;
+};
+type SuggestedRouteCard = {
+  id: string;
+  eyebrow: string;
+  badge: string;
+  title: string;
+  summary: string;
+  modes: string;
+  duration: string;
+  fare: string;
+  transfers: string;
+  option: RouteQueryOption | null;
+  isDemo: boolean;
 };
 
 const mapDisambiguationMatches = (value: unknown): SakaiPlaceSuggestion[] => {
@@ -129,6 +182,49 @@ const toLiveCoordinate = (location: Location.LocationObject): LiveCoordinate => 
   latitude: location.coords.latitude,
   longitude: location.coords.longitude,
 });
+
+const formatRouteCardLabel = (
+  option: RouteQueryOption,
+  index: number
+): string => {
+  if (index === 0) {
+    return 'Best for your preference';
+  }
+
+  const recommendation = option.recommendationLabel.toLowerCase();
+
+  if (recommendation.includes('cheap') || recommendation.includes('fare')) {
+    return 'Lower fare option';
+  }
+
+  if (recommendation.includes('fast')) {
+    return 'Faster option';
+  }
+
+  if (recommendation.includes('transfer')) {
+    return 'Fewer transfers';
+  }
+
+  return option.recommendationLabel;
+};
+
+const formatRouteConfidenceLabel = (fareConfidence: RouteQueryOption['fareConfidence']): string =>
+  fareConfidence === 'official' ? 'Official' : 'Estimated';
+
+const buildRouteModeSummary = (option: RouteQueryOption): string => {
+  const labels: string[] = [];
+
+  option.legs.forEach((leg) => {
+    const label =
+      leg.type === 'walk' ? MODE_LABELS.walk : (MODE_LABELS[leg.mode] ?? leg.mode.toUpperCase());
+
+    if (!labels.includes(label)) {
+      labels.push(label);
+    }
+  });
+
+  return labels.join(' • ');
+};
 
 export default function TripMapScreen() {
   const { session } = useAuth();
@@ -204,10 +300,80 @@ export default function TripMapScreen() {
       }),
     [destinationSelection, originSelection, routeResult]
   );
+  const routeHeadline = useMemo(
+    () =>
+      routeResult
+        ? `${routeResult.normalizedQuery.origin.label} to ${routeResult.normalizedQuery.destination.label}`
+        : 'Choose a route',
+    [routeResult]
+  );
+  const visibleIncidents = useMemo(() => {
+    const sourceIncidents =
+      selectedRoute?.relevantIncidents.length && selectedRoute.relevantIncidents.length > 0
+        ? selectedRoute.relevantIncidents
+        : routeResult?.options.flatMap((option) => option.relevantIncidents) ?? [];
+
+    const seen = new Set<string>();
+
+    return sourceIncidents.filter((incident) => {
+      if (seen.has(incident.id)) {
+        return false;
+      }
+
+      seen.add(incident.id);
+      return true;
+    });
+  }, [routeResult, selectedRoute]);
+  const hasLiveRoutes = (routeResult?.options.length ?? 0) > 0;
+  const suggestedRouteCards = useMemo<SuggestedRouteCard[]>(() => {
+    if (!hasLiveRoutes || !routeResult) {
+      return DEMO_ROUTE_CARDS;
+    }
+
+    return routeResult.options.map((option, index) => ({
+      id: option.id,
+      eyebrow: formatRouteCardLabel(option, index).toUpperCase(),
+      badge: formatRouteConfidenceLabel(option.fareConfidence),
+      title: routeHeadline,
+      summary: option.summary,
+      modes: buildRouteModeSummary(option),
+      duration: formatDuration(option.totalDurationMinutes),
+      fare: formatFare(option.totalFare),
+      transfers: `${option.transferCount} transfer${option.transferCount === 1 ? '' : 's'}`,
+      option,
+      isDemo: false,
+    }));
+  }, [hasLiveRoutes, routeHeadline, routeResult]);
+  const markers = useMemo(
+    () =>
+      buildRouteMarkers({
+        origin: originSelection,
+        destination: destinationSelection,
+        option: selectedRoute,
+      }),
+    [destinationSelection, originSelection, selectedRoute]
+  );
 
   useEffect(() => {
     setPreference(savedPreferences.defaultPreference);
   }, [savedPreferences.defaultPreference]);
+
+  useEffect(() => {
+    if (!mapRef.current || markers.length === 0) {
+      return;
+    }
+
+    mapRef.current.fitToCoordinates(
+      markers.map((marker) => ({
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+      })),
+      {
+        edgePadding: { top: 48, right: 48, bottom: 48, left: 48 },
+        animated: true,
+      }
+    );
+  }, [markers]);
 
   useEffect(() => {
     if (transcript.trim().length > 0) {
@@ -792,33 +958,6 @@ export default function TripMapScreen() {
     );
   };
 
-  const markers = useMemo(
-    () =>
-      buildRouteMarkers({
-        origin: originSelection,
-        destination: destinationSelection,
-        option: selectedRoute,
-      }),
-    [destinationSelection, originSelection, selectedRoute]
-  );
-
-  useEffect(() => {
-    if (!mapRef.current || markers.length === 0) {
-      return;
-    }
-
-    mapRef.current.fitToCoordinates(
-      markers.map((marker) => ({
-        latitude: marker.latitude,
-        longitude: marker.longitude,
-      })),
-      {
-        edgePadding: { top: 48, right: 48, bottom: 48, left: 48 },
-        animated: true,
-      }
-    );
-  }, [markers]);
-
   const selectSuggestion = async (suggestion: PlaceSuggestion) => {
     const field = activeField;
 
@@ -1057,6 +1196,177 @@ export default function TripMapScreen() {
           </View>
         </View>
 
+        <View style={[styles.sectionCard, styles.canvasCard]}>
+          <View style={styles.canvasHeader}>
+            <View style={styles.canvasCopy}>
+              <Text style={styles.sectionTitle}>Map and route canvas</Text>
+              <Text style={styles.canvasSubtitle}>Google Maps drives the canvas.</Text>
+            </View>
+            <Text style={styles.canvasMeta}>Google Maps</Text>
+          </View>
+          <View style={styles.canvasRailCard}>
+            <View style={styles.canvasRail}>
+              <View style={[styles.canvasDot, styles.canvasDotOrigin]} />
+              <View style={[styles.canvasTrack, styles.canvasTrackActive]} />
+              <View style={[styles.canvasDot, styles.canvasDotTransfer]} />
+              <View style={styles.canvasTrack} />
+              <View style={[styles.canvasDot, styles.canvasDotDestination]} />
+            </View>
+            <View style={styles.canvasLabels}>
+              <Text style={styles.canvasLabel}>Origin</Text>
+              <Text style={styles.canvasLabel}>Transfer</Text>
+              <Text style={styles.canvasLabel}>Destination</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.sectionCard, styles.liveMapCard]}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.liveMapTitle}>Map canvas</Text>
+            <View style={styles.sectionTag}>
+              <Text style={styles.sectionTagText}>Google Maps</Text>
+            </View>
+          </View>
+          {isGoogleMapsConfigured ? (
+            <MapView
+              ref={mapRef}
+              provider={PROVIDER_GOOGLE}
+              style={styles.map}
+              initialRegion={DEFAULT_REGION}
+            >
+              {markers.map((marker) => (
+                <Marker
+                  key={marker.id}
+                  coordinate={{ latitude: marker.latitude, longitude: marker.longitude }}
+                  pinColor={
+                    marker.role === 'origin'
+                      ? '#102033'
+                      : marker.role === 'destination'
+                        ? COLORS.primary
+                        : marker.role === 'transfer'
+                          ? COLORS.warning
+                          : '#5D7286'
+                  }
+                  title={marker.title}
+                  description={marker.subtitle}
+                />
+              ))}
+              {currentLocation ? (
+                <Marker
+                  coordinate={currentLocation}
+                  pinColor={COLORS.success}
+                  title="You"
+                  description="Current location during navigation"
+                />
+              ) : null}
+            </MapView>
+          ) : (
+            <MapSetupNotice />
+          )}
+        </View>
+
+        <View style={styles.routesSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Suggested routes</Text>
+            <Text style={styles.routesMeta}>Jeepney-first</Text>
+          </View>
+          {hasLiveRoutes || !isSearchingRoutes ? null : (
+            <View style={[styles.sectionCard, styles.routeStatusCard]}>
+              {isSearchingRoutes ? <ActivityIndicator color={COLORS.primary} /> : null}
+              <Text style={styles.statusText}>{statusMessage}</Text>
+              {coordinateFallbackNote ? (
+                <View style={styles.fallbackNote}>
+                  <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          {suggestedRouteCards.map((card) => (
+            <Pressable
+              key={card.id}
+              style={[
+                styles.routeCard,
+                !card.isDemo && selectedRoute?.id === card.id && styles.routeCardSelected,
+              ]}
+              onPress={() => {
+                if (card.isDemo) {
+                  showToast({
+                    tone: 'info',
+                    title: 'Demo preview',
+                    message: 'Showing sample route cards until live route results are available.',
+                  });
+                  return;
+                }
+
+                if (isNavigationActive && activeNavigationRouteId !== card.id) {
+                  showToast({
+                    tone: 'info',
+                    title: 'Navigation active',
+                    message: 'Stop the current trip before switching to another route.',
+                  });
+                  return;
+                }
+
+                setSelectedRouteId(card.id);
+              }}
+            >
+              <View style={styles.routeCardTop}>
+                <Text style={styles.routeEyebrow}>{card.eyebrow}</Text>
+                <View style={styles.routeBadge}>
+                  <Text style={styles.routeBadgeText}>{card.badge}</Text>
+                </View>
+              </View>
+              <Text style={styles.routeTitle}>{card.title}</Text>
+              <Text style={styles.routeSummary}>{card.summary}</Text>
+              <Text style={styles.routeModeSummary}>{card.modes}</Text>
+              <View style={styles.routeStatsGrid}>
+                <View style={styles.routeStatCell}>
+                  <Text style={styles.routeStatLabel}>Time</Text>
+                  <Text style={styles.routeStatValue}>{card.duration}</Text>
+                </View>
+                <View style={styles.routeStatDivider} />
+                <View style={styles.routeStatCell}>
+                  <Text style={styles.routeStatLabel}>Fare</Text>
+                  <Text style={styles.routeStatValue}>{card.fare}</Text>
+                </View>
+                <View style={styles.routeStatDivider} />
+                <View style={styles.routeStatCell}>
+                  <Text style={styles.routeStatLabel}>Transfers</Text>
+                  <Text style={styles.routeStatValue}>{card.transfers}</Text>
+                </View>
+              </View>
+            </Pressable>
+          ))}
+
+          {visibleIncidents.length > 0 ? (
+            <View style={[styles.sectionCard, styles.areaUpdatesCard]}>
+              <View style={styles.areaUpdatesHeader}>
+                <Text style={styles.areaUpdatesTitle}>Area updates</Text>
+                <Text style={styles.areaUpdatesMeta}>Route relevant</Text>
+              </View>
+              <Text style={styles.areaUpdatesSubtitle}>Only corridor-relevant alerts.</Text>
+              <View style={styles.areaUpdatesList}>
+                {visibleIncidents.slice(0, 2).map((incident, index) => (
+                  <View
+                    key={incident.id}
+                    style={[
+                      styles.areaUpdateItem,
+                      index < visibleIncidents.slice(0, 2).length - 1 && styles.areaUpdateItemBorder,
+                    ]}
+                  >
+                    <View style={styles.areaUpdateBullet} />
+                    <View style={styles.areaUpdateCopy}>
+                      <Text style={styles.areaUpdateName}>{incident.location}</Text>
+                      <Text style={styles.areaUpdateSummary}>{incident.summary}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </View>
+
         <View style={[styles.sectionCard, styles.navigationSectionCard]}>
           <View style={styles.navigationHeader}>
             <View>
@@ -1217,117 +1527,6 @@ export default function TripMapScreen() {
             )}
           </Pressable>
         </View>
-
-        <View style={[styles.sectionCard, styles.mapSectionCard]}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Map canvas</Text>
-            <View style={styles.sectionTag}>
-              <Text style={styles.sectionTagText}>Google Maps</Text>
-            </View>
-          </View>
-          {isGoogleMapsConfigured ? (
-            <MapView
-              ref={mapRef}
-              provider={PROVIDER_GOOGLE}
-              style={styles.map}
-              initialRegion={DEFAULT_REGION}
-            >
-              {markers.map((marker) => (
-                <Marker
-                  key={marker.id}
-                  coordinate={{ latitude: marker.latitude, longitude: marker.longitude }}
-                  pinColor={
-                    marker.role === 'origin'
-                      ? '#102033'
-                      : marker.role === 'destination'
-                        ? COLORS.primary
-                        : marker.role === 'transfer'
-                          ? COLORS.warning
-                          : '#5D7286'
-                  }
-                  title={marker.title}
-                  description={marker.subtitle}
-                />
-              ))}
-              {currentLocation ? (
-                <Marker
-                  coordinate={currentLocation}
-                  pinColor={COLORS.success}
-                  title="You"
-                  description="Current location during navigation"
-                />
-              ) : null}
-            </MapView>
-          ) : (
-            <MapSetupNotice />
-          )}
-        </View>
-
-        <View style={styles.routesSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Suggested routes</Text>
-            <View style={styles.sectionTag}>
-              <Text style={styles.sectionTagText}>Jeepney-first</Text>
-            </View>
-          </View>
-          <View style={[styles.sectionCard, styles.routeStatusCard]}>
-            {isSearchingRoutes ? <ActivityIndicator color={COLORS.primary} /> : null}
-            <Text style={styles.statusText}>{statusMessage}</Text>
-            {coordinateFallbackNote ? (
-              <View style={styles.fallbackNote}>
-                <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
-              </View>
-            ) : null}
-          </View>
-
-          {routeResult?.options.map((option) => (
-            <Pressable
-              key={option.id}
-              style={[
-                styles.routeCard,
-                selectedRoute?.id === option.id && styles.routeCardSelected,
-              ]}
-              onPress={() => {
-                if (isNavigationActive && activeNavigationRouteId !== option.id) {
-                  showToast({
-                    tone: 'info',
-                    title: 'Navigation active',
-                    message: 'Stop the current trip before switching to another route.',
-                  });
-                  return;
-                }
-
-                setSelectedRouteId(option.id);
-              }}
-            >
-              <View style={styles.routeHeader}>
-                <Text style={styles.routeTitle}>{option.recommendationLabel}</Text>
-                <Text style={styles.routeBadge}>{option.fareConfidence}</Text>
-              </View>
-              <Text style={styles.routeSummary}>{option.summary}</Text>
-              <Text style={styles.routeMeta}>
-                {option.highlights.join(' · ') || 'Route option'}
-              </Text>
-              {option.relevantIncidents.length > 0 ? (
-                <View style={styles.incidentList}>
-                  <Text style={styles.incidentTitle}>Area updates</Text>
-                  {option.relevantIncidents.map((incident) => (
-                    <Text key={incident.id} style={styles.incidentText}>
-                      {incident.summary}
-                    </Text>
-                  ))}
-                </View>
-              ) : null}
-              <View style={styles.stats}>
-                <Text style={styles.stat}>{formatDuration(option.totalDurationMinutes)}</Text>
-                <Text style={styles.stat}>{formatFare(option.totalFare)}</Text>
-                <Text style={styles.stat}>
-                  {option.transferCount} transfer{option.transferCount === 1 ? '' : 's'}
-                </Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
       </ScrollView>
     </SafeScreen>
   );
@@ -1484,10 +1683,84 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  mapSectionCard: { gap: SPACING.md },
+  canvasCard: {
+    gap: SPACING.md,
+    padding: SPACING.lg,
+  },
+  canvasHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: SPACING.md,
+  },
+  canvasCopy: { flex: 1, gap: SPACING.xs },
+  canvasSubtitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.regular,
+    color: '#7890A5',
+  },
+  canvasMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#7890A5',
+  },
+  canvasRailCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#DCE6F0',
+    backgroundColor: '#F3F8FC',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    gap: SPACING.md,
+  },
+  canvasRail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  canvasDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 999,
+  },
+  canvasDotOrigin: { backgroundColor: '#102033' },
+  canvasDotTransfer: { backgroundColor: '#8BBBEA' },
+  canvasDotDestination: { backgroundColor: '#4A87B1' },
+  canvasTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#CFE1F0',
+    marginHorizontal: SPACING.sm,
+  },
+  canvasTrackActive: { backgroundColor: '#4A87B1' },
+  canvasLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+  },
+  canvasLabel: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: '#6B8297',
+    textAlign: 'left',
+  },
+  liveMapCard: {
+    gap: SPACING.md,
+  },
+  liveMapTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
   routesSection: {
     gap: SPACING.md,
     marginTop: -SPACING.sm,
+  },
+  routesMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#7890A5',
   },
   sectionTag: {
     paddingHorizontal: SPACING.sm + 2,
@@ -1677,12 +1950,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bold,
     color: COLORS.white,
   },
-  map: {
-    width: '100%',
-    height: 360,
-    borderRadius: 6,
-    backgroundColor: '#F7F8FA',
-  },
   routeStatusCard: {
     minHeight: 76,
     justifyContent: 'center',
@@ -1710,61 +1977,146 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.md,
     backgroundColor: COLORS.card,
     borderRadius: 16,
-    padding: SPACING.md,
+    padding: SPACING.lg,
     borderWidth: 1,
     borderColor: '#EEF2F6',
-    gap: SPACING.sm,
+    gap: SPACING.md,
   },
   routeCardSelected: {
     borderColor: '#102033',
   },
-  routeHeader: {
+  routeCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: SPACING.sm,
     alignItems: 'center',
   },
+  routeEyebrow: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.bold,
+    color: '#5C90B8',
+    letterSpacing: 0.8,
+  },
   routeTitle: {
     flex: 1,
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: TYPOGRAPHY.fontSizes.large,
     fontFamily: FONTS.bold,
     color: '#102033',
   },
   routeBadge: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm - 2,
+    borderRadius: 999,
+    backgroundColor: '#EEF5FF',
+  },
+  routeBadgeText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
-    color: '#6A7D90',
+    color: '#6A9BC8',
   },
   routeSummary: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: '#5D7286',
+    color: '#6A7D90',
     lineHeight: 22,
   },
-  routeMeta: {
+  routeModeSummary: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: '#415466',
+    color: '#556B80',
   },
-  incidentList: {
-    gap: SPACING.xs,
-    borderRadius: 6,
-    backgroundColor: '#FFF6EC',
+  routeStatsGrid: {
+    flexDirection: 'row',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#F5D3AA',
-    padding: SPACING.sm,
+    borderColor: '#E4EBF2',
+    overflow: 'hidden',
+    backgroundColor: '#F7FAFD',
   },
-  incidentTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.bold,
-    color: '#8A5317',
+  routeStatCell: {
+    flex: 1,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    gap: SPACING.xs,
   },
-  incidentText: {
+  routeStatDivider: {
+    width: 1,
+    backgroundColor: '#E4EBF2',
+  },
+  routeStatLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: '#8A5317',
-    lineHeight: 19,
+    color: '#8A9AAC',
   },
-  stats: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md },
-  stat: { fontSize: TYPOGRAPHY.fontSizes.small, fontFamily: FONTS.semibold, color: '#102033' },
+  routeStatValue: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
+  areaUpdatesCard: {
+    gap: SPACING.xs,
+  },
+  areaUpdatesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  areaUpdatesTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
+  areaUpdatesMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#7890A5',
+  },
+  areaUpdatesSubtitle: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: '#7A8EA3',
+  },
+  areaUpdatesList: {
+    marginTop: SPACING.sm,
+  },
+  areaUpdateItem: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    alignItems: 'flex-start',
+  },
+  areaUpdateItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F6',
+  },
+  areaUpdateBullet: {
+    width: 9,
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: '#FFB01F',
+    marginTop: 6,
+  },
+  areaUpdateCopy: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  areaUpdateName: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: '#2C3E50',
+  },
+  areaUpdateSummary: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.regular,
+    color: '#7A8EA3',
+    lineHeight: 22,
+  },
+  map: {
+    width: '100%',
+    height: 320,
+    borderRadius: 6,
+    backgroundColor: '#F7F8FA',
+  },
 });
