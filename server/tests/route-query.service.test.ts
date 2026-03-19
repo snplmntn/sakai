@@ -134,6 +134,15 @@ const jeepneyFareCatalog = {
       regularFare: 20,
       discountedFare: 16,
       createdAt: "2026-03-01T00:00:00.000Z"
+    },
+    {
+      id: "train-fare-2",
+      fareRuleVersionId: "rule-lrt2",
+      originStopId: "stop-lrt-board",
+      destinationStopId: "stop-lrt-alight",
+      regularFare: 20,
+      discountedFare: 16,
+      createdAt: "2026-03-01T00:00:00.000Z"
     }
   ]
 };
@@ -652,6 +661,213 @@ describe("route query service", () => {
     expect(result.options[0]?.transferCount).toBe(1);
     expect(result.options[0]?.legs.map((leg) => leg.type)).toEqual(["ride", "walk", "ride"]);
     expect(result.options[0]?.recommendationLabel).toBe("Fastest option");
+  });
+
+  it("builds a multi-transfer route when two transfers are needed", async () => {
+    const originStop = createStop("stop-origin", "Cubao Terminal", "jeepney", "place-origin");
+    const transferToTrainStart = createStop("stop-transfer-jeep-lrt", "EDSA Terminal", "jeepney");
+    const trainBoarding = createStop("stop-lrt-board", "LRT-1 Baclaran", "lrt2");
+    const trainAlight = createStop("stop-lrt-alight", "LRT-1 Guadalupe", "lrt2");
+    const transferToJeep = createStop("stop-transfer-lrt-jeep", "SM North", "jeepney");
+    const destinationStop = createStop("stop-destination", "PUP Main Gate", "jeepney", "place-destination");
+
+    mockedUserPreferenceModel.getUserPreferenceByUserId.mockResolvedValue(null);
+    mockedPlaceModel.resolvePlaceReference
+      .mockResolvedValueOnce({
+        status: "resolved",
+        place: {
+          id: "place-origin",
+          canonicalName: "Cubao",
+          city: "Quezon City",
+          kind: "area",
+          latitude: 14.62,
+          longitude: 121.05,
+          googlePlaceId: null,
+          createdAt: "2026-03-19T00:00:00.000Z",
+          matchedBy: "alias",
+          matchedText: "Cubao"
+        }
+      })
+      .mockResolvedValueOnce({
+        status: "resolved",
+        place: {
+          id: "place-destination",
+          canonicalName: "PUP Sta. Mesa",
+          city: "Manila",
+          kind: "campus",
+          latitude: 14.6,
+          longitude: 121.01,
+          googlePlaceId: null,
+          createdAt: "2026-03-19T00:00:00.000Z",
+          matchedBy: "canonicalName",
+          matchedText: "PUP Sta. Mesa"
+        }
+      });
+    mockedStopModel.listStopsByPlaceId
+      .mockResolvedValueOnce([originStop])
+      .mockResolvedValueOnce([destinationStop]);
+    mockedRouteModel.listActiveRouteVariants.mockResolvedValue([
+      {
+        id: "variant-jeep-1",
+        routeId: "route-jeep-1",
+        code: "JEEP-CUBAO-EDSA:OUTBOUND",
+        displayName: "Cubao to EDSA",
+        directionLabel: "Outbound",
+        originPlaceId: "place-origin",
+        destinationPlaceId: null,
+        isActive: true,
+        createdAt: "2026-03-19T00:00:00.000Z",
+        route: {
+          id: "route-jeep-1",
+          code: "JEEP-CUBAO-EDSA",
+          displayName: "Cubao - EDSA Jeep",
+          primaryMode: "jeepney",
+          operatorName: null,
+          sourceName: "seed",
+          sourceUrl: null,
+          trustLevel: "trusted_seed",
+          isActive: true,
+          createdAt: "2026-03-19T00:00:00.000Z"
+        },
+        legs: [
+          {
+            id: "leg-jeep-1",
+            routeVariantId: "variant-jeep-1",
+            sequence: 1,
+            mode: "jeepney",
+            fromStop: originStop,
+            toStop: transferToTrainStart,
+            routeLabel: "Cubao - EDSA",
+            distanceKm: 3,
+            durationMinutes: 12,
+            fareProductCode: "puj_traditional",
+            corridorTag: "cubao",
+            createdAt: "2026-03-19T00:00:00.000Z"
+          }
+        ]
+      },
+      {
+        id: "variant-lrt",
+        routeId: "route-lrt",
+        code: "LRT2-TRANSFER:OUTBOUND",
+        displayName: "LRT-2 board to alight",
+        directionLabel: "Outbound",
+        originPlaceId: null,
+        destinationPlaceId: null,
+        isActive: true,
+        createdAt: "2026-03-19T00:00:00.000Z",
+        route: {
+          id: "route-lrt",
+          code: "LRT2-TRANSFER",
+          displayName: "LRT-2 Transfer Leg",
+          primaryMode: "lrt2",
+          operatorName: null,
+          sourceName: "seed",
+          sourceUrl: null,
+          trustLevel: "trusted_seed",
+          isActive: true,
+          createdAt: "2026-03-19T00:00:00.000Z"
+        },
+        legs: [
+          {
+            id: "leg-lrt",
+            routeVariantId: "variant-lrt",
+            sequence: 1,
+            mode: "lrt2",
+            fromStop: trainBoarding,
+            toStop: trainAlight,
+            routeLabel: "LRT-2",
+            distanceKm: 0,
+            durationMinutes: 11,
+            fareProductCode: null,
+            corridorTag: "lrt2",
+            createdAt: "2026-03-19T00:00:00.000Z"
+          }
+        ]
+      },
+      {
+        id: "variant-jeep-2",
+        routeId: "route-jeep-2",
+        code: "JEEP-SM-DEST:OUTBOUND",
+        displayName: "SM to PUP",
+        directionLabel: "Outbound",
+        originPlaceId: null,
+        destinationPlaceId: "place-destination",
+        isActive: true,
+        createdAt: "2026-03-19T00:00:00.000Z",
+        route: {
+          id: "route-jeep-2",
+          code: "JEEP-SM-DEST",
+          displayName: "SM - PUP Jeep",
+          primaryMode: "jeepney",
+          operatorName: null,
+          sourceName: "seed",
+          sourceUrl: null,
+          trustLevel: "trusted_seed",
+          isActive: true,
+          createdAt: "2026-03-19T00:00:00.000Z"
+        },
+        legs: [
+          {
+            id: "leg-jeep-2",
+            routeVariantId: "variant-jeep-2",
+            sequence: 1,
+            mode: "jeepney",
+            fromStop: transferToJeep,
+            toStop: destinationStop,
+            routeLabel: "SM - PUP",
+            distanceKm: 4,
+            durationMinutes: 18,
+            fareProductCode: "puj_traditional",
+            corridorTag: "sm",
+            createdAt: "2026-03-19T00:00:00.000Z"
+          }
+        ]
+      }
+    ]);
+    mockedTransferPointModel.listTransferPointsByStopIds.mockResolvedValue([
+      {
+        id: "transfer-jeep-lrt",
+        fromStopId: transferToTrainStart.id,
+        toStopId: trainBoarding.id,
+        walkingDistanceM: 80,
+        walkingDurationMinutes: 2,
+        isAccessible: true,
+        createdAt: "2026-03-19T00:00:00.000Z"
+      },
+      {
+        id: "transfer-lrt-jeep",
+        fromStopId: trainAlight.id,
+        toStopId: transferToJeep.id,
+        walkingDistanceM: 180,
+        walkingDurationMinutes: 4,
+        isAccessible: true,
+        createdAt: "2026-03-19T00:00:00.000Z"
+      }
+    ]);
+
+    const result = await queryRoutes({
+      request: {
+        origin: {
+          label: "Cubao"
+        },
+        destination: {
+          label: "PUP Sta. Mesa"
+        },
+        preference: "fastest",
+        passengerType: "regular"
+      }
+    });
+
+    expect(result.options).toHaveLength(1);
+    expect(result.options[0]?.transferCount).toBe(2);
+    expect(result.options[0]?.legs.map((leg) => leg.type)).toEqual([
+      "ride",
+      "walk",
+      "ride",
+      "walk",
+      "ride"
+    ]);
   });
 
   it("returns clarification when AI parsing requires it", async () => {

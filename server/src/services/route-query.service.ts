@@ -38,6 +38,7 @@ const ROUTE_SUMMARY_CONCURRENCY = 3;
 const WALKING_METERS_PER_MINUTE = 80;
 const RIDE_STOP_MODES: StopMode[] = ["jeepney", "uv", "mrt3", "lrt1", "lrt2"];
 const MAX_RELEVANT_INCIDENTS = 3;
+const MAX_RIDE_LEGS_PER_OPTION = 4;
 
 interface RouteQueryRequest {
   origin?: RouteQueryPointInput;
@@ -90,6 +91,14 @@ interface ParsedRouteQueryContext {
   intent: RouteIntent | null;
   origin?: RouteQueryPointInput;
   destination?: RouteQueryPointInput;
+}
+
+interface MultimodalPathState {
+  currentStopId: string;
+  rideLegs: RouteSlice[];
+  transferLabels: string[];
+  walkLegs: CandidateDraft["walkLegs"];
+  visitedStopIds: Set<string>;
 }
 
 const roundMinutes = (value: number) => Math.ceil(value);
@@ -439,21 +448,268 @@ const buildRouteSlice = (variant: RouteVariant, startIndex: number, endIndex: nu
   };
 };
 
+const listRouteSlicesFromStopIds = (variants: RouteVariant[], startStopIds?: Set<string>) => {
+  const routeSlicesByFromStopId = new Map<string, RouteSlice[]>();
+
+  for (const variant of variants) {
+    for (let startIndex = 0; startIndex < variant.legs.length; startIndex += 1) {
+      const fromStopId = variant.legs[startIndex]?.fromStop.id;
+
+      if (!fromStopId) {
+        continue;
+      }
+
+      if (startStopIds && !startStopIds.has(fromStopId)) {
+        continue;
+      }
+
+      for (let endIndex = startIndex; endIndex < variant.legs.length; endIndex += 1) {
+        const slice = buildRouteSlice(variant, startIndex, endIndex);
+        const existingSlices = routeSlicesByFromStopId.get(fromStopId) ?? [];
+
+        existingSlices.push(slice);
+        routeSlicesByFromStopId.set(fromStopId, existingSlices);
+      }
+    }
+  }
+
+  for (const slices of routeSlicesByFromStopId.values()) {
+    slices.sort(
+      (left, right) =>
+        left.durationMinutes - right.durationMinutes ||
+        left.toStop.stopName.localeCompare(right.toStop.stopName) ||
+        left.toStop.id.localeCompare(right.toStop.id)
+    );
+  }
+
+  return routeSlicesByFromStopId;
+};
+
 const listRouteSlicesFromAccessStops = (
   variants: RouteVariant[],
   accessStopIds: Set<string>
-): RouteSlice[] =>
-  variants.flatMap((variant) =>
-    variant.legs.flatMap((leg, startIndex) => {
-      if (!accessStopIds.has(leg.fromStop.id)) {
-        return [];
+): RouteSlice[] => {
+  const routeSlicesByFromStopId = listRouteSlicesFromStopIds(variants, accessStopIds);
+
+  return [...routeSlicesByFromStopId.values()].flat();
+};
+
+const buildCandidateSignatureFromRidePath = (input: {
+  rideLegs: RouteSlice[];
+  transferLabels: string[];
+}) =>
+  buildCandidateSignature([
+    ...input.rideLegs.flatMap((rideLeg, rideIndex) => {
+      const signaturePart = `${rideLeg.variant.id}:${rideLeg.fromStop.id}:${rideLeg.toStop.id}`;
+
+      if (rideIndex >= input.transferLabels.length) {
+        return [signaturePart];
       }
 
-      return variant.legs.slice(startIndex).map((_ignored, offset) =>
-        buildRouteSlice(variant, startIndex, startIndex + offset)
-      );
+      return [signaturePart, input.transferLabels[rideIndex]];
     })
-  );
+  ]);
+
+const buildCandidateDraftForDestination = (
+  input: {
+    rideLegs: RouteSlice[];
+    walkLegs: CandidateDraft["walkLegs"];
+    transferLabels: string[];
+    destinationLabel: string;
+  },
+  destinationAccessMap: Map<string, AccessStopCandidate>
+): CandidateDraft | null => {
+  const lastStopId = input.rideLegs.at(-1)?.toStop.id;
+
+  if (!lastStopId) {
+    return null;
+  }
+
+  const destinationAccess = destinationAccessMap.get(lastStopId);
+
+  if (!destinationAccess) {
+    return null;
+  }
+
+  const walkLegs: CandidateDraft["walkLegs"] = [...input.walkLegs];
+
+  if (destinationAccess.distanceMeters > 0) {
+    walkLegs.push({
+      id: `egress:${lastStopId}`,
+      fromLabel: input.rideLegs.at(-1)?.toStop.stopName ?? lastStopId,
+      toLabel: input.destinationLabel,
+      distanceMeters: destinationAccess.distanceMeters,
+      durationMinutes: destinationAccess.durationMinutes
+    });
+  }
+
+  return {
+    signature: buildCandidateSignatureFromRidePath({
+      rideLegs: input.rideLegs,
+      transferLabels: input.transferLabels
+    }),
+    rideLegs: input.rideLegs,
+    walkLegs
+  };
+};
+
+const buildMultimodalCandidateDrafts = (input: {
+  variants: RouteVariant[];
+  originSlices: RouteSlice[];
+  originAccessMap: Map<string, AccessStopCandidate>;
+  destinationAccessMap: Map<string, AccessStopCandidate>;
+  transferPoints: TransferPoint[];
+  originLabel: string;
+  destinationLabel: string;
+}): CandidateDraft[] => {
+  const routeSlicesByFromStopId = listRouteSlicesFromStopIds(input.variants);
+  const transferMap = buildTransferMapByFromStopId(input.transferPoints);
+  const queue: MultimodalPathState[] = [];
+  const destinationCandidates: CandidateDraft[] = [];
+  const stopNameById = new Map<string, string>();
+
+  for (const variant of input.variants) {
+    for (const leg of variant.legs) {
+      stopNameById.set(leg.fromStop.id, leg.fromStop.stopName);
+      stopNameById.set(leg.toStop.id, leg.toStop.stopName);
+    }
+  }
+
+  for (const stopId of input.originAccessMap.keys()) {
+    const accessCandidate = input.originAccessMap.get(stopId);
+
+    if (accessCandidate) {
+      stopNameById.set(accessCandidate.stop.id, accessCandidate.stop.stopName);
+    }
+  }
+
+  for (const stopId of input.destinationAccessMap.keys()) {
+    const accessCandidate = input.destinationAccessMap.get(stopId);
+
+    if (accessCandidate) {
+      stopNameById.set(accessCandidate.stop.id, accessCandidate.stop.stopName);
+    }
+  }
+
+  const pushOriginState = (firstSlice: RouteSlice) => {
+    const originAccess = input.originAccessMap.get(firstSlice.fromStop.id);
+
+    if (!originAccess) {
+      return;
+    }
+
+    const walkLegs: CandidateDraft["walkLegs"] = [];
+
+    if (originAccess.distanceMeters > 0) {
+      walkLegs.push({
+        id: `access:${firstSlice.fromStop.id}`,
+        fromLabel: input.originLabel,
+        toLabel: firstSlice.fromStop.stopName,
+        distanceMeters: originAccess.distanceMeters,
+        durationMinutes: originAccess.durationMinutes
+      });
+    }
+
+    const state: MultimodalPathState = {
+      currentStopId: firstSlice.toStop.id,
+      rideLegs: [firstSlice],
+      transferLabels: [],
+      walkLegs,
+      visitedStopIds: new Set([firstSlice.fromStop.id, firstSlice.toStop.id])
+    };
+
+    const destinationDraft = buildCandidateDraftForDestination(
+      {
+        rideLegs: state.rideLegs,
+        walkLegs: state.walkLegs,
+        transferLabels: state.transferLabels,
+        destinationLabel: input.destinationLabel,
+      },
+      input.destinationAccessMap
+    );
+    if (destinationDraft) {
+      destinationCandidates.push(destinationDraft);
+    }
+
+    queue.push(state);
+  };
+
+  for (const firstSlice of input.originSlices) {
+    pushOriginState(firstSlice);
+  }
+
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+    const currentState = queue[queueIndex];
+
+    if (!currentState) {
+      continue;
+    }
+
+    if (currentState.rideLegs.length >= MAX_RIDE_LEGS_PER_OPTION) {
+      continue;
+    }
+
+    const transferPoints = transferMap.get(currentState.currentStopId) ?? [];
+    const transferWalkIndex = currentState.rideLegs.length - 1;
+
+    for (const transferPoint of transferPoints) {
+      if (currentState.visitedStopIds.has(transferPoint.toStopId)) {
+        continue;
+      }
+
+      const nextWalkLegs: CandidateDraft["walkLegs"] = [
+        ...currentState.walkLegs,
+        {
+          id: `transfer:${transferWalkIndex}`,
+          fromLabel: stopNameById.get(currentState.currentStopId) ?? currentState.currentStopId,
+          toLabel: stopNameById.get(transferPoint.toStopId) ?? transferPoint.toStopId,
+          distanceMeters: transferPoint.walkingDistanceM,
+          durationMinutes: transferPoint.walkingDurationMinutes
+        }
+      ];
+
+      const nextTransferLabels = [
+        ...currentState.transferLabels,
+        `${transferPoint.fromStopId}:${transferPoint.toStopId}`
+      ];
+
+      const destinationDraft = buildCandidateDraftForDestination(
+        {
+          rideLegs: currentState.rideLegs,
+          walkLegs: nextWalkLegs,
+          transferLabels: nextTransferLabels,
+          destinationLabel: input.destinationLabel
+        },
+        input.destinationAccessMap
+      );
+
+      if (destinationDraft) {
+        destinationCandidates.push(destinationDraft);
+      }
+
+      const nextSlices = routeSlicesByFromStopId.get(transferPoint.toStopId) ?? [];
+
+      for (const nextSlice of nextSlices) {
+        if (currentState.visitedStopIds.has(nextSlice.toStop.id)) {
+          continue;
+        }
+
+        const nextVisitedStopIds = new Set(currentState.visitedStopIds);
+        nextVisitedStopIds.add(nextSlice.toStop.id);
+
+        queue.push({
+          currentStopId: nextSlice.toStop.id,
+          rideLegs: [...currentState.rideLegs, nextSlice],
+          transferLabels: nextTransferLabels,
+          walkLegs: nextWalkLegs,
+          visitedStopIds: nextVisitedStopIds
+        });
+      }
+    }
+  }
+
+  return dedupeCandidateDrafts(destinationCandidates);
+};
 
 const buildTransferMapByFromStopId = (transferPoints: TransferPoint[]) => {
   const transferMap = new Map<string, TransferPoint[]>();
@@ -463,6 +719,15 @@ const buildTransferMapByFromStopId = (transferPoints: TransferPoint[]) => {
 
     existingTransfers.push(transferPoint);
     transferMap.set(transferPoint.fromStopId, existingTransfers);
+  }
+
+  for (const transfers of transferMap.values()) {
+    transfers.sort(
+      (left, right) =>
+        left.walkingDurationMinutes - right.walkingDurationMinutes ||
+        left.walkingDistanceM - right.walkingDistanceM ||
+        left.toStopId.localeCompare(right.toStopId)
+    );
   }
 
   return transferMap;
@@ -775,136 +1040,19 @@ export const queryRoutes = async (input: {
     variants,
     new Set(originAccessMap.keys())
   );
-  const destinationSlices = listRouteSlicesFromAccessStops(
-    variants,
-    new Set(
-      variants.flatMap((variant) =>
-        variant.legs
-          .filter((leg) => destinationAccessMap.has(leg.toStop.id))
-          .map((leg) => leg.fromStop.id)
-      )
-    )
-  ).filter((slice) => destinationAccessMap.has(slice.toStop.id));
-
-  const directDrafts = originSlices
-    .filter((slice) => destinationAccessMap.has(slice.toStop.id))
-    .map((slice) => {
-      const originAccess = originAccessMap.get(slice.fromStop.id);
-      const destinationAccess = destinationAccessMap.get(slice.toStop.id);
-
-      if (!originAccess || !destinationAccess) {
-        return null;
-      }
-
-      const walkLegs: CandidateDraft["walkLegs"] = [];
-
-      if (originAccess.distanceMeters > 0) {
-        walkLegs.push({
-          id: `access:${slice.fromStop.id}`,
-          fromLabel: normalizedQuery.origin.label,
-          toLabel: slice.fromStop.stopName,
-          distanceMeters: originAccess.distanceMeters,
-          durationMinutes: originAccess.durationMinutes
-        });
-      }
-
-      if (destinationAccess.distanceMeters > 0) {
-        walkLegs.push({
-          id: `egress:${slice.toStop.id}`,
-          fromLabel: slice.toStop.stopName,
-          toLabel: normalizedQuery.destination.label,
-          distanceMeters: destinationAccess.distanceMeters,
-          durationMinutes: destinationAccess.durationMinutes
-        });
-      }
-
-      return {
-        signature: buildCandidateSignature([
-          `${slice.variant.id}:${slice.fromStop.id}:${slice.toStop.id}`
-        ]),
-        rideLegs: [slice],
-        walkLegs
-      } satisfies CandidateDraft;
-    })
-    .filter((draft): draft is CandidateDraft => Boolean(draft));
 
   const transferPoints = await transferPointModel.listTransferPointsByStopIds(
     variants.flatMap((variant) => variant.legs.flatMap((leg) => [leg.fromStop.id, leg.toStop.id]))
   );
-  const transferMap = buildTransferMapByFromStopId(transferPoints);
-  const destinationSlicesByBoardingStopId = new Map<string, RouteSlice[]>();
-
-  for (const destinationSlice of destinationSlices) {
-    const existingSlices = destinationSlicesByBoardingStopId.get(destinationSlice.fromStop.id) ?? [];
-
-    existingSlices.push(destinationSlice);
-    destinationSlicesByBoardingStopId.set(destinationSlice.fromStop.id, existingSlices);
-  }
-
-  const transferDrafts = originSlices.flatMap((firstSlice) => {
-    const originAccess = originAccessMap.get(firstSlice.fromStop.id);
-
-    if (!originAccess) {
-      return [];
-    }
-
-    return (transferMap.get(firstSlice.toStop.id) ?? []).flatMap((transferPoint) => {
-      const secondSlices = destinationSlicesByBoardingStopId.get(transferPoint.toStopId) ?? [];
-
-      return secondSlices
-        .filter((secondSlice) => secondSlice.variant.id !== firstSlice.variant.id)
-        .map((secondSlice) => {
-          const destinationAccess = destinationAccessMap.get(secondSlice.toStop.id);
-
-          if (!destinationAccess) {
-            return null;
-          }
-
-          const walkLegs: CandidateDraft["walkLegs"] = [];
-
-          if (originAccess.distanceMeters > 0) {
-            walkLegs.push({
-              id: `access:${firstSlice.fromStop.id}`,
-              fromLabel: normalizedQuery.origin.label,
-              toLabel: firstSlice.fromStop.stopName,
-              distanceMeters: originAccess.distanceMeters,
-              durationMinutes: originAccess.durationMinutes
-            });
-          }
-
-          walkLegs.push({
-            id: "transfer:0",
-            fromLabel: firstSlice.toStop.stopName,
-            toLabel: secondSlice.fromStop.stopName,
-            distanceMeters: transferPoint.walkingDistanceM,
-            durationMinutes: transferPoint.walkingDurationMinutes
-          });
-
-          if (destinationAccess.distanceMeters > 0) {
-            walkLegs.push({
-              id: `egress:${secondSlice.toStop.id}`,
-              fromLabel: secondSlice.toStop.stopName,
-              toLabel: normalizedQuery.destination.label,
-              distanceMeters: destinationAccess.distanceMeters,
-              durationMinutes: destinationAccess.durationMinutes
-            });
-          }
-
-          return {
-            signature: buildCandidateSignature([
-              `${firstSlice.variant.id}:${firstSlice.fromStop.id}:${firstSlice.toStop.id}`,
-              `${transferPoint.fromStopId}:${transferPoint.toStopId}`,
-              `${secondSlice.variant.id}:${secondSlice.fromStop.id}:${secondSlice.toStop.id}`
-            ]),
-            rideLegs: [firstSlice, secondSlice],
-            walkLegs
-          } satisfies CandidateDraft;
-        })
-        .filter((draft): draft is CandidateDraft => Boolean(draft));
-    });
+  const candidateDrafts = buildMultimodalCandidateDrafts({
+    variants,
+    originSlices,
+    originAccessMap,
+    destinationAccessMap,
+    transferPoints,
+    originLabel: normalizedQuery.origin.label,
+    destinationLabel: normalizedQuery.destination.label
   });
-
-  const candidateDrafts = dedupeCandidateDrafts([...directDrafts, ...transferDrafts]);
 
   if (candidateDrafts.length === 0) {
     return {
