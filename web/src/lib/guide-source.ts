@@ -110,8 +110,6 @@ export interface ParsedGuideSource {
   searchText: string;
 }
 
-let parsedGuideCache: ParsedGuideSource[] | null = null;
-
 function normalizeText(value: string) {
   return value
     .replace(/\r/g, "")
@@ -175,8 +173,6 @@ function buildMarkdown(section: string) {
   const markdown: string[] = [];
   const summary = normalizeBlock(blocks[0]);
 
-  markdown.push(summary, "");
-
   for (const block of blocks.slice(1)) {
     const lines = mergeIndentedContinuationLines(block);
 
@@ -237,13 +233,9 @@ function getTipImages(config: VehicleConfig) {
 }
 
 export function getParsedGuideSource(): ParsedGuideSource[] {
-  if (parsedGuideCache) {
-    return parsedGuideCache;
-  }
-
   const source = normalizeText(fs.readFileSync(GUIDE_SOURCE_PATH, "utf8"));
 
-  parsedGuideCache = VEHICLE_CONFIG.flatMap((config) => {
+  return VEHICLE_CONFIG.flatMap((config) => {
     const section = extractSectionContent(source, config.sectionHeading);
     if (!section) {
       return [];
@@ -272,6 +264,4 @@ export function getParsedGuideSource(): ParsedGuideSource[] {
       },
     ];
   });
-
-  return parsedGuideCache;
 }

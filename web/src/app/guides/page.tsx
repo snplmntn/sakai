@@ -3,6 +3,8 @@ import { GuidesExplorer } from "@/components/GuidesExplorer";
 import Navbar from "@/components/Navbar";
 import { getAllGuides, getVehicleGroups } from "@/lib/guides";
 
+export const dynamic = "force-dynamic";
+
 export default function GuidesPage() {
   const guides = getAllGuides();
   const vehicleGroups = getVehicleGroups();
