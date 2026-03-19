@@ -14,6 +14,7 @@ const VEHICLE_CONFIG = [
     slug: "walking-guide",
     imageSrc: "/walking.jpg",
     stepImageDir: "/walking",
+    tipImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg"],
     sectionHeading: "Walking",
   },
   {
@@ -22,6 +23,7 @@ const VEHICLE_CONFIG = [
     slug: "jeepney-guide",
     imageSrc: "/jeepney.jpg",
     stepImageDir: "/jeep",
+    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg"],
     sectionHeading: "Jeepney",
   },
   {
@@ -30,6 +32,19 @@ const VEHICLE_CONFIG = [
     slug: "mrt-lrt-guide",
     imageSrc: "/mrt-lrt.jpg",
     stepImageDir: "/mrt-lrt",
+    stepImageFiles: [
+      "1.jpg",
+      "2.jpg",
+      "3.jpg",
+      "4.jpg",
+      "5.jpg",
+      "6.jpg",
+      "7.jpg",
+      "8.jpg",
+      "9.jpg",
+      "10.jpg",
+      "11.jpg",
+    ],
     sectionHeading: "MRT/LRT",
   },
   {
@@ -38,7 +53,7 @@ const VEHICLE_CONFIG = [
     slug: "bus-guide",
     imageSrc: "/bus.jpg",
     stepImageDir: "/bus",
-    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg", "6.jpg"],
+    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg"],
     sectionHeading: "Bus",
   },
   {
@@ -47,6 +62,7 @@ const VEHICLE_CONFIG = [
     slug: "tricycle-guide",
     imageSrc: "/tricycle.jpg",
     stepImageDir: "/tricycle",
+    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg"],
     sectionHeading: "Tricycle",
   },
   {
@@ -54,7 +70,8 @@ const VEHICLE_CONFIG = [
     vehicleType: "fx",
     slug: "fx-guide",
     imageSrc: "/fx.jpg",
-    stepImageDir: "/fx-",
+    stepImageDir: "/fx",
+    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg"],
     sectionHeading: "FX (UV Express)",
   },
   {
@@ -63,6 +80,8 @@ const VEHICLE_CONFIG = [
     slug: "taxi-guide",
     imageSrc: "/taxi.jpg",
     stepImageDir: "/taxi",
+    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg"],
+    tipImageFiles: ["4.jpg", "5.jpg"],
     sectionHeading: "Taxi",
   },
   {
@@ -71,6 +90,7 @@ const VEHICLE_CONFIG = [
     slug: "comet-e-jeep-guide",
     imageSrc: "/ejeep.jpg",
     stepImageDir: "/e-jeep",
+    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg"],
     sectionHeading: "Comet E-Jeep",
   },
 ] as const;
@@ -84,6 +104,7 @@ export interface ParsedGuideSource {
   vehicleType: string;
   imageSrc: string;
   stepImages: string[];
+  tipImages: string[];
   summary: string;
   markdown: string;
   searchText: string;
@@ -102,7 +123,7 @@ function normalizeText(value: string) {
 function extractSectionContent(source: string, heading: string) {
   const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(
-    `^##\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^##\\s+|\\Z)`,
+    `^#\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^#\\s+|\\Z)`,
     "m",
   );
   const match = source.match(pattern);
@@ -125,7 +146,28 @@ function normalizeBlock(block: string) {
     .trim();
 }
 
-function buildMarkdown(config: VehicleConfig, section: string) {
+function mergeIndentedContinuationLines(block: string) {
+  const merged: string[] = [];
+
+  for (const rawLine of block.split("\n")) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const isContinuation = /^\s{2,}\S/.test(rawLine);
+    if (isContinuation && merged.length > 0) {
+      merged[merged.length - 1] = `${merged[merged.length - 1]} ${trimmed}`;
+      continue;
+    }
+
+    merged.push(trimmed);
+  }
+
+  return merged;
+}
+
+function buildMarkdown(section: string) {
   const blocks = splitSectionBlocks(section);
   if (blocks.length === 0) {
     return { markdown: "", summary: "" };
@@ -137,10 +179,7 @@ function buildMarkdown(config: VehicleConfig, section: string) {
   markdown.push(summary, "");
 
   for (const block of blocks.slice(1)) {
-    const lines = block
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const lines = mergeIndentedContinuationLines(block);
 
     if (lines.length === 0) {
       continue;
@@ -170,7 +209,7 @@ function buildMarkdown(config: VehicleConfig, section: string) {
 }
 
 function getGuideTitle(config: VehicleConfig, markdown: string) {
-  const headingMatch = markdown.match(/^###\s+(.+)$/m);
+  const headingMatch = markdown.match(/^##\s+(.+)$/m);
   if (headingMatch) {
     return headingMatch[1];
   }
@@ -185,23 +224,17 @@ function getStepImages(config: VehicleConfig) {
     );
   }
 
-  const stepImages: string[] = [];
-  const publicDir = path.resolve(process.cwd(), "public");
-  const stepImageDir = config.stepImageDir.replace(/^\//, "");
+  return [];
+}
 
-  for (let index = 1; ; index += 1) {
-    const relativePath = path.join(stepImageDir, `${index}.jpg`);
-    const relativeSrc = `/${relativePath.replace(/\\/g, "/")}`;
-    const imagePath = path.join(publicDir, relativePath);
-
-    if (!fs.existsSync(imagePath)) {
-      break;
-    }
-
-    stepImages.push(relativeSrc);
+function getTipImages(config: VehicleConfig) {
+  if ("tipImageFiles" in config && config.tipImageFiles) {
+    return config.tipImageFiles.map(
+      (fileName) => `${config.stepImageDir}/${fileName}`,
+    );
   }
 
-  return stepImages;
+  return [];
 }
 
 export function getParsedGuideSource(): ParsedGuideSource[] {
@@ -217,7 +250,7 @@ export function getParsedGuideSource(): ParsedGuideSource[] {
       return [];
     }
 
-    const { markdown, summary } = buildMarkdown(config, section);
+    const { markdown, summary } = buildMarkdown(section);
     if (!markdown) {
       return [];
     }
@@ -233,6 +266,7 @@ export function getParsedGuideSource(): ParsedGuideSource[] {
         vehicleType: config.vehicleType,
         imageSrc: config.imageSrc,
         stepImages: getStepImages(config),
+        tipImages: getTipImages(config),
         summary,
         markdown,
         searchText,

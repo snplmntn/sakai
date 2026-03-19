@@ -15,6 +15,7 @@ export interface GuideSummary {
 
 export interface GuideDetail extends GuideSummary {
   stepImages: string[];
+  tipImages: string[];
   markdown: string;
   html: string;
 }
@@ -59,8 +60,12 @@ export function getGuideBySlug(slug: string): GuideDetail | undefined {
   return {
     ...summary,
     stepImages: guide.stepImages,
+    tipImages: guide.tipImages,
     markdown: guide.markdown,
-    html: renderMarkdown(guide.markdown, { stepImages: guide.stepImages }),
+    html: renderMarkdown(guide.markdown, {
+      stepImages: guide.stepImages,
+      tipImages: guide.tipImages,
+    }),
   };
 }
 

@@ -45,7 +45,7 @@ function renderListItem(item: string, stepImageSrc?: string) {
 
 export function renderMarkdown(
   markdown: string,
-  options?: { stepImages?: string[] },
+  options?: { stepImages?: string[]; tipImages?: string[] },
 ) {
   const lines = markdown.split("\n");
   const html: string[] = [];
@@ -53,6 +53,7 @@ export function renderMarkdown(
   let listItems: string[] = [];
   let listTag: "ol" | "ul" | null = null;
   let stepImageIndex = 0;
+  let tipImageIndex = 0;
 
   const flushParagraph = () => {
     if (paragraph.length === 0) {
@@ -71,7 +72,14 @@ export function renderMarkdown(
     }
 
     const items = listItems
-      .map((item) => renderListItem(item, options?.stepImages?.[stepImageIndex++]))
+      .map((item) =>
+        renderListItem(
+          item,
+          listTag === "ol"
+            ? options?.stepImages?.[stepImageIndex++]
+            : options?.tipImages?.[tipImageIndex++],
+        ),
+      )
       .join("");
     html.push(`<${listTag}>${items}</${listTag}>`);
     listItems = [];
