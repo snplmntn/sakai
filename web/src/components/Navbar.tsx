@@ -46,12 +46,7 @@ export default function Navbar() {
         <div className="flex items-center gap-2">
           <Link
             href="/guides"
-            className="text-sm font-medium px-4 py-2 rounded-full transition-opacity hover:opacity-80"
-            style={{
-              color: "var(--text-primary)",
-              border: "1px solid var(--card-border)",
-              background: "rgba(255,255,255,0.5)",
-            }}
+            className="nav-guides-link text-sm font-medium px-4 py-2 rounded-full transition-opacity hover:opacity-80"
           >
             Guides
           </Link>

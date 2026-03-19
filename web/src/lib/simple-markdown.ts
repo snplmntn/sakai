@@ -1,3 +1,15 @@
+function normalizeInlineText(value: string) {
+  return value
+    .replace(/\uFFFD/g, "'")
+    .replace(/\u2019/g, "'")
+    .replace(/\u2018/g, "'")
+    .replace(/\u201c/g, '"')
+    .replace(/\u201d/g, '"')
+    .replace(/\u2013/g, "-")
+    .replace(/\u2014/g, "-")
+    .replace(/\u2026/g, "...");
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -7,7 +19,7 @@ function escapeHtml(value: string) {
 }
 
 function renderInline(value: string) {
-  return escapeHtml(value)
+  return escapeHtml(normalizeInlineText(value))
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");

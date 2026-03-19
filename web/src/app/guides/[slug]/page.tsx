@@ -37,7 +37,6 @@ export default async function GuideDetailPage({
               <p className="guide-detail-summary">{guide.summary}</p>
               <div className="guide-meta">
                 <span>{guide.readTimeLabel}</span>
-                <span>Source: commuting_guides/guides.md</span>
               </div>
             </header>
 
