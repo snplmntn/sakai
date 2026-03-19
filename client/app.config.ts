@@ -23,6 +23,8 @@ const config: ExpoConfig = {
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
         'Sakai uses your location to suggest nearby commute origins and show them on the map.',
+      NSLocationAlwaysAndWhenInUseUsageDescription:
+        'Sakai uses your location during active navigation so it can alert you when you are near your stop.',
       NSMicrophoneUsageDescription:
         'Sakai uses the microphone to let you speak your destination.',
       NSSpeechRecognitionUsageDescription:
@@ -42,7 +44,15 @@ const config: ExpoConfig = {
         apiKey: googleMapsApiKey,
       },
     },
-    permissions: ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'RECORD_AUDIO'],
+    permissions: [
+      'ACCESS_COARSE_LOCATION',
+      'ACCESS_FINE_LOCATION',
+      'ACCESS_BACKGROUND_LOCATION',
+      'FOREGROUND_SERVICE',
+      'FOREGROUND_SERVICE_LOCATION',
+      'POST_NOTIFICATIONS',
+      'RECORD_AUDIO',
+    ],
   },
   web: {
     favicon: './assets/favicon.png',
@@ -54,8 +64,13 @@ const config: ExpoConfig = {
       {
         locationWhenInUsePermission:
           'Sakai uses your location to suggest nearby commute origins and show them on the map.',
+        locationAlwaysAndWhenInUsePermission:
+          'Sakai uses your location during active navigation so it can alert you when you are near your stop.',
+        isAndroidBackgroundLocationEnabled: true,
+        isIosBackgroundLocationEnabled: true,
       },
     ],
+    'expo-notifications',
     '@react-native-voice/voice',
   ],
 };
