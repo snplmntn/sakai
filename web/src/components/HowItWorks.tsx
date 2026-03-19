@@ -1,142 +1,163 @@
 "use client";
 
-import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import {
+  motion,
+  useScroll,
+  useTransform,
+  useMotionValueEvent,
+  AnimatePresence,
+} from "framer-motion";
 import { Mic, Map, Navigation } from "lucide-react";
-import type { Step } from "@/types";
 
-const steps: Step[] = [
+const steps = [
   {
-    number: 1,
-    icon: "mic",
+    number: "01",
+    icon: <Mic size={28} />,
     title: "Speak",
-    description: "Tell Sakai where you want to go. Use a landmark, barangay name, or just describe it.",
+    description:
+      "Tell Sakai where you want to go. Use a landmark, barangay name, or just describe it.",
   },
   {
-    number: 2,
-    icon: "map",
+    number: "02",
+    icon: <Map size={28} />,
     title: "Plan",
-    description: "Sakai finds the best jeepney and transit combination with fare, time, and transfer details.",
+    description:
+      "Sakai finds the best jeepney and transit combination with fare, time, and transfer details.",
   },
   {
-    number: 3,
-    icon: "nav",
+    number: "03",
+    icon: <Navigation size={28} />,
     title: "Go",
-    description: "Follow turn-by-turn guidance with live MMDA alerts to arrive without guesswork.",
+    description:
+      "Follow turn-by-turn guidance with live MMDA alerts to arrive without guesswork.",
   },
-];
-
-const iconMap: Record<string, React.ReactNode> = {
-  mic: <Mic size={24} />,
-  map: <Map size={24} />,
-  nav: <Navigation size={24} />,
-};
+] as const;
 
 export default function HowItWorks() {
   const ref = useRef<HTMLDivElement>(null);
+  const [activeStep, setActiveStep] = useState(0);
+
   const { scrollYProgress } = useScroll({
     target: ref,
-    offset: ["start 0.8", "end 0.5"],
+    offset: ["start start", "end end"],
   });
-  const lineScaleY = useTransform(scrollYProgress, [0, 1], [0, 1]);
+
+  useMotionValueEvent(scrollYProgress, "change", (v) => {
+    setActiveStep(v < 0.33 ? 0 : v < 0.66 ? 1 : 2);
+  });
+
+  const backgroundColor = useTransform(
+    scrollYProgress,
+    [0, 0.33, 0.66, 1],
+    ["#0a1929", "#0d1f35", "#102033", "#102033"],
+  );
+
+  // Step 0 transforms
+  const step0Opacity = useTransform(scrollYProgress, [0, 0.25, 0.33, 0.38], [1, 1, 0.5, 0]);
+  const step0X = useTransform(scrollYProgress, [0.33, 0.38], [0, -60]);
+
+  // Step 1 transforms
+  const step1Opacity = useTransform(scrollYProgress, [0.28, 0.33, 0.58, 0.66], [0, 1, 1, 0]);
+  const step1X = useTransform(scrollYProgress, [0.28, 0.33, 0.58, 0.66], [60, 0, 0, -60]);
+
+  // Step 2 transforms
+  const step2Opacity = useTransform(scrollYProgress, [0.61, 0.66, 1], [0, 1, 1]);
+  const step2X = useTransform(scrollYProgress, [0.61, 0.66], [60, 0]);
+
+  const stepOpacities = [step0Opacity, step1Opacity, step2Opacity];
+  const stepXs = [step0X, step1X, step2X];
 
   return (
-    <section id="how-it-works" className="py-24 px-4 sm:px-6">
-      <div className="max-w-3xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-16"
-        >
-          <span
-            className="inline-block text-xs font-semibold uppercase tracking-widest px-3 py-1 rounded-full mb-4"
-            style={{
-              background: "rgba(0,122,255,0.08)",
-              color: "#007AFF",
-              border: "1px solid rgba(0,122,255,0.15)",
-            }}
-          >
-            How It Works
-          </span>
-          <h2
-            className="text-3xl sm:text-4xl font-bold tracking-tight"
-            style={{ color: "var(--text-primary)" }}
-          >
-            Three steps to your commute
-          </h2>
-        </motion.div>
-
-        {/* Steps with animated connector */}
-        <div ref={ref} className="relative">
-          {/* Connector line */}
-          <div
-            className="absolute left-9 top-10 bottom-10 w-0.5 hidden sm:block"
-            style={{ background: "var(--card-border)" }}
-          >
-            <motion.div
-              className="absolute inset-0 origin-top"
-              style={{
-                scaleY: lineScaleY,
-                background: "#007AFF",
-                opacity: 0.5,
-              }}
-            />
+    <section id="how-it-works" ref={ref} style={{ height: "300vh" }}>
+      <motion.div
+        style={{
+          position: "sticky",
+          top: 0,
+          height: "100vh",
+          overflow: "hidden",
+          backgroundColor,
+        }}
+      >
+        <div className="h-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-20 px-4 sm:px-6 max-w-6xl mx-auto">
+          {/* Left: giant step number */}
+          <div className="flex-shrink-0 flex flex-col items-center lg:items-start">
+            <p
+              className="text-xs uppercase tracking-widest mb-2"
+              style={{ color: "#007AFF", fontFamily: "var(--font-mono)" }}
+            >
+              How It Works
+            </p>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeStep}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.25 }}
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "clamp(8rem, 20vw, 18rem)",
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  color: "#007AFF",
+                  opacity: 0.15,
+                }}
+              >
+                {steps[activeStep].number}
+              </motion.div>
+            </AnimatePresence>
           </div>
 
-          {/* Step cards */}
-          <div className="flex flex-col gap-6">
-            {steps.map((step, idx) => (
+          {/* Right: step content */}
+          <div className="flex-1 relative" style={{ minHeight: "300px" }}>
+            {steps.map((step, i) => (
               <motion.div
                 key={step.number}
-                initial={{ opacity: 0, x: -24 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.55, delay: idx * 0.15, ease: "easeOut" }}
-                className="flex items-start gap-5"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  opacity: stepOpacities[i],
+                  x: stepXs[i],
+                }}
+                className="flex flex-col justify-center"
               >
-                {/* Icon bubble */}
-                <motion.div
-                  whileInView={{ scale: [0.7, 1.1, 1] }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.5, delay: idx * 0.15 + 0.1 }}
-                  className="flex-shrink-0 w-[72px] h-[72px] rounded-2xl flex items-center justify-center z-10"
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6"
                   style={{
                     background: "#007AFF",
                     color: "#ffffff",
                     boxShadow: "0 4px 24px rgba(0,122,255,0.3)",
                   }}
                 >
-                  {iconMap[step.icon]}
-                </motion.div>
-
-                {/* Content */}
-                <div className="card-surface rounded-2xl p-5 flex-1">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span
-                      className="text-xs font-bold uppercase tracking-widest"
-                      style={{ color: "#007AFF" }}
-                    >
-                      Step {step.number}
-                    </span>
-                  </div>
-                  <h3
-                    className="text-lg font-semibold mb-1"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    {step.title}
-                  </h3>
-                  <p className="text-sm leading-relaxed" style={{ color: "var(--text-sub)" }}>
-                    {step.description}
-                  </p>
+                  {step.icon}
                 </div>
+                <h3
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "clamp(2rem, 5vw, 3.5rem)",
+                    fontWeight: 700,
+                    color: "#F7FBFE",
+                    marginBottom: "1rem",
+                  }}
+                >
+                  {step.title}
+                </h3>
+                <p
+                  style={{
+                    color: "#A0B4C8",
+                    fontSize: "clamp(1rem, 1.5vw, 1.25rem)",
+                    lineHeight: 1.6,
+                    maxWidth: "480px",
+                  }}
+                >
+                  {step.description}
+                </p>
               </motion.div>
             ))}
           </div>
         </div>
-      </div>
+      </motion.div>
     </section>
   );
 }

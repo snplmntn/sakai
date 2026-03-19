@@ -56,8 +56,9 @@ Purpose:
 Columns:
 - `id uuid primary key`
 - `fare_rule_version_id uuid not null references public.fare_rule_versions(id) on delete cascade`
-- `product_code text not null unique`
+- `product_code text not null`
 - `mode text not null`
+- `pricing_strategy text not null`
 - `vehicle_class text not null`
 - `minimum_distance_km numeric(6,2) not null`
 - `minimum_fare_regular numeric(8,2) not null`
@@ -67,6 +68,9 @@ Columns:
 - `succeeding_fare_discounted numeric(8,2) null`
 - `notes text null`
 
+Constraint:
+- unique `(fare_rule_version_id, product_code)`
+
 Use these MVP products:
 - `puj_traditional`
 - `puj_modern_non_aircon`
@@ -75,25 +79,21 @@ Use these MVP products:
 - `uv_modern`
 - `car_estimated`
 
-### `public.train_stations`
-Columns:
-- `id uuid primary key`
-- `line_code text not null`
-- `station_code text not null unique`
-- `display_name text not null`
-- `created_at timestamptz not null default timezone('utc', now())`
-
 ### `public.train_station_fares`
 Columns:
 - `id uuid primary key`
 - `fare_rule_version_id uuid not null references public.fare_rule_versions(id) on delete cascade`
-- `origin_station_id uuid not null references public.train_stations(id)`
-- `destination_station_id uuid not null references public.train_stations(id)`
+- `origin_stop_id uuid not null references public.stops(id)`
+- `destination_stop_id uuid not null references public.stops(id)`
 - `regular_fare numeric(8,2) not null`
 - `discounted_fare numeric(8,2) not null`
 
 Constraint:
-- unique `(fare_rule_version_id, origin_station_id, destination_station_id)`
+- unique `(fare_rule_version_id, origin_stop_id, destination_stop_id)`
+
+Train fare identity:
+- reuse existing `public.stops` rows for train stations
+- do not create a separate `train_stations` table for MVP
 
 ## Fare Logic
 Implement fare engine behavior as a backend service, not as controller logic.
@@ -118,13 +118,14 @@ Output per route:
 - `fareAssumptions`
 
 Distance-based rules:
-- for PUJ and UV, use:
+- for products with `pricing_strategy = minimum_plus_succeeding`, use:
   - minimum fare for distance up to `minimum_distance_km`
   - then ceil of remaining distance divided by `succeeding_distance_km`
   - multiply by succeeding fare
+- for products with `pricing_strategy = per_km`, multiply distance by the configured per-km rate and round to 2 decimal places
 - walking legs are always `0.00`
 - car legs use an estimated config and must always return `pricingType = estimated`
-- train legs use exact station-to-station lookup
+- train legs use exact stop-to-stop lookup for train-mode stops
 
 Passenger-type rules:
 - `regular`: use regular pricing

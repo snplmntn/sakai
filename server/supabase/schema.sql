@@ -172,3 +172,73 @@ create index if not exists transfer_points_from_stop_id_idx
 
 create index if not exists transfer_points_to_stop_id_idx
   on public.transfer_points (to_stop_id);
+
+create table if not exists public.fare_rule_versions (
+  id uuid primary key default gen_random_uuid(),
+  mode text not null
+    check (mode in ('jeepney', 'uv', 'mrt3', 'lrt1', 'lrt2', 'car')),
+  version_name text not null,
+  source_name text not null,
+  source_url text not null,
+  effectivity_date date not null,
+  verified_at timestamptz not null,
+  is_active boolean not null default false,
+  trust_level text not null
+    check (trust_level in ('official', 'estimated', 'demo_fallback')),
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create unique index if not exists fare_rule_versions_active_mode_uidx
+  on public.fare_rule_versions (mode)
+  where is_active = true;
+
+create unique index if not exists fare_rule_versions_mode_version_name_uidx
+  on public.fare_rule_versions (mode, version_name);
+
+create index if not exists fare_rule_versions_mode_idx
+  on public.fare_rule_versions (mode);
+
+create table if not exists public.fare_products (
+  id uuid primary key default gen_random_uuid(),
+  fare_rule_version_id uuid not null references public.fare_rule_versions(id) on delete cascade,
+  product_code text not null,
+  mode text not null
+    check (mode in ('jeepney', 'uv', 'car')),
+  pricing_strategy text not null
+    check (pricing_strategy in ('minimum_plus_succeeding', 'per_km')),
+  vehicle_class text not null,
+  minimum_distance_km numeric(6, 2) not null,
+  minimum_fare_regular numeric(8, 2) not null,
+  minimum_fare_discounted numeric(8, 2),
+  succeeding_distance_km numeric(6, 2) not null,
+  succeeding_fare_regular numeric(8, 2) not null,
+  succeeding_fare_discounted numeric(8, 2),
+  notes text,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create unique index if not exists fare_products_version_product_code_uidx
+  on public.fare_products (fare_rule_version_id, product_code);
+
+create index if not exists fare_products_product_code_idx
+  on public.fare_products (product_code);
+
+create table if not exists public.train_station_fares (
+  id uuid primary key default gen_random_uuid(),
+  fare_rule_version_id uuid not null references public.fare_rule_versions(id) on delete cascade,
+  origin_stop_id uuid not null references public.stops(id) on delete cascade,
+  destination_stop_id uuid not null references public.stops(id) on delete cascade,
+  regular_fare numeric(8, 2) not null,
+  discounted_fare numeric(8, 2) not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  check (origin_stop_id <> destination_stop_id)
+);
+
+create unique index if not exists train_station_fares_version_origin_destination_uidx
+  on public.train_station_fares (fare_rule_version_id, origin_stop_id, destination_stop_id);
+
+create index if not exists train_station_fares_origin_stop_id_idx
+  on public.train_station_fares (origin_stop_id);
+
+create index if not exists train_station_fares_destination_stop_id_idx
+  on public.train_station_fares (destination_stop_id);

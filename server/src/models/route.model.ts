@@ -37,6 +37,9 @@ const sortRouteLegRows = (legs: RouteLegRow[]) =>
 const getMissingStopError = (routeLegId: string, stopId: string) =>
   new HttpError(500, `Route leg ${routeLegId} references missing stop ${stopId}`);
 
+const getMissingRouteError = (routeId: string) =>
+  new HttpError(500, `Active route variant references missing active route ${routeId}`);
+
 const getActiveRouteRowsByIds = async (routeIds: string[]): Promise<RouteRow[]> => {
   if (routeIds.length === 0) {
     return [];
@@ -122,6 +125,13 @@ export const getRouteMetadataByVariantIds = async (
     variantIds
   });
   const routeRows = await getActiveRouteRowsByIds(variantRows.map((row) => row.route_id));
+  const routeMap = new Map(routeRows.map((row) => [row.id, row]));
+
+  for (const variantRow of variantRows) {
+    if (!routeMap.has(variantRow.route_id)) {
+      throw getMissingRouteError(variantRow.route_id);
+    }
+  }
 
   return sortRouteSummaries(routeRows.map(mapRouteSummary));
 };
@@ -137,6 +147,13 @@ export const listActiveRouteVariants = async (
 
   const routeRows = await getActiveRouteRowsByIds(variantRows.map((row) => row.route_id));
   const routeMap = new Map(routeRows.map((row) => [row.id, mapRouteSummary(row)]));
+
+  for (const variantRow of variantRows) {
+    if (!routeMap.has(variantRow.route_id)) {
+      throw getMissingRouteError(variantRow.route_id);
+    }
+  }
+
   const legRows = await getRouteLegRowsByVariantIds(variantRows.map((row) => row.id));
   const stops = await getStopsByIds(
     legRows.flatMap((row) => [row.from_stop_id, row.to_stop_id])

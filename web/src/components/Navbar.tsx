@@ -36,7 +36,7 @@ export default function Navbar() {
           />
           <span
             className="text-lg font-semibold tracking-tight"
-            style={{ color: "var(--text-primary)" }}
+            style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
           >
             Sakai
           </span>
