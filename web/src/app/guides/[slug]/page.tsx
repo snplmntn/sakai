@@ -4,6 +4,8 @@ import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { getAllGuides, getGuideBySlug } from "@/lib/guides";
 
+export const dynamic = "force-dynamic";
+
 export function generateStaticParams() {
   return getAllGuides().map((guide) => ({
     slug: guide.slug,

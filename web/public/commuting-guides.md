@@ -1,103 +1,103 @@
 # Walking
 
-Walking is unavoidable in order to get around. When walking, try your best to stay aware of your surroundings.
+Walking is a normal part of getting around. When walking, always stay aware of your surroundings.
 
 ## Tips for Walking
 
 - Stay on the sidewalks and avoid walking on the road.
-- Keep your bag closed and your belongings secure during your commute. Be constantly aware of your surroundings to prevent your belongings from being snatched.
-- Look towards the direction of oncoming traffic before crossing.
-- Cross at a steady pace, but do not dally. Taking too long will irritate the drivers.
-- Do not text or chat while crossing the street.
+- Keep your bag closed and your belongings secure during your commute. Stay alert to your surroundings to avoid theft.
+- Look in the direction of oncoming traffic before crossing.
+- Cross at a steady pace and avoid taking too long, as this may frustrate drivers.
+- Do not use your phone or chat while crossing the street.
 
 # Jeepney
 
-Jeepneys are the most common mode of transportation. They have fixed routes and are used for both short and long distances. These modified war vehicles are usually made of stainless steel decorated with bright and colorful designs.
+Jeepneys are the most common mode of transportation. They follow fixed routes and are used for both short and long trips. These vehicles are made of stainless steel and are often decorated with bright and colorful designs.
 
 ## How to Ride the Jeepney
 
-1. Jeepneys usually have signboards on their windshield with their stops written on it. They also have their stops written on the sides of the jeepneys.
-2. Extend your hand to hail your chosen jeepney. If you are not sure whether the jeepney is passing by your destination, you can always ask the driver before getting on board.
-3. After getting a seat, pay by calling out “Bayad po!” and reach out with your payment.
-4. Say “Para po!” to halt the jeepney when you arrive at your destination. Some jeepneys have strings that you can pull on to signal the driver to stop.
-5. Keep your belongings close to keep them safe. Try to cover the sides of your bag to prevent thieves from slashing them.
+1. Jeepneys usually display their routes on signboards located on the windshield and along the sides.
+2. Raise your hand to hail the jeepney you want to ride. If you are unsure whether it passes your destination, you can ask the driver before boarding.
+3. Once seated, pay by saying “Bayad po!” and pass your fare forward.
+4. When you are near your stop, say “Para po!” to signal the driver to stop. Some jeepneys also have strings you can pull to signal the driver.
+5. Keep your belongings close and secure. Try to cover your bag to prevent theft.
 
 # MRT/LRT
 
-The Metro Railway Transit and Light Railway Transit cover long distances and provide a direct route to different places throughout the metro. However, this mode of transportation can get rather crowded during rush hours.
+The Metro Railway Transit and Light Railway Transit travel long distances and provide direct routes across the metro. However, they can become very crowded during rush hours.
 
 ## How to Ride the MRT/LRT
 
-1. You can either line up at the ticket booths or the vending machines.
-2. The fares for each station are shown at the windows of the ticket booths. You can either choose to buy the single journey card or the Beep stored value card. Prepare your fare beforehand.
-3. To get a single-journey card, tell the cashier your stop, pay, and get your card. To get a Beep card, simply ask for it. There is an additional P20 cost. Beep cards can also be reloaded here.
-4. You can either buy a single-journey card or reload your card through the vending machines. Buying a single-journey card just requires you to insert money into the machine and choosing your stop.
-5. To reload your Beep card, place your card on the scanner and keep it there until the transaction is over. The minimum amount to reload is P13. Keep the receipt in case anything goes wrong.
-6. Go to the terminals. Single-journey cards should be inserted into the slot while Beep cards are tapped against the scanner. Do not leave it there; you should get it back.
-7. Line up behind the yellow brackets. When boarding, it is generally a good idea to stand at the sides and let people exit first.
-8. Get on the train and find a seat. During rush hour, this is a race. If none, find a place to stand. Generally, standing near the doors lets you off faster.
-9. Listen to the announcer for the next stop. When in doubt, check the back of the card for the map.
-10. Get down at your stop. Single-journey cards are inserted into the slot and will not be returned. Beep cards are tapped against the scanner to exit.
-11. There will be signs pointing you to your exit. If you are not sure which way to go, the security guards are willing to help.
+1. You can line up at the ticket booths or use the vending machines.
+2. Fare information is displayed at the ticket booth windows. You can choose between a single journey card or a Beep stored value card. Prepare your fare in advance.
+3. To get a single journey card, tell the cashier your destination, pay, and receive your card. To get a Beep card, simply request one. It has an additional cost of P20 and can be reloaded.
+4. You can also buy or reload cards using vending machines. For a single journey card, insert your payment and select your destination.
+5. To reload a Beep card, place it on the scanner and keep it there until the process is complete. The minimum reload amount is P13. Keep your receipt in case of issues.
+6. Proceed to the gates. Insert single journey cards into the slot. Tap Beep cards on the scanner and take them back after use.
+7. Line up behind the yellow markers. When boarding, stand to the side and allow passengers to exit first.
+8. Enter the train and look for a seat. If none are available, find a place to stand. Standing near the doors makes it easier to exit.
+9. Listen for announcements of the next station. If unsure, check the map on the back of your card.
+10. Get off at your stop. Insert single journey cards at the exit. Tap Beep cards on the scanner to leave.
+11. Follow the signs leading to the exit. If you are unsure, security personnel can assist you.
 
 # Bus
 
-Buses are best for long-distance transportation. They operate not only within Metro Manila, but also traverse long distances to the provinces. The buses that have provincial routes have scheduled trips.
+Buses are ideal for long-distance travel. They operate within Metro Manila and also travel to different provinces. Provincial buses usually follow fixed schedules.
 
 ## How to Ride the Bus
 
-1. Buses have signboards with their stops in front. There are many signboards, so try to start looking for your stop from a good distance.
-2. Extend your hand to hail the bus. Board and try to look for a seat as you traverse the aisle. If there are none, make sure that you are not standing in the middle so as not to block the way.
-3. The conductor will approach you for payment. Tell him or her your stop and pay the fare. He or she will give you a ticket in return; make sure to keep it.
-4. The inspector may board the bus and ask to see your ticket. Make sure to have it ready in a handy place.
-5. The conductor will shout out the stops. Approach the door when you hear yours.
+1. Buses display their routes on signboards at the front. Since there can be many signboards, check early to find your stop.
+2. Raise your hand to hail the bus. Once on board, look for a seat as you move along the aisle. If there are no seats available, avoid standing in the middle to keep the aisle clear.
+3. The conductor will collect your fare. Tell him or her your destination, pay, and keep the ticket provided.
+4. An inspector may check your ticket during the trip. Keep it in an accessible place.
+5. The conductor will call out stops. Move toward the door when your stop is announced.
 
 # Tricycle
 
-Tricycles are used for short distance travel and can carry up to three passengers comfortably. It has two modes: regular, which would wait for the tricycle to be filled, and special, which would cater to you and your companions for a much higher price.
+Tricycles are used for short-distance travel and can comfortably carry up to three passengers. They operate in two modes: regular, where the vehicle waits to be filled, and special, where it serves only you or your group for a higher fare.
 
 ## How to Ride the Tricycle
 
-1. For regular: Get on the tricycle.  
-   For special: Tell the driver your destination before boarding the tricycle.
-2. For regular: Tell the driver “Para po!” when you are near or at your destination.  
-   For special: Give specific instructions to your destination.
-3. Pay once you get off the tricycle. Do not forget to slip in a “Thank you!”.
+1. For regular: Simply get on the tricycle.  
+   For special: Tell the driver your destination before boarding.
+2. For regular: Say “Para po!” when you are near your destination.  
+   For special: Give clear directions to your destination.
+3. Pay after getting off the tricycle. Do not forget to say “Thank you!”.
 
 # FX
 
-Originally known as the Tamaraw FX, the FX provides a more comfortable and expensive ride than the jeepney. Most FXs can seat up to ten people.
+Originally known as the Tamaraw FX, this vehicle offers a more comfortable but more expensive ride compared to jeepneys. Most FX vehicles can carry up to ten passengers.
 
 ## How to Ride the FX
 
-1. FXs have signboards in front with their stops written on it. They also have their start and end terminals written on the sides of their doors.
-2. Extend your hand to hail the FX.
-3. Hold out your payment and call out “Bayad po!”. If you are seated at the back, you can ask others to pass your payment. Tell the driver your destination and how many people you are paying for.
-4. Tell the driver “Para po!” when you are near or at your destination.
-5. If you are riding from the terminal, a conductor might collect the payment before boarding. Tell him or her your stop as you pay.
+1. FX vehicles display their routes on signboards in front. Their starting and ending terminals are also shown on the sides.
+2. Raise your hand to hail the FX.
+3. Hold out your payment and say “Bayad po!”. If seated at the back, you can ask other passengers to pass your payment. Inform the driver of your destination and how many passengers you are paying for.
+4. Say “Para po!” when you are near your stop.
+5. If boarding at a terminal, a conductor may collect payment before you enter. Tell him or her your destination while paying.
 
 # Taxi
 
-Taxis can take you anywhere in the city and the fare is based on a meter.
+Taxis can take you anywhere in the city, and fares are calculated using a meter.
 
 ## How to Ride the Taxi
 
-1. Tell the driver your destination before boarding.
-2. The meter on the dashboard will tell you your fare.
-3. If the driver is not familiar with your destination, guide him or her. Pay him or her once you arrive.
+1. Tell the driver your destination before getting in.
+2. The fare will be shown on the meter located on the dashboard.
+3. If the driver is unfamiliar with your destination, guide him or her. Pay once you arrive.
 
 ### Tips
 
-- Take note of the license plate on the inside of the door. As a security measure, you may text the taxi’s plate number to someone you trust.
-- Always stay alert during your commute and make sure there is nothing suspicious going on inside the taxi. If there is, ask to be dropped off immediately.
+- Take note of the license plate inside the door. For safety, you may send the plate number to someone you trust.
+- Stay alert during your ride and be aware of your surroundings. If something feels suspicious, ask the driver to stop and let you get off immediately.
 
 # Comet E-Jeep
 
-An E-jeepney works very much like a regular jeepney. However, it runs on electricity so it runs more smoothly and quietly. It also has a smaller carbon footprint than its counterpart, the diesel-powered jeepney.
+An E-jeepney works similarly to a traditional jeepney but runs on electricity. It operates more smoothly and quietly and produces less environmental impact compared to diesel-powered jeepneys.
 
 ## How to Ride the Comet E-Jeep
 
-1. The Comet E-Jeep’s payment system uses a reloadable card. You can buy this at the terminal booth.
-2. The card comes with a set amount of load which you can reload at the terminal booth.
-3. Tap your card against the sensor at the entrance of the E-Jeep before boarding.
-4. The Comet E-Jeep has designated stops throughout its route. Alight the E-Jeep once you have reached your destination.
+1. The Comet E-Jeep uses a reloadable card system. You can purchase this card at the terminal booth.
+2. The card comes with initial load and can be reloaded at the terminal.
+3. Tap your card on the sensor at the entrance before boarding.
+4. The E-Jeep follows designated stops. Get off once you reach your destination.
