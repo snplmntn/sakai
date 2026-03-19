@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
+import { useToast } from '../toast/ToastContext';
 
 const PROFILE_STATS = [
   { value: '08', label: 'Saved routes' },
@@ -77,9 +78,9 @@ const getErrorMessage = (error: unknown): string =>
 
 export default function ProfileScreen(_props: ProfileScreenProps) {
   const { user, refreshUser, signOut } = useAuth();
+  const { showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -87,13 +88,12 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
     const syncProfile = async () => {
       try {
         await refreshUser();
-
-        if (isMounted) {
-          setErrorMessage(null);
-        }
       } catch (error) {
         if (isMounted) {
-          setErrorMessage(getErrorMessage(error));
+          showToast({
+            tone: 'error',
+            message: getErrorMessage(error),
+          });
         }
       } finally {
         if (isMounted) {
@@ -118,6 +118,15 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
 
     try {
       await signOut();
+      showToast({
+        tone: 'success',
+        message: 'You have been logged out.',
+      });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        message: getErrorMessage(error),
+      });
     } finally {
       setIsSigningOut(false);
     }
@@ -127,20 +136,20 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
   const emailAddress = user?.email ?? 'No email available';
 
   return (
-    <SafeScreen backgroundColor={COLORS.surface} useGradient={true}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+    <SafeScreen
+      backgroundColor={COLORS.surface}
+      topInsetBackgroundColor="#102033"
+      statusBarStyle="light"
+      useGradient={true}
+    >
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerCard}>
-          <View style={styles.headerGlow} />
-          <Text style={styles.title}>Profile</Text>
+          <View style={styles.headerRule} />
+          <Text style={styles.headerLabel}>Profile</Text>
 
-          <View style={styles.card}>
-            <View style={styles.avatarRing}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{getInitial(displayName)}</Text>
-              </View>
+          <View style={styles.identityRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{getInitial(displayName)}</Text>
             </View>
             <View style={styles.identityBlock}>
               <Text style={styles.name}>{displayName}</Text>
@@ -152,71 +161,70 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
           </View>
         </View>
 
-        {isRefreshing ? (
-          <View style={styles.syncRow}>
-            <ActivityIndicator size="small" color={COLORS.primary} />
-            <Text style={styles.syncText}>Syncing your profile</Text>
-          </View>
-        ) : null}
-
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-        <View style={styles.statsRow}>
-          {PROFILE_STATS.map((item) => (
-            <View key={item.label} style={styles.statCard}>
-              <Text style={styles.statValue}>{item.value}</Text>
-              <Text style={styles.statText}>{item.label}</Text>
+        <View style={styles.body}>
+          {isRefreshing ? (
+            <View style={styles.statusRow}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.statusText}>Syncing your profile</Text>
             </View>
-          ))}
-        </View>
+          ) : null}
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          <Text style={styles.sectionSubtitle}>
-            These settings shape how Sakai surfaces route suggestions for you.
-          </Text>
-
-          <View style={styles.preferenceRow}>
-            {PREFERENCES.map((item) => (
-              <View key={item} style={styles.preferenceChip}>
-                <Text style={styles.preferenceText}>{item}</Text>
+          <View style={styles.statsCard}>
+            {PROFILE_STATS.map((item, index) => (
+              <View
+                key={item.label}
+                style={[styles.statItem, index !== PROFILE_STATS.length - 1 && styles.statDivider]}
+              >
+                <Text style={styles.statValue}>{item.value}</Text>
+                <Text style={styles.statLabel}>{item.label}</Text>
               </View>
             ))}
           </View>
-        </View>
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Account overview</Text>
-
-          {ACCOUNT_SECTIONS.map((section, index) => (
-            <View
-              key={section.title}
-              style={[styles.detailRow, index !== ACCOUNT_SECTIONS.length - 1 && styles.detailDivider]}
-            >
-              <Text style={styles.detailTitle}>{section.title}</Text>
-              <Text style={styles.detailDescription}>{section.description}</Text>
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Preferences</Text>
+            <Text style={styles.sectionSubtitle}>
+              These settings shape how Sakai ranks route suggestions for you.
+            </Text>
+            <View style={styles.preferenceRow}>
+              {PREFERENCES.map((item) => (
+                <View key={item} style={styles.preferenceChip}>
+                  <Text style={styles.preferenceText}>{item}</Text>
+                </View>
+              ))}
             </View>
-          ))}
+          </View>
+
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Account overview</Text>
+            <View style={styles.detailList}>
+              {ACCOUNT_SECTIONS.map((section, index) => (
+                <View
+                  key={section.title}
+                  style={[styles.detailRow, index !== ACCOUNT_SECTIONS.length - 1 && styles.detailDivider]}
+                >
+                  <Text style={styles.detailTitle}>{section.title}</Text>
+                  <Text style={styles.detailDescription}>{section.description}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.logoutButton, isSigningOut && styles.logoutButtonDisabled]}
+            onPress={() => {
+              void handleLogout();
+            }}
+            activeOpacity={0.88}
+            disabled={isSigningOut}
+          >
+            {isSigningOut ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.logoutText}>Log Out</Text>}
+          </TouchableOpacity>
+
+          <Text style={styles.logoutHint}>
+            Logging out returns you to onboarding without deleting your saved commute preferences.
+          </Text>
         </View>
-
-        <TouchableOpacity
-          style={[styles.logoutButton, isSigningOut && styles.logoutButtonDisabled]}
-          onPress={() => {
-            void handleLogout();
-          }}
-          activeOpacity={0.85}
-          disabled={isSigningOut}
-        >
-          {isSigningOut ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.logoutText}>Log Out</Text>
-          )}
-        </TouchableOpacity>
-
-        <Text style={styles.logoutHint}>
-          Logging out returns you to onboarding without deleting your saved commute preferences.
-        </Text>
       </ScrollView>
     </SafeScreen>
   );
@@ -224,61 +232,51 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.md,
     paddingBottom: SPACING.xl + 24,
   },
+  body: {
+    paddingHorizontal: SPACING.md,
+    gap: SPACING.lg,
+  },
   headerCard: {
-    position: 'relative',
-    overflow: 'hidden',
     backgroundColor: '#102033',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
+    borderBottomLeftRadius: RADIUS.lg,
+    borderBottomRightRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xl,
     marginBottom: SPACING.lg,
   },
-  headerGlow: {
-    position: 'absolute',
-    top: -56,
-    right: -16,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+  headerRule: {
+    width: 40,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: COLORS.primary,
+    marginBottom: SPACING.md,
   },
-  title: {
-    fontSize: TYPOGRAPHY.fontSizes.title,
-    fontFamily: FONTS.bold,
-    color: COLORS.white,
+  headerLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: 'rgba(255,255,255,0.68)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
     marginBottom: SPACING.lg,
   },
-  card: {
+  identityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
   },
-  avatarRing: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  avatar: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.md,
   },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: COLORS.white,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   avatarText: {
-    fontSize: TYPOGRAPHY.fontSizes.title,
+    fontSize: TYPOGRAPHY.fontSizes.xlarge,
     fontFamily: FONTS.bold,
     color: COLORS.primary,
   },
@@ -302,109 +300,97 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: SPACING.xs + 2,
     borderRadius: 999,
-    backgroundColor: COLORS.white,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   memberBadgeText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#102033',
+    fontFamily: FONTS.medium,
+    color: COLORS.white,
   },
-  statsRow: {
+  statusRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: SPACING.sm,
-    marginBottom: SPACING.lg,
   },
-  syncRow: {
+  statusText: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.medium,
+    color: '#5D7286',
+  },
+  statsCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  syncText: {
-    marginLeft: SPACING.sm,
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.medium,
-    color: COLORS.subText,
-  },
-  errorText: {
-    marginBottom: SPACING.md,
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.medium,
-    color: COLORS.danger,
-  },
-  statCard: {
-    flex: 1,
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.sm,
-    alignItems: 'center',
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#E4ECF2',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    borderColor: '#E2EAF0',
+  },
+  statItem: {
+    flex: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+  },
+  statDivider: {
+    borderRightWidth: 1,
+    borderRightColor: '#E4ECF2',
   },
   statValue: {
-    fontSize: TYPOGRAPHY.fontSizes.xlarge,
+    fontSize: TYPOGRAPHY.fontSizes.large,
     fontFamily: FONTS.bold,
-    color: COLORS.text,
+    color: '#102033',
     marginBottom: SPACING.xs,
   },
-  statText: {
+  statLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: COLORS.subText,
+    color: '#5D7286',
     textAlign: 'center',
   },
   sectionCard: {
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
-    marginBottom: SPACING.lg,
     borderWidth: 1,
-    borderColor: '#E4ECF2',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
-    shadowRadius: 16,
-    elevation: 3,
+    borderColor: '#E2EAF0',
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSizes.large,
     fontFamily: FONTS.bold,
-    color: COLORS.text,
+    color: '#102033',
     marginBottom: SPACING.xs,
   },
   sectionSubtitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: COLORS.subText,
+    color: '#5D7286',
     lineHeight: 22,
     marginBottom: SPACING.md,
   },
   preferenceRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
-    marginBottom: -SPACING.xs,
+    gap: SPACING.sm,
   },
   preferenceChip: {
-    backgroundColor: '#EEF5FF',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 2,
     borderRadius: 999,
-    marginHorizontal: SPACING.xs,
-    marginBottom: SPACING.xs,
+    backgroundColor: '#F4F8FB',
+    borderWidth: 1,
+    borderColor: '#E2EAF0',
   },
   preferenceText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
-    color: COLORS.primary,
+    color: '#415466',
+  },
+  detailList: {
+    marginTop: SPACING.sm,
   },
   detailRow: {
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.md,
   },
   detailDivider: {
     borderBottomWidth: 1,
@@ -413,21 +399,20 @@ const styles = StyleSheet.create({
   detailTitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.semibold,
-    color: COLORS.text,
+    color: '#102033',
     marginBottom: SPACING.xs,
   },
   detailDescription: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: COLORS.subText,
+    color: '#5D7286',
     lineHeight: 22,
   },
   logoutButton: {
-    backgroundColor: '#101828',
-    paddingVertical: SPACING.md + 2,
+    backgroundColor: COLORS.black,
     borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.md + 2,
     alignItems: 'center',
-    marginTop: SPACING.xs,
   },
   logoutButtonDisabled: {
     opacity: 0.7,
@@ -440,10 +425,8 @@ const styles = StyleSheet.create({
   logoutHint: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
-    color: COLORS.subText,
+    color: '#5D7286',
     lineHeight: 20,
     textAlign: 'center',
-    marginTop: SPACING.md,
-    paddingHorizontal: SPACING.sm,
   },
 });

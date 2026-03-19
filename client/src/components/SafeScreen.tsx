@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, ViewStyle, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar, StatusBarStyle } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, GRADIENTS } from '../constants/theme';
@@ -10,21 +10,36 @@ interface SafeScreenProps {
   style?: ViewStyle;
   statusBarStyle?: StatusBarStyle;
   backgroundColor?: string;
+  topInsetBackgroundColor?: string;
   useGradient?: boolean;
 }
 
 const SafeScreen: React.FC<SafeScreenProps> = ({
   children,
   style,
-  statusBarStyle = 'auto',
+  statusBarStyle = 'dark',
   backgroundColor = COLORS.white,
+  topInsetBackgroundColor = COLORS.white,
   useGradient = false,
 }) => {
+  const insets = useSafeAreaInsets();
+
   const content = (
-    <SafeAreaView style={[styles.container, style]}>
+    <View style={styles.container}>
+      <View
+        style={[
+          styles.topInset,
+          {
+            height: insets.top,
+            backgroundColor: topInsetBackgroundColor,
+          },
+        ]}
+      />
       <StatusBar style={statusBarStyle} />
-      {children}
-    </SafeAreaView>
+      <SafeAreaView edges={['bottom', 'left', 'right']} style={[styles.container, style]}>
+        {children}
+      </SafeAreaView>
+    </View>
   );
 
   if (useGradient) {
@@ -48,6 +63,9 @@ const SafeScreen: React.FC<SafeScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  topInset: {
+    width: '100%',
   },
 });
 

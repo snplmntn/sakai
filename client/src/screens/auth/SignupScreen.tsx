@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { ViewIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
+import { GoogleIcon, ViewIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../auth/api';
@@ -12,14 +12,18 @@ import SafeScreen from '../../components/SafeScreen';
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
 export default function SignupScreen({ navigation }: { navigation: NavigationProp }) {
-  const { signUp } = useAuth();
+  const { signUp, authenticateWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeAction, setActiveAction] = useState<'email' | 'google' | null>(null);
+
+  const isSubmitting = activeAction !== null;
+  const isEmailSubmitting = activeAction === 'email';
+  const isGoogleSubmitting = activeAction === 'google';
 
   const handleSubmit = async () => {
     if (isSubmitting) {
@@ -36,7 +40,7 @@ export default function SignupScreen({ navigation }: { navigation: NavigationPro
       return;
     }
 
-    setIsSubmitting(true);
+    setActiveAction('email');
     setErrorMessage(null);
 
     try {
@@ -53,7 +57,28 @@ export default function SignupScreen({ navigation }: { navigation: NavigationPro
           : 'Unable to create your account right now. Please try again.'
       );
     } finally {
-      setIsSubmitting(false);
+      setActiveAction(null);
+    }
+  };
+
+  const handleGoogleSignUp = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setActiveAction('google');
+    setErrorMessage(null);
+
+    try {
+      await authenticateWithGoogle('signup');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError
+          ? error.message
+          : 'Unable to sign up with Google right now. Please try again.'
+      );
+    } finally {
+      setActiveAction(null);
     }
   };
 
@@ -137,10 +162,28 @@ export default function SignupScreen({ navigation }: { navigation: NavigationPro
             activeOpacity={0.85}
             disabled={isSubmitting}
           >
-            {isSubmitting ? (
+            {isEmailSubmitting ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
               <Text style={styles.buttonText}>Create Account</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.googleButton, isSubmitting && styles.buttonDisabled]}
+            onPress={() => {
+              void handleGoogleSignUp();
+            }}
+            activeOpacity={0.85}
+            disabled={isSubmitting}
+          >
+            {isGoogleSubmitting ? (
+              <ActivityIndicator color={COLORS.text} />
+            ) : (
+              <View style={styles.googleButtonContent}>
+                <HugeiconsIcon icon={GoogleIcon} size={20} color={COLORS.text} />
+                <Text style={styles.googleButtonText}>Sign up with Google</Text>
+              </View>
             )}
           </TouchableOpacity>
         </View>
@@ -243,6 +286,25 @@ const styles = StyleSheet.create({
   buttonText: {
     color: COLORS.white,
     fontFamily: FONTS.bold,
+  },
+  googleButton: {
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#D6E0E8',
+    paddingVertical: SPACING.md + 2,
+    borderRadius: RADIUS.xl,
+    alignItems: 'center',
+  },
+  googleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  googleButtonText: {
+    marginLeft: SPACING.sm,
+    color: COLORS.text,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.semibold,
   },
   footer: {
     flex: 1,
