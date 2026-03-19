@@ -50,21 +50,15 @@ export default function RoutesScreen() {
       backgroundColor={COLORS.surface}
       topInsetBackgroundColor="#102033"
       statusBarStyle="light"
-      useGradient={true}
     >
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
           <View style={styles.heroRule} />
-          <View style={styles.heroTopRow}>
-            <Text style={styles.heroSectionLabel}>Routes</Text>
-            <View style={styles.heroPreferenceBadge}>
-              <Text style={styles.heroPreferenceText}>Balanced</Text>
-            </View>
-          </View>
-          <Text style={styles.heroTitle}>Where to Sakai today?</Text>
+          <Text style={styles.heroTitle}>
+            Sak<Text style={{ color: '#FFB267' }}>ai</Text> tayo?
+          </Text>
           <Text style={styles.heroSubtitle}>
-            Voice-first route planning with jeepney-aware options, fare visibility, and relevant corridor
-            updates.
+            Your digital “barker” for the modern commute.
           </Text>
 
           <View style={styles.searchCard}>
@@ -76,9 +70,7 @@ export default function RoutesScreen() {
               <Text style={styles.searchFieldLabel}>From</Text>
               <Text style={styles.searchFieldValue}>Bambang, Manila</Text>
             </View>
-            <Text style={styles.searchHint}>
-              Type a place, choose a suggestion, or speak naturally to start planning.
-            </Text>
+            <Text style={styles.searchHint}>Tap or speak to start.</Text>
             <View style={styles.exampleRow}>
               {SEARCH_EXAMPLES.map((destination) => (
                 <View key={destination} style={styles.exampleChip}>
@@ -119,10 +111,7 @@ export default function RoutesScreen() {
               <Text style={styles.sectionTitle}>Map and route canvas</Text>
               <Text style={styles.sectionMeta}>Google Maps</Text>
             </View>
-            <Text style={styles.sectionDescription}>
-              Place search and map rendering come from Google Maps. Sakai overlays simpler route comparison,
-              fares, and commute-friendly explanations on top.
-            </Text>
+            <Text style={styles.sectionDescription}>Google Maps drives the canvas.</Text>
             <View style={styles.mapSurface}>
               <View style={styles.mapLineRow}>
                 <View style={[styles.mapNode, styles.mapNodeOrigin]} />
@@ -190,9 +179,7 @@ export default function RoutesScreen() {
               <Text style={styles.sectionTitle}>Area updates</Text>
               <Text style={styles.sectionMeta}>Route relevant</Text>
             </View>
-            <Text style={styles.sectionDescription}>
-              Show only MMDA updates that affect the rider’s corridor or transfer decision.
-            </Text>
+            <Text style={styles.sectionDescription}>Only corridor-relevant alerts.</Text>
             <View style={styles.alertList}>
               {ALERTS.map((alert) => (
                 <View key={alert.title} style={styles.alertRow}>
@@ -235,33 +222,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     marginBottom: SPACING.md,
   },
-  heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-    gap: SPACING.sm,
-  },
-  heroSectionLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: 'rgba(255,255,255,0.68)',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heroPreferenceBadge: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  heroPreferenceText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.white,
-  },
   heroTitle: {
     fontSize: TYPOGRAPHY.fontSizes.hero,
     fontFamily: FONTS.bold,
@@ -291,12 +251,12 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   searchTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: 14,
     fontFamily: FONTS.semibold,
     color: COLORS.white,
   },
   searchMeta: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
     fontFamily: FONTS.medium,
     color: 'rgba(255,255,255,0.64)',
   },
@@ -308,21 +268,21 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   searchFieldLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
     fontFamily: FONTS.medium,
     color: COLORS.subText,
     marginBottom: SPACING.xs,
   },
   searchFieldValue: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: 14,
     fontFamily: FONTS.semibold,
     color: '#102033',
   },
   searchHint: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 12,
     fontFamily: FONTS.regular,
     color: 'rgba(255,255,255,0.68)',
-    lineHeight: 20,
+    lineHeight: 18,
     marginBottom: SPACING.md,
   },
   exampleRow: {
@@ -358,7 +318,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   sectionTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontSize: 16,
     fontFamily: FONTS.bold,
     color: '#102033',
   },
@@ -368,10 +328,10 @@ const styles = StyleSheet.create({
     color: '#5D7286',
   },
   sectionDescription: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: 13,
     fontFamily: FONTS.regular,
     color: '#5D7286',
-    lineHeight: 22,
+    lineHeight: 18,
   },
   preferenceRow: {
     flexDirection: 'row',
@@ -465,7 +425,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   routeEyebrow: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
     textTransform: 'uppercase',
@@ -483,15 +443,15 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   routeTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontSize: 16,
     fontFamily: FONTS.bold,
     color: '#102033',
   },
   routeSummary: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: 13,
     fontFamily: FONTS.regular,
     color: '#5D7286',
-    lineHeight: 22,
+    lineHeight: 18,
   },
   routeMetaRow: {
     flexDirection: 'row',
@@ -527,7 +487,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   routeStatValue: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontSize: 14,
     fontFamily: FONTS.bold,
     color: '#102033',
   },
@@ -553,15 +513,15 @@ const styles = StyleSheet.create({
     borderBottomColor: '#EEF2F6',
   },
   alertTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: 14,
     fontFamily: FONTS.semibold,
     color: '#102033',
     marginBottom: SPACING.xs,
   },
   alertDetail: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: 13,
     fontFamily: FONTS.regular,
     color: '#5D7286',
-    lineHeight: 22,
+    lineHeight: 18,
   },
 });
