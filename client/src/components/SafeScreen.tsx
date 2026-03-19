@@ -46,7 +46,7 @@ const SafeScreen: React.FC<SafeScreenProps> = ({
     return (
       <LinearGradient
         colors={GRADIENTS.soft}
-        style={[styles.container, { backgroundColor }]}
+        style={[styles.container, style]}
       >
         {content}
       </LinearGradient>

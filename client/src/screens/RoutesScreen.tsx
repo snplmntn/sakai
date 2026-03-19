@@ -1149,7 +1149,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   routeEyebrow: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
     textTransform: 'uppercase',
@@ -1168,10 +1168,10 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   routeSummary: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontSize: 13,
     fontFamily: FONTS.regular,
     color: '#5D7286',
-    lineHeight: 22,
+    lineHeight: 18,
   },
   statsRow: {
     flexDirection: 'row',

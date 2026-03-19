@@ -20,7 +20,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   return (
     <View style={styles.wrapper}>
-      {/* Floating MIC Button */}
       <View style={styles.fabContainer}>
         <TouchableOpacity
           style={[styles.fab, micExpanded && styles.fabActive]}
@@ -35,7 +34,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
         </TouchableOpacity>
       </View>
 
-      {/* Tab Bar */}
       <View style={styles.container}>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
@@ -86,6 +84,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 const styles = StyleSheet.create({
   wrapper: {
     position: 'relative',
+    backgroundColor: COLORS.white,
   },
   container: {
     flexDirection: 'row',
@@ -94,11 +93,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
   },
   tab: {
     flex: 1,
