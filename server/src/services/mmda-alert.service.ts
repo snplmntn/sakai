@@ -5,10 +5,23 @@ import {
   extractMmdaAlertWithAi
 } from "../ai/mmda-alert.js";
 import { getEnv } from "../config/env.js";
+import * as areaUpdateModel from "../models/area-update.model.js";
+import { fetchMmdaSourceWithBrowser } from "./mmda-browser-fetch.service.js";
 
 const DEFAULT_MMDA_SOURCE_URLS = [
   "https://x.com/MMDA",
   "https://mmda.gov.ph/mmda-social-media.html"
+];
+
+const CHALLENGE_MARKERS = [
+  "just a moment",
+  "checking your browser",
+  "verify you are human",
+  "attention required",
+  "cf-browser-verification",
+  "challenge-platform",
+  "captcha",
+  "enable javascript and cookies"
 ];
 
 export interface ScrapedMmdaAlert {
@@ -37,6 +50,8 @@ export interface RefreshMmdaAlertsOptions {
   now?: Date;
 }
 
+export interface SyncMmdaAlertsOptions extends RefreshMmdaAlertsOptions {}
+
 const decodeEntities = (value: string): string =>
   value
     .replace(/&nbsp;/gi, " ")
@@ -55,6 +70,134 @@ const normalizeContent = (content: string): string =>
     .replace(/\\n/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+const looksLikeBotChallenge = (content: string) => {
+  const normalized = content.toLowerCase();
+
+  return CHALLENGE_MARKERS.some((marker) => normalized.includes(marker));
+};
+
+const isXSourceUrl = (sourceUrl: string) => {
+  try {
+    const { hostname } = new URL(sourceUrl);
+    return hostname === "x.com" || hostname === "www.x.com" || hostname === "twitter.com";
+  } catch {
+    return sourceUrl.includes("x.com/MMDA");
+  }
+};
+
+const extractMmdaAlertMessagesForSource = (
+  sourceUrl: string,
+  content: string,
+  extractedText?: string
+) => {
+  if (isXSourceUrl(sourceUrl) && extractedText) {
+    const xMessages = extractMmdaAlertMessages(extractedText);
+    if (xMessages.length > 0) {
+      return xMessages;
+    }
+  }
+
+  return extractMmdaAlertMessages(content);
+};
+
+const isBrowserFallbackEnabled = () => getEnv().MMDA_BROWSER_FALLBACK_ENABLED;
+
+interface FetchedMmdaSource {
+  content: string;
+  extractedText?: string;
+  sourceMethod: "fetch" | "browser";
+}
+
+const fetchSourceContentViaHttp = async (
+  sourceUrl: string,
+  fetchImpl: typeof fetch
+) => {
+  const response = await fetchImpl(sourceUrl, {
+    headers: {
+      "user-agent": "Mozilla/5.0 (compatible; Sakai MMDA scraper/1.0)",
+      "accept-language": "en-US,en;q=0.9"
+    }
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    content: await response.text()
+  };
+};
+
+const fetchSourceContentWithFallback = async (
+  sourceUrl: string,
+  fetchImpl: typeof fetch
+): Promise<FetchedMmdaSource | null> => {
+  try {
+    const response = await fetchSourceContentViaHttp(sourceUrl, fetchImpl);
+    const messages = extractMmdaAlertMessages(response.content);
+    const challengeDetected = looksLikeBotChallenge(response.content);
+
+    if (response.ok && !challengeDetected && messages.length > 0) {
+      return {
+        content: response.content,
+        extractedText: undefined,
+        sourceMethod: "fetch" as const
+      };
+    }
+
+    console.warn("MMDA source requires browser fallback", {
+      sourceUrl,
+      status: response.status,
+      challengeDetected,
+      extractedAlerts: messages.length
+    });
+  } catch (error) {
+    console.warn("Failed to fetch MMDA source over HTTP", {
+      sourceUrl,
+      reason: error instanceof Error ? error.message : "unknown fetch error"
+    });
+  }
+
+  if (!isBrowserFallbackEnabled()) {
+    return null;
+  }
+
+  try {
+    const browserResponse = await fetchMmdaSourceWithBrowser(sourceUrl, {
+      extractDomText: isXSourceUrl(sourceUrl)
+    });
+    const extractedText = browserResponse.extractedText;
+    const messages = extractMmdaAlertMessagesForSource(
+      sourceUrl,
+      browserResponse.content,
+      extractedText
+    );
+    const challengeDetected =
+      looksLikeBotChallenge(browserResponse.content) ||
+      (extractedText ? looksLikeBotChallenge(extractedText) : false);
+
+    if (challengeDetected || messages.length === 0) {
+      console.warn("Browser fallback did not yield usable MMDA content", {
+        sourceUrl,
+        finalUrl: browserResponse.finalUrl,
+        challengeDetected,
+        extractedAlerts: messages.length
+      });
+      return null;
+    }
+
+    return {
+      content: browserResponse.content,
+      extractedText,
+      sourceMethod: "browser" as const
+    };
+  } catch (error) {
+    console.warn("Browser fallback failed for MMDA source", {
+      sourceUrl,
+      reason: error instanceof Error ? error.message : "unknown browser error"
+    });
+    return null;
+  }
+};
 
 export const extractMmdaAlertMessages = (content: string): string[] => {
   const normalized = normalizeContent(content);
@@ -147,33 +290,23 @@ export const refreshMmdaAlerts = async (
   const alerts = new Map<string, ScrapedMmdaAlert>();
 
   for (const sourceUrl of sourceUrls) {
-    let response: Response;
+    const fetchedSource = await fetchSourceContentWithFallback(sourceUrl, fetchImpl);
 
-    try {
-      response = await fetchImpl(sourceUrl, {
-        headers: {
-          "user-agent": "Mozilla/5.0 (compatible; Sakai MMDA scraper/1.0)",
-          "accept-language": "en-US,en;q=0.9"
-        }
-      });
-    } catch (error) {
-      console.warn("Failed to fetch MMDA source", {
-        sourceUrl,
-        reason: error instanceof Error ? error.message : "unknown fetch error"
-      });
+    if (!fetchedSource) {
       continue;
     }
 
-    if (!response.ok) {
-      console.warn("MMDA source returned a non-success status", {
-        sourceUrl,
-        status: response.status
-      });
-      continue;
-    }
+    const messages = extractMmdaAlertMessagesForSource(
+      sourceUrl,
+      fetchedSource.content,
+      fetchedSource.extractedText
+    );
 
-    const content = await response.text();
-    const messages = extractMmdaAlertMessages(content);
+    console.info("MMDA source fetched successfully", {
+      sourceUrl,
+      sourceMethod: fetchedSource.sourceMethod,
+      extractedAlerts: messages.length
+    });
 
     for (const message of messages) {
       const parsedAlert = parseMmdaAlertMessage(message, sourceUrl, now);
@@ -188,4 +321,37 @@ export const refreshMmdaAlerts = async (
   }
 
   return [...alerts.values()];
+};
+
+export const syncMmdaAlerts = async (
+  options: SyncMmdaAlertsOptions = {}
+) => {
+  const scrapedAlerts = await refreshMmdaAlerts(options);
+
+  if (scrapedAlerts.length === 0) {
+    return {
+      scrapedAlerts,
+      savedAlerts: []
+    };
+  }
+
+  try {
+    const savedAlerts = await areaUpdateModel.upsertAreaUpdates(scrapedAlerts);
+
+    return {
+      scrapedAlerts,
+      savedAlerts
+    };
+  } catch (error) {
+    console.error("MMDA alerts were scraped but could not be saved", {
+      operation: "mmda_upsert_area_updates",
+      scrapedAlerts: scrapedAlerts.length,
+      reason: error instanceof Error ? error.message : "unknown error",
+      sources: [
+        ...new Set(scrapedAlerts.map((alert) => alert.sourceUrl))
+      ]
+    });
+
+    throw error;
+  }
 };

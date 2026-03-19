@@ -245,6 +245,8 @@ create index if not exists area_updates_normalized_location_idx
 create index if not exists area_updates_corridor_tags_gin_idx
   on public.area_updates using gin (corridor_tags);
 
+grant select, insert, update, delete on public.area_updates to service_role;
+
 create table if not exists public.places (
   id uuid primary key default gen_random_uuid(),
   canonical_name text not null,
