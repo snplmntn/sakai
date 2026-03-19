@@ -13,6 +13,17 @@ import { COLORS, RADIUS, FONTS } from '../constants/theme';
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const [micExpanded, setMicExpanded] = useState(false);
+  const focusedOptions = descriptors[state.routes[state.index]?.key]?.options;
+  const flattenedTabBarStyle = StyleSheet.flatten(focusedOptions?.tabBarStyle);
+  const isTabBarHidden =
+    typeof flattenedTabBarStyle === 'object' &&
+    flattenedTabBarStyle !== null &&
+    'display' in flattenedTabBarStyle &&
+    flattenedTabBarStyle.display === 'none';
+
+  if (isTabBarHidden) {
+    return null;
+  }
 
   const handleMicPress = () => {
     setMicExpanded(!micExpanded);

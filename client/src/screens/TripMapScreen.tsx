@@ -1,19 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { StatusBar } from 'expo-status-bar';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import SafeScreen from '../components/SafeScreen';
 import { hasGooglePlacesApiKey } from '../config/env';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import { useNavigationAlarm } from '../navigation-alert/NavigationAlarmContext';
+import type { NavigationRouteCandidate, NavigationTarget } from '../navigation-alert/types';
 import { reverseGeocodeCurrentLocation } from '../places/api';
 import {
   createGooglePlacesSessionToken,
@@ -26,9 +36,13 @@ import { useToast } from '../toast/ToastContext';
 
 const SEARCH_EXAMPLES = ['Pasay', 'Magallanes', 'Gate 3'];
 const DEMO_RESULT_DELAY_MS = 450;
+const SHEET_HANDLE_HEIGHT = 34;
+const SHEET_EXPANDED_RATIO = 0.68;
+const SHEET_COLLAPSED_RATIO = 0.32;
 
 type ActiveField = 'origin' | 'destination' | null;
 type ResultPhase = 'idle' | 'loading' | 'ready';
+type SheetSnap = 'collapsed' | 'expanded';
 type SuggestedRouteCard = {
   id: string;
   eyebrow: string;
@@ -68,6 +82,12 @@ const DEMO_ROUTE_CARDS: SuggestedRouteCard[] = [
     isDemo: true,
   },
 ];
+
+const DEMO_DESTINATION_TARGET: NavigationTarget = {
+  latitude: 14.5489,
+  longitude: 121.0557,
+  label: 'BGC drop-off',
+};
 
 const mapDisambiguationMatches = (value: unknown): SakaiPlaceSuggestion[] => {
   if (!Array.isArray(value)) {
@@ -117,8 +137,58 @@ const buildDemoSelectedPlace = (label: string): SelectedPlace => ({
   placeId: `demo-${label.trim().toLowerCase().replace(/\s+/gu, '-')}`,
 });
 
+function DemoMapBackground() {
+  return (
+    <View style={styles.demoMapSurface}>
+      <View style={[styles.mapWater, styles.mapWaterNorth]} />
+      <View style={[styles.mapWater, styles.mapWaterSouth]} />
+      <View style={[styles.mapPark, styles.mapParkWest]} />
+      <View style={[styles.mapPark, styles.mapParkEast]} />
+
+      <View style={[styles.mapRoad, styles.mapRoadA]} />
+      <View style={[styles.mapRoad, styles.mapRoadB]} />
+      <View style={[styles.mapRoad, styles.mapRoadC]} />
+      <View style={[styles.mapRoad, styles.mapRoadD]} />
+      <View style={[styles.mapRoadThin, styles.mapRoadE]} />
+      <View style={[styles.mapRoadThin, styles.mapRoadF]} />
+      <View style={[styles.mapRoadThin, styles.mapRoadG]} />
+      <View style={[styles.mapRoadThin, styles.mapRoadH]} />
+
+      <Svg style={styles.demoMapSvg} viewBox="0 0 100 100" preserveAspectRatio="none">
+        <Path
+          d="M 16 74 C 28 71, 34 62, 44 58 S 62 49, 72 43 S 84 32, 90 27"
+          stroke="#22A447"
+          strokeWidth="2.6"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Circle cx="16" cy="74" r="3.6" fill="#FFFFFF" />
+        <Circle cx="16" cy="74" r="2.2" fill="#2563EB" />
+        <Circle cx="56" cy="52" r="2.8" fill="#FFFFFF" />
+        <Circle cx="56" cy="52" r="1.7" fill="#8BBBEA" />
+        <Circle cx="90" cy="27" r="3.8" fill="#FFFFFF" />
+        <Circle cx="90" cy="27" r="2.4" fill="#F97316" />
+      </Svg>
+
+      <View style={[styles.mapLabelChip, styles.mapLabelOrigin]}>
+        <Text style={styles.mapLabelText}>Espana</Text>
+      </View>
+      <View style={[styles.mapLabelChip, styles.mapLabelTransfer]}>
+        <Text style={styles.mapLabelText}>MRT transfer</Text>
+      </View>
+      <View style={[styles.mapLabelChip, styles.mapLabelDestination]}>
+        <Text style={styles.mapLabelText}>BGC</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function TripMapScreen() {
   const { showToast } = useToast();
+  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { setNavigationCandidate } = useNavigationAlarm();
   const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
     origin: createGooglePlacesSessionToken(),
@@ -137,9 +207,50 @@ export default function TripMapScreen() {
   const [statusMessage, setStatusMessage] = useState('Choose a routeable stop or Google place.');
   const [resultPhase, setResultPhase] = useState<ResultPhase>('idle');
   const [hasAttemptedStructuredOrigin, setHasAttemptedStructuredOrigin] = useState(false);
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>('expanded');
 
   const activeQuery = activeField === 'origin' ? originQuery : destinationQuery;
   const canUseGooglePlaces = hasGooglePlacesApiKey();
+  const selectedRoute =
+    DEMO_ROUTE_CARDS.find((card) => card.id === selectedRouteId) ?? DEMO_ROUTE_CARDS[0] ?? null;
+  const expandedSheetHeight = Math.min(
+    Math.max(windowHeight * SHEET_EXPANDED_RATIO, 420),
+    windowHeight - insets.top - 32
+  );
+  const collapsedSheetHeight = Math.min(
+    Math.max(windowHeight * SHEET_COLLAPSED_RATIO, 240),
+    320
+  );
+  const collapsedOffset = Math.max(expandedSheetHeight - collapsedSheetHeight, 0);
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  const sheetTranslateValueRef = useRef(0);
+  const sheetDragStartRef = useRef(0);
+
+  useEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: resultPhase === 'idle' ? undefined : { display: 'none' },
+    });
+
+    return () => {
+      navigation.setOptions({ tabBarStyle: undefined });
+    };
+  }, [navigation, resultPhase]);
+
+  useEffect(() => {
+    const listenerId = sheetTranslateY.addListener(({ value }) => {
+      sheetTranslateValueRef.current = value;
+    });
+
+    return () => {
+      sheetTranslateY.removeListener(listenerId);
+    };
+  }, [sheetTranslateY]);
+
+  useEffect(() => {
+    const targetOffset = sheetSnap === 'collapsed' ? collapsedOffset : 0;
+    sheetTranslateY.setValue(targetOffset);
+    sheetTranslateValueRef.current = targetOffset;
+  }, [collapsedOffset, sheetSnap, sheetTranslateY]);
 
   useEffect(() => {
     setNavigationCandidate(null);
@@ -154,6 +265,33 @@ export default function TripMapScreen() {
     };
   }, [setNavigationCandidate]);
 
+  useEffect(() => {
+    if (resultPhase !== 'ready' || !selectedRoute) {
+      setNavigationCandidate(null);
+      return;
+    }
+
+    const nextCandidate: NavigationRouteCandidate = {
+      routeId: selectedRoute.id,
+      routeLabel: selectedRoute.title,
+      summary: selectedRoute.summary,
+      durationLabel: selectedRoute.duration,
+      fareLabel: selectedRoute.fare,
+      destination: DEMO_DESTINATION_TARGET,
+    };
+
+    setNavigationCandidate(nextCandidate);
+  }, [resultPhase, selectedRoute, setNavigationCandidate]);
+
+  useEffect(() => {
+    if (originSelection || hasAttemptedStructuredOrigin) {
+      return;
+    }
+
+    setHasAttemptedStructuredOrigin(true);
+    void resolveCurrentOrigin();
+  }, [hasAttemptedStructuredOrigin, originSelection]);
+
   const clearDemoSearchTimer = () => {
     if (!demoSearchTimerRef.current) {
       return;
@@ -163,12 +301,65 @@ export default function TripMapScreen() {
     demoSearchTimerRef.current = null;
   };
 
+  const animateSheetTo = (nextSnap: SheetSnap) => {
+    const toValue = nextSnap === 'collapsed' ? collapsedOffset : 0;
+    setSheetSnap(nextSnap);
+
+    Animated.spring(sheetTranslateY, {
+      toValue,
+      useNativeDriver: true,
+      damping: 22,
+      stiffness: 220,
+      mass: 0.9,
+    }).start();
+  };
+
+  const sheetPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) &&
+          Math.abs(gestureState.dy) > 6,
+        onPanResponderGrant: () => {
+          sheetDragStartRef.current = sheetTranslateValueRef.current;
+        },
+        onPanResponderMove: (_, gestureState) => {
+          const nextValue = Math.min(
+            Math.max(sheetDragStartRef.current + gestureState.dy, 0),
+            collapsedOffset
+          );
+          sheetTranslateY.setValue(nextValue);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          const currentValue = Math.min(
+            Math.max(sheetTranslateValueRef.current + gestureState.dy, 0),
+            collapsedOffset
+          );
+          const shouldCollapse =
+            gestureState.vy > 0.45 || currentValue > collapsedOffset / 2;
+
+          animateSheetTo(shouldCollapse ? 'collapsed' : 'expanded');
+        },
+        onPanResponderTerminate: () => {
+          animateSheetTo(sheetSnap);
+        },
+      }),
+    [collapsedOffset, sheetSnap, sheetTranslateY]
+  );
+
   const resetDemoResults = () => {
     clearDemoSearchTimer();
     setResultPhase('idle');
     setSelectedRouteId(null);
+    setSheetSnap('expanded');
     setStatusMessage('Choose a routeable stop or Google place.');
     setNavigationCandidate(null);
+  };
+
+  const handleEditTrip = () => {
+    resetDemoResults();
+    setActiveField(null);
+    setSuggestions([]);
   };
 
   const resolveCurrentOrigin = async (): Promise<SelectedPlace | null> => {
@@ -241,14 +432,16 @@ export default function TripMapScreen() {
   const startDemoSearch = () => {
     clearDemoSearchTimer();
     setResultPhase('loading');
+    setSheetSnap('expanded');
     setSelectedRouteId(DEMO_ROUTE_CARDS[0]?.id ?? null);
     setStatusMessage('Finding route options...');
     setNavigationCandidate(null);
 
     demoSearchTimerRef.current = setTimeout(() => {
       setResultPhase('ready');
-      setStatusMessage('Select a route card to preview the commute.');
+      setStatusMessage('Swipe down to reveal more of the map.');
       demoSearchTimerRef.current = null;
+      animateSheetTo('expanded');
     }, DEMO_RESULT_DELAY_MS);
   };
 
@@ -278,21 +471,12 @@ export default function TripMapScreen() {
     startDemoSearch();
   };
 
-  useEffect(() => {
-    if (originSelection || hasAttemptedStructuredOrigin) {
-      return;
-    }
-
-    setHasAttemptedStructuredOrigin(true);
-    void resolveCurrentOrigin();
-  }, [hasAttemptedStructuredOrigin, originSelection]);
-
   const resetGoogleSessionToken = (field: 'origin' | 'destination') => {
     googleSessionTokensRef.current[field] = createGooglePlacesSessionToken();
   };
 
   useEffect(() => {
-    if (!activeField || activeQuery.trim().length < 2) {
+    if (!activeField || activeQuery.trim().length < 2 || resultPhase !== 'idle') {
       setSuggestions([]);
       setLoadingSuggestions(false);
       return;
@@ -330,7 +514,7 @@ export default function TripMapScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [activeField, activeQuery, canUseGooglePlaces]);
+  }, [activeField, activeQuery, canUseGooglePlaces, resultPhase]);
 
   const selectSuggestion = async (suggestion: PlaceSuggestion) => {
     const field = activeField;
@@ -350,7 +534,6 @@ export default function TripMapScreen() {
         setOriginQuery(selected.label);
       } else {
         resetDemoResults();
-        await ensureOriginSelection();
         setDestinationSelection(selected);
         setDestinationQuery(selected.label);
       }
@@ -383,6 +566,117 @@ export default function TripMapScreen() {
     }
   };
 
+  if (resultPhase !== 'idle') {
+    return (
+      <View style={styles.resultsScreen}>
+        <StatusBar style="dark" />
+        <DemoMapBackground />
+
+        <View style={[styles.topOverlayRow, { top: insets.top + SPACING.md }]}>
+          <Pressable style={styles.floatingEditButton} onPress={handleEditTrip}>
+            <Text style={styles.floatingEditButtonIcon}>{"←"}</Text>
+            <Text style={styles.floatingEditButtonText}>Edit trip</Text>
+          </Pressable>
+        </View>
+
+        <Animated.View
+          style={[
+            styles.bottomSheet,
+            {
+              height: expandedSheetHeight + insets.bottom,
+              paddingBottom: insets.bottom + SPACING.md,
+              transform: [{ translateY: sheetTranslateY }],
+            },
+          ]}
+        >
+          <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleZone}>
+            <View style={styles.sheetHandle} />
+          </View>
+
+          {resultPhase === 'loading' ? (
+            <View style={styles.loadingSheetBody}>
+              <ActivityIndicator color={COLORS.primary} />
+              <Text style={styles.loadingSheetText}>{statusMessage}</Text>
+            </View>
+          ) : (
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={sheetSnap === 'expanded'}
+              contentContainerStyle={styles.sheetContent}
+            >
+              <View style={styles.sheetSectionCard}>
+                <View style={styles.canvasHeader}>
+                  <View style={styles.canvasCopy}>
+                    <Text style={styles.sectionTitle}>Map and route canvas</Text>
+                    <Text style={styles.canvasSubtitle}>Google Maps drives the canvas.</Text>
+                  </View>
+                  <Text style={styles.canvasMeta}>Google Maps</Text>
+                </View>
+                <View style={styles.canvasRailCard}>
+                  <View style={styles.canvasRail}>
+                    <View style={[styles.canvasDot, styles.canvasDotOrigin]} />
+                    <View style={[styles.canvasTrack, styles.canvasTrackActive]} />
+                    <View style={[styles.canvasDot, styles.canvasDotTransfer]} />
+                    <View style={styles.canvasTrack} />
+                    <View style={[styles.canvasDot, styles.canvasDotDestination]} />
+                  </View>
+                  <View style={styles.canvasLabels}>
+                    <Text style={styles.canvasLabel}>Origin</Text>
+                    <Text style={styles.canvasLabel}>Transfer</Text>
+                    <Text style={styles.canvasLabel}>Destination</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.sheetSectionHeader}>
+                <Text style={styles.sectionTitle}>Suggested routes</Text>
+                <Text style={styles.routesMeta}>Jeepney-first</Text>
+              </View>
+
+              {DEMO_ROUTE_CARDS.map((card) => (
+                <Pressable
+                  key={card.id}
+                  style={[
+                    styles.routeCard,
+                    selectedRouteId === card.id && styles.routeCardSelected,
+                  ]}
+                  onPress={() => setSelectedRouteId(card.id)}
+                >
+                  <View style={styles.routeCardTop}>
+                    <Text style={styles.routeEyebrow}>{card.eyebrow}</Text>
+                    <View style={styles.routeBadge}>
+                      <Text style={styles.routeBadgeText}>{card.badge}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.routeTitle}>{card.title}</Text>
+                  <Text style={styles.routeSummary}>{card.summary}</Text>
+                  <Text style={styles.routeModeSummary}>{card.modes}</Text>
+                  <View style={styles.routeStatsGrid}>
+                    <View style={styles.routeStatCell}>
+                      <Text style={styles.routeStatLabel}>Time</Text>
+                      <Text style={styles.routeStatValue}>{card.duration}</Text>
+                    </View>
+                    <View style={styles.routeStatDivider} />
+                    <View style={styles.routeStatCell}>
+                      <Text style={styles.routeStatLabel}>Fare</Text>
+                      <Text style={styles.routeStatValue}>{card.fare}</Text>
+                    </View>
+                    <View style={styles.routeStatDivider} />
+                    <View style={styles.routeStatCell}>
+                      <Text style={styles.routeStatLabel}>Transfers</Text>
+                      <Text style={styles.routeStatValue}>{card.transfers}</Text>
+                    </View>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+        </Animated.View>
+      </View>
+    );
+  }
+
   return (
     <SafeScreen
       backgroundColor={COLORS.white}
@@ -397,7 +691,7 @@ export default function TripMapScreen() {
             Sakai routeable stops are suggested first, with Google Places as fallback.
           </Text>
 
-          <View style={styles.card}>
+          <View style={styles.searchCard}>
             <View style={styles.row}>
               <Text style={styles.label}>From</Text>
               <Pressable
@@ -486,85 +780,6 @@ export default function TripMapScreen() {
             )}
           </View>
         </View>
-
-        {resultPhase === 'loading' ? (
-          <View style={[styles.sectionCard, styles.routeStatusCard]}>
-            <ActivityIndicator color={COLORS.primary} />
-            <Text style={styles.statusText}>{statusMessage}</Text>
-          </View>
-        ) : null}
-
-        {resultPhase === 'ready' ? (
-          <>
-            <View style={[styles.sectionCard, styles.canvasCard]}>
-              <View style={styles.canvasHeader}>
-                <View style={styles.canvasCopy}>
-                  <Text style={styles.sectionTitle}>Map and route canvas</Text>
-                  <Text style={styles.canvasSubtitle}>Google Maps drives the canvas.</Text>
-                </View>
-                <Text style={styles.canvasMeta}>Google Maps</Text>
-              </View>
-              <View style={styles.canvasRailCard}>
-                <View style={styles.canvasRail}>
-                  <View style={[styles.canvasDot, styles.canvasDotOrigin]} />
-                  <View style={[styles.canvasTrack, styles.canvasTrackActive]} />
-                  <View style={[styles.canvasDot, styles.canvasDotTransfer]} />
-                  <View style={styles.canvasTrack} />
-                  <View style={[styles.canvasDot, styles.canvasDotDestination]} />
-                </View>
-                <View style={styles.canvasLabels}>
-                  <Text style={styles.canvasLabel}>Origin</Text>
-                  <Text style={styles.canvasLabel}>Transfer</Text>
-                  <Text style={styles.canvasLabel}>Destination</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.routesSection}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Suggested routes</Text>
-                <Text style={styles.routesMeta}>Jeepney-first</Text>
-              </View>
-
-              {DEMO_ROUTE_CARDS.map((card) => (
-                <Pressable
-                  key={card.id}
-                  style={[
-                    styles.routeCard,
-                    selectedRouteId === card.id && styles.routeCardSelected,
-                  ]}
-                  onPress={() => setSelectedRouteId(card.id)}
-                >
-                  <View style={styles.routeCardTop}>
-                    <Text style={styles.routeEyebrow}>{card.eyebrow}</Text>
-                    <View style={styles.routeBadge}>
-                      <Text style={styles.routeBadgeText}>{card.badge}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.routeTitle}>{card.title}</Text>
-                  <Text style={styles.routeSummary}>{card.summary}</Text>
-                  <Text style={styles.routeModeSummary}>{card.modes}</Text>
-                  <View style={styles.routeStatsGrid}>
-                    <View style={styles.routeStatCell}>
-                      <Text style={styles.routeStatLabel}>Time</Text>
-                      <Text style={styles.routeStatValue}>{card.duration}</Text>
-                    </View>
-                    <View style={styles.routeStatDivider} />
-                    <View style={styles.routeStatCell}>
-                      <Text style={styles.routeStatLabel}>Fare</Text>
-                      <Text style={styles.routeStatValue}>{card.fare}</Text>
-                    </View>
-                    <View style={styles.routeStatDivider} />
-                    <View style={styles.routeStatCell}>
-                      <Text style={styles.routeStatLabel}>Transfers</Text>
-                      <Text style={styles.routeStatValue}>{card.transfers}</Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </>
-        ) : null}
       </ScrollView>
     </SafeScreen>
   );
@@ -593,7 +808,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.72)',
     lineHeight: 22,
   },
-  card: {
+  searchCard: {
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: RADIUS.sm,
     padding: SPACING.lg,
@@ -686,31 +901,247 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
   },
-  sectionCard: {
-    marginHorizontal: SPACING.md,
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: SPACING.md,
+  resultsScreen: {
+    flex: 1,
+    backgroundColor: '#E8F0F7',
+  },
+  demoMapSurface: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#F0ECE2',
+    overflow: 'hidden',
+  },
+  mapWater: {
+    position: 'absolute',
+    backgroundColor: '#D8EAF7',
+    opacity: 0.95,
+  },
+  mapWaterNorth: {
+    right: -24,
+    top: 116,
+    width: 190,
+    height: 118,
+    borderTopLeftRadius: 88,
+    borderBottomLeftRadius: 72,
+    transform: [{ rotate: '-8deg' }],
+  },
+  mapWaterSouth: {
+    left: -28,
+    bottom: 176,
+    width: 220,
+    height: 110,
+    borderTopRightRadius: 92,
+    borderBottomRightRadius: 64,
+    transform: [{ rotate: '7deg' }],
+  },
+  mapPark: {
+    position: 'absolute',
+    backgroundColor: '#DDEBCF',
+    opacity: 0.92,
+  },
+  mapParkWest: {
+    left: 28,
+    top: 164,
+    width: 118,
+    height: 86,
+    borderRadius: 32,
+    transform: [{ rotate: '-12deg' }],
+  },
+  mapParkEast: {
+    right: 42,
+    top: 278,
+    width: 88,
+    height: 68,
+    borderRadius: 28,
+    transform: [{ rotate: '14deg' }],
+  },
+  mapRoad: {
+    position: 'absolute',
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#D3D2CD',
+  },
+  mapRoadThin: {
+    position: 'absolute',
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: '#DBD9D2',
+  },
+  mapRoadA: {
+    left: -24,
+    top: 96,
+    width: 260,
+    transform: [{ rotate: '14deg' }],
+  },
+  mapRoadB: {
+    right: -40,
+    top: 158,
+    width: 286,
+    transform: [{ rotate: '-22deg' }],
+  },
+  mapRoadC: {
+    left: -56,
+    top: 286,
+    width: 320,
+    transform: [{ rotate: '-4deg' }],
+  },
+  mapRoadD: {
+    right: -72,
+    bottom: 268,
+    width: 280,
+    transform: [{ rotate: '28deg' }],
+  },
+  mapRoadE: {
+    left: 22,
+    top: 236,
+    width: 168,
+    transform: [{ rotate: '78deg' }],
+  },
+  mapRoadF: {
+    right: 54,
+    top: 84,
+    width: 152,
+    transform: [{ rotate: '92deg' }],
+  },
+  mapRoadG: {
+    left: 104,
+    bottom: 248,
+    width: 196,
+    transform: [{ rotate: '18deg' }],
+  },
+  mapRoadH: {
+    right: 18,
+    bottom: 170,
+    width: 146,
+    transform: [{ rotate: '-66deg' }],
+  },
+  demoMapSvg: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapLabelChip: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#EEF2F6',
-    gap: SPACING.sm,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
-  routeStatusCard: {
-    minHeight: 76,
-    justifyContent: 'center',
+  mapLabelOrigin: {
+    left: SPACING.lg,
+    bottom: 244,
+  },
+  mapLabelTransfer: {
+    left: 132,
+    bottom: 312,
+  },
+  mapLabelDestination: {
+    right: SPACING.lg,
+    top: 166,
+  },
+  mapLabelText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#102033',
+  },
+  topOverlayRow: {
+    position: 'absolute',
+    left: SPACING.md,
+    right: SPACING.md,
+    zIndex: 10,
+  },
+  floatingEditButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderWidth: 1,
+    borderColor: '#DCE6F0',
   },
-  statusText: {
+  floatingEditButtonIcon: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
+  floatingEditButtonText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#102033',
+  },
+  bottomSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: '#E7EDF3',
+    overflow: 'hidden',
+    shadowColor: '#0B1A2B',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  sheetHandleZone: {
+    height: SHEET_HANDLE_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetHandle: {
+    width: 52,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#C8D4E0',
+  },
+  loadingSheetBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    paddingBottom: SPACING.xl,
+  },
+  loadingSheetText: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
     color: '#657789',
-    lineHeight: 22,
     textAlign: 'center',
+    lineHeight: 22,
   },
-  canvasCard: {
+  sheetContent: {
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.lg,
     gap: SPACING.md,
+  },
+  sheetSectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
     padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+    gap: SPACING.md,
+  },
+  sheetSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.xs,
+  },
+  sectionTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
+  routesMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#7890A5',
   },
   canvasHeader: {
     flexDirection: 'row',
@@ -721,11 +1152,6 @@ const styles = StyleSheet.create({
   canvasCopy: {
     flex: 1,
     gap: SPACING.xs,
-  },
-  sectionTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
   },
   canvasSubtitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
@@ -785,23 +1211,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.medium,
     color: '#6B8297',
   },
-  routesSection: {
-    gap: SPACING.md,
-    marginTop: -SPACING.sm,
-  },
-  sectionHeader: {
-    marginHorizontal: SPACING.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  routesMeta: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#7890A5',
-  },
   routeCard: {
-    marginHorizontal: SPACING.md,
     backgroundColor: COLORS.card,
     borderRadius: 16,
     padding: SPACING.lg,
@@ -837,7 +1247,6 @@ const styles = StyleSheet.create({
     color: '#6A9BC8',
   },
   routeTitle: {
-    flex: 1,
     fontSize: TYPOGRAPHY.fontSizes.large,
     fontFamily: FONTS.bold,
     color: '#102033',
