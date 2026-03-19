@@ -5,9 +5,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import * as ExpoAuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 
 import {
   ApiError,
+  getGoogleAuthUrl,
   getMe,
   refreshSession,
   signIn as signInRequest,
@@ -22,6 +25,8 @@ import {
 import {
   hasAuthenticatedSession,
   type AuthPayload,
+  type GoogleAuthOrigin,
+  parseGoogleAuthCallbackResult,
   type AuthSession,
   type AuthStatus,
   type AuthUser,
@@ -34,6 +39,7 @@ interface AuthContextValue {
   session: AuthSession | null;
   signIn: (email: string, password: string) => Promise<AuthPayload>;
   signUp: (email: string, password: string) => Promise<AuthPayload>;
+  authenticateWithGoogle: (origin: GoogleAuthOrigin) => Promise<void>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
 }
@@ -68,6 +74,8 @@ const toAuthenticatedState = (value: StoredAuthState): AuthState => ({
   session: value.session,
 });
 
+const GOOGLE_AUTH_REDIRECT_PATH = 'auth/callback';
+
 const assertAuthenticatedPayload = (value: AuthPayload): StoredAuthState => {
   if (!hasAuthenticatedSession(value)) {
     throw new Error('The server did not return an authenticated session');
@@ -81,6 +89,16 @@ const assertAuthenticatedPayload = (value: AuthPayload): StoredAuthState => {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [authState, setAuthState] = useState<AuthState>(HYDRATING_STATE);
+
+  const persistAuthenticatedState = async (value: StoredAuthState): Promise<void> => {
+    await writeStoredAuthState(value);
+    setAuthState(toAuthenticatedState(value));
+  };
+
+  const clearAuthState = async (): Promise<void> => {
+    await clearStoredAuthState();
+    setAuthState(UNAUTHENTICATED_STATE);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -101,16 +119,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         });
         const nextState = assertAuthenticatedPayload(refreshedPayload);
 
-        await writeStoredAuthState(nextState);
+        await persistAuthenticatedState(nextState);
 
-        if (isMounted) {
-          setAuthState(toAuthenticatedState(nextState));
+        if (!isMounted) {
+          return;
         }
       } catch {
-        await clearStoredAuthState();
+        await clearAuthState();
 
-        if (isMounted) {
-          setAuthState(UNAUTHENTICATED_STATE);
+        if (!isMounted) {
+          return;
         }
       }
     };
@@ -129,8 +147,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     });
     const nextState = assertAuthenticatedPayload(payload);
 
-    await writeStoredAuthState(nextState);
-    setAuthState(toAuthenticatedState(nextState));
+    await persistAuthenticatedState(nextState);
 
     return payload;
   };
@@ -141,10 +158,49 @@ export function AuthProvider({ children }: AuthProviderProps) {
       password,
     });
 
-    await clearStoredAuthState();
-    setAuthState(UNAUTHENTICATED_STATE);
+    await clearAuthState();
 
     return payload;
+  };
+
+  const authenticateWithGoogle = async (origin: GoogleAuthOrigin): Promise<void> => {
+    const actionLabel = origin === 'signup' ? 'sign up' : 'sign in';
+    const redirectUri = ExpoAuthSession.makeRedirectUri({
+      scheme: 'sakai',
+      path: GOOGLE_AUTH_REDIRECT_PATH,
+    });
+    const googleAuthUrlPayload = await getGoogleAuthUrl();
+    const authResult = await WebBrowser.openAuthSessionAsync(
+      googleAuthUrlPayload.url,
+      redirectUri
+    );
+
+    if (authResult.type !== 'success') {
+      throw new Error(
+        authResult.type === 'cancel'
+          ? `Google ${actionLabel} was cancelled.`
+          : `Google ${actionLabel} did not complete.`
+      );
+    }
+
+    const callbackResult = parseGoogleAuthCallbackResult(authResult.url);
+
+    if (callbackResult.status === 'error') {
+      await clearAuthState();
+      throw new ApiError(401, callbackResult.message);
+    }
+
+    try {
+      const user = await getMe(callbackResult.session.accessToken);
+
+      await persistAuthenticatedState({
+        user,
+        session: callbackResult.session,
+      });
+    } catch (error) {
+      await clearAuthState();
+      throw error;
+    }
   };
 
   const signOut = async (): Promise<void> => {
@@ -155,8 +211,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await signOutRequest(accessToken);
       }
     } finally {
-      await clearStoredAuthState();
-      setAuthState(UNAUTHENTICATED_STATE);
+      await clearAuthState();
     }
   };
 
@@ -174,8 +229,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         session: currentSession,
       };
 
-      await writeStoredAuthState(nextState);
-      setAuthState(toAuthenticatedState(nextState));
+      await persistAuthenticatedState(nextState);
 
       return user;
     } catch (error) {
@@ -195,13 +249,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         session: refreshedState.session,
       };
 
-      await writeStoredAuthState(nextState);
-      setAuthState(toAuthenticatedState(nextState));
+      await persistAuthenticatedState(nextState);
 
       return user;
     } catch {
-      await clearStoredAuthState();
-      setAuthState(UNAUTHENTICATED_STATE);
+      await clearAuthState();
       return null;
     }
   };
@@ -212,6 +264,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     session: authState.session,
     signIn,
     signUp,
+    authenticateWithGoogle,
     signOut,
     refreshUser,
   };

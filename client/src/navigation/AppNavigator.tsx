@@ -8,9 +8,7 @@ import MainTabNavigator from './MainTabNavigator';
 
 export type RootStackParamList = {
   Welcome: undefined;
-  Login: {
-    successMessage?: string;
-  } | undefined;
+  Login: { successMessage?: string } | undefined;
   Signup: undefined;
   MainTabs: undefined;
 };
