@@ -14,9 +14,34 @@ vi.mock("../src/models/course.model.js", () => ({
   createCourse: vi.fn()
 }));
 
+vi.mock("../src/models/auth.model.js", () => ({
+  signUpWithEmailAndPassword: vi.fn(),
+  signInWithEmailAndPassword: vi.fn(),
+  refreshAuthSession: vi.fn(),
+  signOutAuthSession: vi.fn(),
+  getCurrentUser: vi.fn(),
+  getGoogleSignInUrl: vi.fn(),
+  exchangeGoogleAuthCode: vi.fn(),
+  buildAuthSuccessRedirectUrl: vi.fn(),
+  buildAuthErrorRedirectUrl: vi.fn()
+}));
+
+vi.mock("../src/models/area-update.model.js", () => ({
+  listAreaUpdates: vi.fn(),
+  upsertAreaUpdates: vi.fn()
+}));
+
+vi.mock("../src/services/mmda-alert.service.js", () => ({
+  refreshMmdaAlerts: vi.fn()
+}));
+
 import app from "../src/app.js";
+import * as areaUpdateModel from "../src/models/area-update.model.js";
+import * as authModel from "../src/models/auth.model.js";
 import * as courseModel from "../src/models/course.model.js";
 
+const mockedAreaUpdateModel = vi.mocked(areaUpdateModel);
+const mockedAuthModel = vi.mocked(authModel);
 const mockedCourseModel = vi.mocked(courseModel);
 const appHandler = app as unknown as {
   handle: (
@@ -132,6 +157,131 @@ describe("app routes", () => {
       title: "Intro to Sakai",
       description: "Starter course",
       createdAt: "2026-03-19T00:00:00.000Z"
+    });
+  });
+
+  it("rejects invalid auth sign-up payloads", async () => {
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/auth/sign-up",
+      body: {
+        email: "not-an-email",
+        password: "short"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response._getJSONData().success).toBe(false);
+    expect(response._getJSONData().message).toBe("Validation failed");
+  });
+
+  it("returns a google sign-in url from the auth controller", async () => {
+    mockedAuthModel.getGoogleSignInUrl.mockResolvedValue({
+      url: "https://supabase.example.com/auth/v1/authorize?provider=google"
+    });
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/google/start"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: {
+        url: "https://supabase.example.com/auth/v1/authorize?provider=google"
+      }
+    });
+  });
+
+  it("requires a bearer token for the me endpoint", async () => {
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/me"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response._getJSONData()).toEqual({
+      success: false,
+      message: "Missing authorization header",
+      details: null
+    });
+  });
+
+  it("redirects successful google callbacks to the app redirect uri", async () => {
+    mockedAuthModel.exchangeGoogleAuthCode.mockResolvedValue({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        appMetadata: {},
+        userMetadata: {}
+      },
+      session: {
+        accessToken: "access-token",
+        refreshToken: "refresh-token",
+        expiresIn: 3600,
+        expiresAt: 1_800_000_000,
+        tokenType: "bearer"
+      },
+      requiresEmailConfirmation: false
+    });
+    mockedAuthModel.buildAuthSuccessRedirectUrl.mockReturnValue(
+      "sakai://auth/callback#status=success"
+    );
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/google/callback?code=auth-code&state=signed-state"
+    });
+
+    expect(response.statusCode).toBe(302);
+    expect(response._getRedirectUrl()).toBe("sakai://auth/callback#status=success");
+  });
+
+  it("redirects invalid google callbacks to the app error uri", async () => {
+    mockedAuthModel.buildAuthErrorRedirectUrl.mockReturnValue(
+      "sakai://auth/callback#status=error"
+    );
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/google/callback?code=auth-code"
+    });
+
+    expect(response.statusCode).toBe(302);
+    expect(response._getRedirectUrl()).toBe("sakai://auth/callback#status=error");
+  });
+
+  it("returns area updates from the mounted route", async () => {
+    mockedAreaUpdateModel.listAreaUpdates.mockResolvedValue([
+      {
+        id: "update-1",
+        externalId: "external-1",
+        source: "mmda",
+        sourceUrl: "https://x.com/MMDA",
+        alertType: "Road crash incident",
+        location: "Ortigas Avenue",
+        direction: "WB",
+        involved: "2 motorcycles",
+        reportedTimeText: "5:29 PM",
+        laneStatus: "One lane occupied",
+        trafficStatus: "MMDA enforcers are on site managing traffic",
+        rawText: "MMDA ALERT: Road crash incident at Ortigas Avenue WB...",
+        scrapedAt: "2026-03-19T10:05:00.000Z",
+        createdAt: "2026-03-19T10:05:00.000Z"
+      }
+    ]);
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/area-updates"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData().data).toHaveLength(1);
+    expect(mockedAreaUpdateModel.listAreaUpdates).toHaveBeenCalledWith({
+      area: undefined,
+      limit: 10
     });
   });
 });

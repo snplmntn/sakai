@@ -4,7 +4,12 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1)
+  SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  AUTH_GOOGLE_REDIRECT_URI: z.string().url(),
+  AUTH_APP_REDIRECT_URI: z.string().url(),
+  AUTH_STATE_SIGNING_SECRET: z.string().min(32),
+  MMDA_SOURCE_URLS: z.string().min(1).optional()
 });
 
 export type Env = z.infer<typeof envSchema>;

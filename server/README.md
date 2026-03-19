@@ -5,15 +5,19 @@ Express + TypeScript backend starter for Sakai with a controller/model/route/mid
 ## Requirements
 
 - Node.js 20+
-- A Supabase project with a service role key
+- A Supabase project with anon and service role keys
 
 ## Setup
 
 1. Copy `.env.example` to `.env`
-2. Fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+2. Fill in `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `AUTH_GOOGLE_REDIRECT_URI`, `AUTH_APP_REDIRECT_URI`, and `AUTH_STATE_SIGNING_SECRET`
 3. Run `npm install`
-4. Apply `supabase/schema.sql` to your Supabase database
-5. Run `npm run dev`
+4. In Supabase Auth, enable the Email provider
+5. In Supabase Auth, enable the Google provider and add your Google OAuth client credentials
+6. Add `AUTH_GOOGLE_REDIRECT_URI` to the Supabase allowed redirect URLs
+7. Set `AUTH_APP_REDIRECT_URI` to the app or local web callback that should receive auth results after the backend exchanges the Google code
+8. Apply `supabase/schema.sql` to your Supabase database
+9. Run `npm run dev`
 
 ## Scripts
 
@@ -46,9 +50,24 @@ tests/
 ## API
 
 - `GET /api/health`
+- `GET /api/area-updates`
+- `POST /api/area-updates/refresh`
+- `POST /api/auth/sign-up`
+- `POST /api/auth/sign-in`
+- `POST /api/auth/refresh`
+- `POST /api/auth/sign-out`
+- `GET /api/auth/me`
+- `GET /api/auth/google/start`
+- `GET /api/auth/google/callback`
 - `GET /api/courses`
 - `GET /api/courses/:id`
 - `POST /api/courses`
+
+### Google OAuth Callback Behavior
+
+- `GET /api/auth/google/callback` exchanges the Supabase auth code on the backend
+- On success, it redirects to `AUTH_APP_REDIRECT_URI` with auth data in the URL fragment
+- On failure, it redirects to `AUTH_APP_REDIRECT_URI` with an error fragment instead of returning JSON
 
 ### Sample `POST /api/courses` body
 
