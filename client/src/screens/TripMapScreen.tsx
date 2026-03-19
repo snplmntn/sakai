@@ -1,7 +1,6 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,17 +9,11 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Mic01Icon } from '@hugeicons/core-free-icons';
 
-import { ApiError, isRecord } from '../api/base';
-import { useAuth } from '../auth/AuthContext';
 import SafeScreen from '../components/SafeScreen';
 import { hasGooglePlacesApiKey } from '../config/env';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useNavigationAlarm } from '../navigation-alert/NavigationAlarmContext';
-import { useVoiceInput } from '../hooks/useVoiceInput';
-import { usePreferences } from '../preferences/PreferencesContext';
 import { reverseGeocodeCurrentLocation } from '../places/api';
 import {
   createGooglePlacesSessionToken,
@@ -29,41 +22,26 @@ import {
   searchMergedPlaceSuggestions,
 } from '../places/search';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
-import { queryRoutes, queryRoutesByText } from '../routes/api';
-import type {
-  RouteModifier,
-  RoutePreference,
-  RouteQueryOption,
-  RouteQueryResult,
-} from '../routes/types';
-import {
-  buildCoordinateFallbackNote,
-  formatDuration,
-  formatFare,
-} from '../routes/view-models';
-import type { NavigationRouteCandidate } from '../navigation-alert/types';
-import { resolveNavigationTarget } from '../navigation-alert/utils';
 import { useToast } from '../toast/ToastContext';
 
 const SEARCH_EXAMPLES = ['Pasay', 'Magallanes', 'Gate 3'];
-const PREFERENCES: Array<{ label: string; value: RoutePreference }> = [
-  { label: 'Balanced', value: 'balanced' },
-  { label: 'Cheapest', value: 'cheapest' },
-  { label: 'Fastest', value: 'fastest' },
-];
-const MODE_LABELS: Record<string, string> = {
-  jeepney: 'Jeepney',
-  mrt3: 'MRT',
-  lrt1: 'LRT-1',
-  lrt2: 'LRT-2',
-  uv: 'UV',
-  walk: 'Walk',
+const DEMO_RESULT_DELAY_MS = 450;
+
+type ActiveField = 'origin' | 'destination' | null;
+type ResultPhase = 'idle' | 'loading' | 'ready';
+type SuggestedRouteCard = {
+  id: string;
+  eyebrow: string;
+  badge: string;
+  title: string;
+  summary: string;
+  modes: string;
+  duration: string;
+  fare: string;
+  transfers: string;
+  isDemo: boolean;
 };
-const VOICE_TRIGGER_PHRASES = ['hey sakai', 'hi sakai'] as const;
-const ROUTE_MODIFIER_LABELS: Record<RouteModifier, string> = {
-  jeep_if_possible: 'Jeep if possible',
-  less_walking: 'Less walking',
-};
+
 const DEMO_ROUTE_CARDS: SuggestedRouteCard[] = [
   {
     id: 'demo-best',
@@ -75,7 +53,6 @@ const DEMO_ROUTE_CARDS: SuggestedRouteCard[] = [
     duration: '52 min',
     fare: 'PHP 34',
     transfers: '2 transfers',
-    option: null,
     isDemo: true,
   },
   {
@@ -88,26 +65,9 @@ const DEMO_ROUTE_CARDS: SuggestedRouteCard[] = [
     duration: '61 min',
     fare: 'PHP 24',
     transfers: '1 transfer',
-    option: null,
     isDemo: true,
   },
 ];
-
-type ActiveField = 'origin' | 'destination' | null;
-type SearchMode = 'structured' | 'ai';
-type SuggestedRouteCard = {
-  id: string;
-  eyebrow: string;
-  badge: string;
-  title: string;
-  summary: string;
-  modes: string;
-  duration: string;
-  fare: string;
-  transfers: string;
-  option: RouteQueryOption | null;
-  isDemo: boolean;
-};
 
 const mapDisambiguationMatches = (value: unknown): SakaiPlaceSuggestion[] => {
   if (!Array.isArray(value)) {
@@ -115,19 +75,21 @@ const mapDisambiguationMatches = (value: unknown): SakaiPlaceSuggestion[] => {
   }
 
   return value.flatMap((item) => {
-    if (!isRecord(item)) {
+    if (typeof item !== 'object' || item === null) {
       return [];
     }
 
+    const entry = item as Record<string, unknown>;
+
     if (
-      typeof item.id !== 'string' ||
-      typeof item.canonicalName !== 'string' ||
-      typeof item.city !== 'string' ||
-      typeof item.kind !== 'string' ||
-      typeof item.latitude !== 'number' ||
-      typeof item.longitude !== 'number' ||
-      typeof item.matchedBy !== 'string' ||
-      typeof item.matchedText !== 'string'
+      typeof entry.id !== 'string' ||
+      typeof entry.canonicalName !== 'string' ||
+      typeof entry.city !== 'string' ||
+      typeof entry.kind !== 'string' ||
+      typeof entry.latitude !== 'number' ||
+      typeof entry.longitude !== 'number' ||
+      typeof entry.matchedBy !== 'string' ||
+      typeof entry.matchedText !== 'string'
     ) {
       return [];
     }
@@ -135,103 +97,35 @@ const mapDisambiguationMatches = (value: unknown): SakaiPlaceSuggestion[] => {
     return [
       {
         source: 'sakai' as const,
-        id: item.id,
-        label: item.canonicalName,
-        city: item.city,
-        kind: item.kind as SakaiPlaceSuggestion['kind'],
-        latitude: item.latitude,
-        longitude: item.longitude,
-        googlePlaceId:
-          typeof item.googlePlaceId === 'string' ? item.googlePlaceId : null,
-        matchedBy: item.matchedBy as SakaiPlaceSuggestion['matchedBy'],
-        matchedText: item.matchedText,
+        id: entry.id,
+        label: entry.canonicalName,
+        city: entry.city,
+        kind: entry.kind as SakaiPlaceSuggestion['kind'],
+        latitude: entry.latitude,
+        longitude: entry.longitude,
+        googlePlaceId: typeof entry.googlePlaceId === 'string' ? entry.googlePlaceId : null,
+        matchedBy: entry.matchedBy as SakaiPlaceSuggestion['matchedBy'],
+        matchedText: entry.matchedText,
       },
     ];
   });
 };
 
-const formatRouteCardLabel = (
-  option: RouteQueryOption,
-  index: number
-): string => {
-  if (index === 0) {
-    return 'Best for your preference';
-  }
-
-  const recommendation = option.recommendationLabel.toLowerCase();
-
-  if (recommendation.includes('cheap') || recommendation.includes('fare')) {
-    return 'Lower fare option';
-  }
-
-  if (recommendation.includes('fast')) {
-    return 'Faster option';
-  }
-
-  if (recommendation.includes('transfer')) {
-    return 'Fewer transfers';
-  }
-
-  return option.recommendationLabel;
-};
-
-const formatRouteConfidenceLabel = (fareConfidence: RouteQueryOption['fareConfidence']): string =>
-  fareConfidence === 'official' ? 'Official' : 'Estimated';
-
-const buildRouteModeSummary = (option: RouteQueryOption): string => {
-  const labels: string[] = [];
-
-  option.legs.forEach((leg) => {
-    const label =
-      leg.type === 'walk' ? MODE_LABELS.walk : (MODE_LABELS[leg.mode] ?? leg.mode.toUpperCase());
-
-    if (!labels.includes(label)) {
-      labels.push(label);
-    }
-  });
-
-  return labels.join(' • ');
-};
-
-const normalizeVoiceTriggerText = (value: string): string =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/gu, ' ');
-
-const extractWakeTriggeredQuery = (value: string): string | null => {
-  const normalized = normalizeVoiceTriggerText(value);
-
-  for (const phrase of VOICE_TRIGGER_PHRASES) {
-    if (!normalized.startsWith(phrase)) {
-      continue;
-    }
-
-    const remainder = normalized.slice(phrase.length).trim();
-    return remainder.length > 0 ? remainder : '';
-  }
-
-  return null;
-};
+const buildDemoSelectedPlace = (label: string): SelectedPlace => ({
+  source: 'sakai',
+  label,
+  placeId: `demo-${label.trim().toLowerCase().replace(/\s+/gu, '-')}`,
+});
 
 export default function TripMapScreen() {
-  const { session } = useAuth();
-  const { preferences: savedPreferences } = usePreferences();
   const { showToast } = useToast();
-  const { activeNavigationRouteId, isNavigationActive, setNavigationCandidate } =
-    useNavigationAlarm();
-  const routeSearchRequestIdRef = useRef(0);
-  const appStateRef = useRef(AppState.currentState);
-  const isListeningRef = useRef(false);
+  const { setNavigationCandidate } = useNavigationAlarm();
   const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
     origin: createGooglePlacesSessionToken(),
     destination: createGooglePlacesSessionToken(),
   });
+  const demoSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [searchMode, setSearchMode] = useState<SearchMode>('structured');
-  const [preference, setPreference] = useState<RoutePreference>('balanced');
-  const [aiQuery, setAiQuery] = useState('');
   const [originQuery, setOriginQuery] = useState('');
   const [destinationQuery, setDestinationQuery] = useState('');
   const [originSelection, setOriginSelection] = useState<SelectedPlace | null>(null);
@@ -239,162 +133,45 @@ export default function TripMapScreen() {
   const [activeField, setActiveField] = useState<ActiveField>(null);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [routeResult, setRouteResult] = useState<RouteQueryResult | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('Choose a routeable stop or Google place.');
-  const [isSearchingRoutes, setIsSearchingRoutes] = useState(false);
-  const [voiceTriggerArmed, setVoiceTriggerArmed] = useState(false);
+  const [resultPhase, setResultPhase] = useState<ResultPhase>('idle');
   const [hasAttemptedStructuredOrigin, setHasAttemptedStructuredOrigin] = useState(false);
-  const {
-    isListening,
-    transcript,
-    partialTranscript,
-    error: voiceError,
-    isAvailable: voiceAvailable,
-    startListening,
-    stopListening,
-    resetTranscript,
-  } = useVoiceInput();
 
   const activeQuery = activeField === 'origin' ? originQuery : destinationQuery;
   const canUseGooglePlaces = hasGooglePlacesApiKey();
-  const selectedRoute = useMemo<RouteQueryOption | null>(
-    () =>
-      routeResult?.options.find((option) => option.id === selectedRouteId) ??
-      routeResult?.options[0] ??
-      null,
-    [routeResult, selectedRouteId]
-  );
-  const coordinateFallbackNote = useMemo(
-    () =>
-      buildCoordinateFallbackNote({
-        routeResult,
-        origin: originSelection,
-        destination: destinationSelection,
-      }),
-    [destinationSelection, originSelection, routeResult]
-  );
-  const routeHeadline = useMemo(
-    () =>
-      routeResult
-        ? `${routeResult.normalizedQuery.origin.label} to ${routeResult.normalizedQuery.destination.label}`
-        : 'Choose a route',
-    [routeResult]
-  );
-  const visibleIncidents = useMemo(() => {
-    const sourceIncidents =
-      selectedRoute?.relevantIncidents.length && selectedRoute.relevantIncidents.length > 0
-        ? selectedRoute.relevantIncidents
-        : routeResult?.options.flatMap((option) => option.relevantIncidents) ?? [];
 
-    const seen = new Set<string>();
+  useEffect(() => {
+    setNavigationCandidate(null);
 
-    return sourceIncidents.filter((incident) => {
-      if (seen.has(incident.id)) {
-        return false;
+    return () => {
+      if (demoSearchTimerRef.current) {
+        clearTimeout(demoSearchTimerRef.current);
+        demoSearchTimerRef.current = null;
       }
 
-      seen.add(incident.id);
-      return true;
-    });
-  }, [routeResult, selectedRoute]);
-  const hasLiveRoutes = (routeResult?.options.length ?? 0) > 0;
-  const suggestedRouteCards = useMemo<SuggestedRouteCard[]>(() => {
-    if (!hasLiveRoutes || !routeResult) {
-      return DEMO_ROUTE_CARDS;
-    }
-
-    return routeResult.options.map((option, index) => ({
-      id: option.id,
-      eyebrow: formatRouteCardLabel(option, index).toUpperCase(),
-      badge: formatRouteConfidenceLabel(option.fareConfidence),
-      title: routeHeadline,
-      summary: option.summary,
-      modes: buildRouteModeSummary(option),
-      duration: formatDuration(option.totalDurationMinutes),
-      fare: formatFare(option.totalFare),
-      transfers: `${option.transferCount} transfer${option.transferCount === 1 ? '' : 's'}`,
-      option,
-      isDemo: false,
-    }));
-  }, [hasLiveRoutes, routeHeadline, routeResult]);
-  const activeModifierLabels = useMemo(
-    () =>
-      routeResult?.normalizedQuery.modifiers.map(
-        (modifier) => ROUTE_MODIFIER_LABELS[modifier] ?? modifier
-      ) ?? [],
-    [routeResult]
-  );
-  const navigationCandidate = useMemo<NavigationRouteCandidate | null>(() => {
-    if (!selectedRoute) {
-      return null;
-    }
-
-    const destination = resolveNavigationTarget({
-      destination: destinationSelection,
-      option: selectedRoute,
-    });
-
-    if (!destination) {
-      return null;
-    }
-
-    return {
-      routeId: selectedRoute.id,
-      routeLabel: selectedRoute.recommendationLabel,
-      summary: selectedRoute.summary,
-      durationLabel: formatDuration(selectedRoute.totalDurationMinutes),
-      fareLabel: formatFare(selectedRoute.totalFare),
-      destination,
-    };
-  }, [destinationSelection, selectedRoute]);
-
-  useEffect(() => {
-    setPreference(savedPreferences.defaultPreference);
-  }, [savedPreferences.defaultPreference]);
-
-  useEffect(() => {
-    if (searchMode !== 'structured' || originSelection || hasAttemptedStructuredOrigin) {
-      return;
-    }
-
-    setHasAttemptedStructuredOrigin(true);
-    void resolveCurrentOrigin();
-  }, [hasAttemptedStructuredOrigin, originSelection, searchMode]);
-
-  useEffect(() => {
-    if (voiceTriggerArmed) {
-      return;
-    }
-    if (transcript.trim().length > 0) {
-      setAiQuery(transcript);
-      return;
-    }
-
-    if (partialTranscript.trim().length > 0) {
-      setAiQuery(partialTranscript);
-    }
-  }, [partialTranscript, transcript]);
-
-  useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
-
-  useEffect(() => {
-    setNavigationCandidate(navigationCandidate);
-  }, [navigationCandidate, setNavigationCandidate]);
-
-  useEffect(() => {
-    return () => {
       setNavigationCandidate(null);
     };
   }, [setNavigationCandidate]);
 
-  const resetGoogleSessionToken = (field: 'origin' | 'destination') => {
-    googleSessionTokensRef.current[field] = createGooglePlacesSessionToken();
+  const clearDemoSearchTimer = () => {
+    if (!demoSearchTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(demoSearchTimerRef.current);
+    demoSearchTimerRef.current = null;
   };
 
-  const resolveCurrentOrigin = async () => {
+  const resetDemoResults = () => {
+    clearDemoSearchTimer();
+    setResultPhase('idle');
+    setSelectedRouteId(null);
+    setStatusMessage('Choose a routeable stop or Google place.');
+    setNavigationCandidate(null);
+  };
+
+  const resolveCurrentOrigin = async (): Promise<SelectedPlace | null> => {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
 
@@ -431,8 +208,91 @@ export default function TripMapScreen() {
     }
   };
 
+  const ensureOriginSelection = async (): Promise<SelectedPlace> => {
+    if (originSelection) {
+      return originSelection;
+    }
+
+    if (originQuery.trim().length > 0) {
+      const typedOrigin: SelectedPlace = {
+        source: 'current-location',
+        label: originQuery.trim(),
+      };
+      setOriginSelection(typedOrigin);
+      setOriginQuery(typedOrigin.label);
+      return typedOrigin;
+    }
+
+    const resolvedOrigin = await resolveCurrentOrigin();
+
+    if (resolvedOrigin) {
+      return resolvedOrigin;
+    }
+
+    const fallbackOrigin: SelectedPlace = {
+      source: 'current-location',
+      label: 'Current location',
+    };
+    setOriginSelection(fallbackOrigin);
+    setOriginQuery(fallbackOrigin.label);
+    return fallbackOrigin;
+  };
+
+  const startDemoSearch = () => {
+    clearDemoSearchTimer();
+    setResultPhase('loading');
+    setSelectedRouteId(DEMO_ROUTE_CARDS[0]?.id ?? null);
+    setStatusMessage('Finding route options...');
+    setNavigationCandidate(null);
+
+    demoSearchTimerRef.current = setTimeout(() => {
+      setResultPhase('ready');
+      setStatusMessage('Select a route card to preview the commute.');
+      demoSearchTimerRef.current = null;
+    }, DEMO_RESULT_DELAY_MS);
+  };
+
+  const handleSearchPress = async () => {
+    const trimmedDestination = destinationQuery.trim();
+
+    if (trimmedDestination.length === 0) {
+      showToast({
+        tone: 'info',
+        title: 'Add a destination',
+        message: 'Choose or type a destination before searching.',
+      });
+      return;
+    }
+
+    await ensureOriginSelection();
+
+    const nextDestination =
+      destinationSelection && destinationSelection.label.trim().length > 0
+        ? destinationSelection
+        : buildDemoSelectedPlace(trimmedDestination);
+
+    setDestinationSelection(nextDestination);
+    setDestinationQuery(nextDestination.label);
+    setActiveField(null);
+    setSuggestions([]);
+    startDemoSearch();
+  };
+
   useEffect(() => {
-    if (searchMode !== 'structured' || !activeField || activeQuery.trim().length < 2) {
+    if (originSelection || hasAttemptedStructuredOrigin) {
+      return;
+    }
+
+    setHasAttemptedStructuredOrigin(true);
+    void resolveCurrentOrigin();
+  }, [hasAttemptedStructuredOrigin, originSelection]);
+
+  const resetGoogleSessionToken = (field: 'origin' | 'destination') => {
+    googleSessionTokensRef.current[field] = createGooglePlacesSessionToken();
+  };
+
+  useEffect(() => {
+    if (!activeField || activeQuery.trim().length < 2) {
       setSuggestions([]);
       setLoadingSuggestions(false);
       return;
@@ -470,274 +330,7 @@ export default function TripMapScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [activeField, activeQuery, canUseGooglePlaces, searchMode]);
-
-  useEffect(() => {
-    if (searchMode !== 'structured' || !originSelection || !destinationSelection) {
-      return;
-    }
-
-    void (async () => {
-      const requestId = routeSearchRequestIdRef.current + 1;
-      routeSearchRequestIdRef.current = requestId;
-      setIsSearchingRoutes(true);
-      setStatusMessage('Finding route options...');
-
-      try {
-        const result = await queryRoutes({
-          origin: originSelection,
-          destination: destinationSelection,
-          preference,
-          passengerType: savedPreferences.passengerType,
-          accessToken: session?.accessToken,
-        });
-
-        if (routeSearchRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        setRouteResult(result);
-        setSelectedRouteId(result.options[0]?.id ?? null);
-        setStatusMessage(result.message ?? 'Select a route card, then open Profile to arm the alarm.');
-      } catch (error) {
-        if (routeSearchRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        if (error instanceof ApiError && error.statusCode === 422 && isRecord(error.details)) {
-          const field =
-            error.details.field === 'origin' || error.details.field === 'destination'
-              ? error.details.field
-              : null;
-          const matches = mapDisambiguationMatches(error.details.matches);
-
-          if (field && matches.length > 0) {
-            setActiveField(field);
-            setSuggestions(matches);
-            setStatusMessage(error.message);
-            setIsSearchingRoutes(false);
-            return;
-          }
-        }
-
-        setRouteResult(null);
-        setSelectedRouteId(null);
-        setStatusMessage(
-          error instanceof Error ? error.message : 'Unable to load routes right now.'
-        );
-      } finally {
-        if (routeSearchRequestIdRef.current === requestId) {
-          setIsSearchingRoutes(false);
-        }
-      }
-    })();
-  }, [
-    destinationSelection,
-    originSelection,
-    preference,
-    savedPreferences.passengerType,
-    searchMode,
-    session?.accessToken,
-  ]);
-
-  const handleRouteQueryError = (error: unknown) => {
-    if (
-      error instanceof ApiError &&
-      (error.statusCode === 400 || error.statusCode === 422) &&
-      isRecord(error.details)
-    ) {
-      const field =
-        error.details.field === 'origin' || error.details.field === 'destination'
-          ? error.details.field
-          : null;
-      const matches = mapDisambiguationMatches(error.details.matches);
-
-      if (field && matches.length > 0) {
-        setSearchMode('structured');
-        setActiveField(field);
-        setSuggestions(matches);
-        setStatusMessage(error.message);
-        return true;
-      }
-    }
-
-    setRouteResult(null);
-    setSelectedRouteId(null);
-    setStatusMessage(
-      error instanceof Error ? error.message : 'Unable to load routes right now.'
-    );
-    return false;
-  };
-
-  const disarmVoiceTrigger = async (nextStatusMessage?: string) => {
-    setVoiceTriggerArmed(false);
-
-    if (nextStatusMessage) {
-      setStatusMessage(nextStatusMessage);
-    }
-
-    if (isListeningRef.current) {
-      await stopListening().catch(() => undefined);
-    }
-  };
-
-  const armVoiceTrigger = async () => {
-    if (searchMode !== 'ai') {
-      return;
-    }
-
-    if (isListeningRef.current) {
-      await stopListening().catch(() => undefined);
-    }
-
-    resetTranscript();
-    setAiQuery('');
-    setVoiceTriggerArmed(true);
-    setStatusMessage('Voice trigger armed. Say "Hey Sakai" and your trip in one sentence.');
-  };
-
-  const runAiRouteQuery = async (queryOverride?: string) => {
-    const effectiveQuery = (queryOverride ?? aiQuery).trim();
-
-    if (effectiveQuery.length === 0) {
-      return;
-    }
-
-    const requestId = routeSearchRequestIdRef.current + 1;
-    routeSearchRequestIdRef.current = requestId;
-    setIsSearchingRoutes(true);
-    setStatusMessage('Understanding your trip and finding route options...');
-
-    try {
-      const result = await queryRoutesByText({
-        queryText: effectiveQuery,
-        preference,
-        passengerType: savedPreferences.passengerType,
-        accessToken: session?.accessToken,
-      });
-
-      if (routeSearchRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setOriginSelection(null);
-      setDestinationSelection(null);
-      setRouteResult(result);
-      setSelectedRouteId(result.options[0]?.id ?? null);
-      setStatusMessage(result.message ?? 'Select a route card, then open Profile to arm the alarm.');
-    } catch (error) {
-      if (routeSearchRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      handleRouteQueryError(error);
-    } finally {
-      if (routeSearchRequestIdRef.current === requestId) {
-        setIsSearchingRoutes(false);
-      }
-    }
-  };
-
-  const toggleVoiceCapture = async () => {
-    if (isListening) {
-      await stopListening();
-      return;
-    }
-
-    resetTranscript();
-    await startListening();
-  };
-
-  const switchSearchMode = async (mode: SearchMode) => {
-    if (mode === searchMode) {
-      return;
-    }
-
-    if (isListening) {
-      await stopListening();
-    }
-
-    if (voiceTriggerArmed) {
-      await disarmVoiceTrigger();
-    }
-
-    routeSearchRequestIdRef.current += 1;
-    setSearchMode(mode);
-    setActiveField(null);
-    setSuggestions([]);
-    setRouteResult(null);
-    setSelectedRouteId(null);
-    setIsSearchingRoutes(false);
-    setStatusMessage(
-      mode === 'ai'
-        ? 'Describe your trip in plain language or speak it.'
-        : 'Choose a routeable stop or Google place.'
-    );
-  };
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      appStateRef.current = nextAppState;
-
-      if (nextAppState !== 'active' && voiceTriggerArmed) {
-        void disarmVoiceTrigger('Voice trigger paused. Re-arm it when Sakai is open again.');
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [voiceTriggerArmed]);
-
-  useEffect(() => {
-    if (!voiceTriggerArmed || !voiceError) {
-      return;
-    }
-
-    void disarmVoiceTrigger('Voice trigger stopped after a speech error. Re-arm it and try again.');
-  }, [disarmVoiceTrigger, voiceError, voiceTriggerArmed]);
-
-  useEffect(() => {
-    if (!voiceTriggerArmed || searchMode !== 'ai' || isSearchingRoutes) {
-      return;
-    }
-
-    if (appStateRef.current !== 'active' || isListening) {
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      resetTranscript();
-      void startListening();
-    }, 250);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [isListening, isSearchingRoutes, resetTranscript, searchMode, startListening, voiceTriggerArmed]);
-
-  useEffect(() => {
-    if (!voiceTriggerArmed || transcript.trim().length === 0) {
-      return;
-    }
-
-    const wakeTriggeredQuery = extractWakeTriggeredQuery(transcript);
-
-    if (wakeTriggeredQuery === null) {
-      return;
-    }
-
-    if (wakeTriggeredQuery.length === 0) {
-      setStatusMessage('Wake phrase heard. Say the trip with the phrase, like "Hey Sakai, cheapest way to Pasay from Bicutan."');
-      return;
-    }
-
-    setAiQuery(wakeTriggeredQuery);
-    void (async () => {
-      await disarmVoiceTrigger('Wake phrase detected. Finding route options...');
-      await runAiRouteQuery(wakeTriggeredQuery);
-    })();
-  }, [disarmVoiceTrigger, runAiRouteQuery, transcript, voiceTriggerArmed]);
+  }, [activeField, activeQuery, canUseGooglePlaces]);
 
   const selectSuggestion = async (suggestion: PlaceSuggestion) => {
     const field = activeField;
@@ -752,13 +345,12 @@ export default function TripMapScreen() {
       });
 
       if (field === 'origin') {
+        resetDemoResults();
         setOriginSelection(selected);
         setOriginQuery(selected.label);
-      } else if (field === 'destination') {
-        if (!originSelection) {
-          await resolveCurrentOrigin();
-        }
-
+      } else {
+        resetDemoResults();
+        await ensureOriginSelection();
         setDestinationSelection(selected);
         setDestinationQuery(selected.label);
       }
@@ -767,6 +359,19 @@ export default function TripMapScreen() {
       setActiveField(null);
       setSuggestions([]);
     } catch (error) {
+      const details =
+        error instanceof Error &&
+        typeof error.cause === 'object' &&
+        error.cause !== null &&
+        'details' in error.cause
+          ? (error.cause as { details?: unknown }).details
+          : null;
+      const matches = mapDisambiguationMatches(details);
+
+      if (matches.length > 0) {
+        setSuggestions(matches);
+      }
+
       showToast({
         tone: 'info',
         title: 'Place unavailable',
@@ -793,369 +398,183 @@ export default function TripMapScreen() {
           </Text>
 
           <View style={styles.card}>
-            <View style={styles.modeRow}>
+            <View style={styles.row}>
+              <Text style={styles.label}>From</Text>
               <Pressable
-                style={[styles.modeChip, searchMode === 'structured' && styles.modeChipActive]}
-                onPress={() => void switchSearchMode('structured')}
+                onPress={() => {
+                  resetDemoResults();
+                  void resolveCurrentOrigin();
+                }}
               >
-                <Text
-                  style={[
-                    styles.modeChipText,
-                    searchMode === 'structured' && styles.modeChipTextActive,
-                  ]}
-                >
-                  Map search
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modeChip, searchMode === 'ai' && styles.modeChipActive]}
-                onPress={() => void switchSearchMode('ai')}
-              >
-                <Text
-                  style={[
-                    styles.modeChipText,
-                    searchMode === 'ai' && styles.modeChipTextActive,
-                  ]}
-                >
-                  Ask Sakai
-                </Text>
+                <Text style={styles.link}>Use my location</Text>
               </Pressable>
             </View>
+            <TextInput
+              value={originQuery}
+              onChangeText={(value) => {
+                resetDemoResults();
+                setOriginQuery(value);
+                setOriginSelection(null);
+                setActiveField('origin');
+              }}
+              onFocus={() => setActiveField('origin')}
+              placeholder="Current location or a stop"
+              placeholderTextColor="#8191A0"
+              style={styles.input}
+            />
 
-            {searchMode === 'structured' ? (
-              <>
-                <View style={styles.row}>
-                  <Text style={styles.label}>From</Text>
-                  <Pressable onPress={() => void resolveCurrentOrigin()}>
-                    <Text style={styles.link}>Use my location</Text>
-                  </Pressable>
-                </View>
-                <TextInput
-                  value={originQuery}
-                  onChangeText={(value) => {
-                    routeSearchRequestIdRef.current += 1;
-                    setOriginQuery(value);
-                    setOriginSelection(null);
-                    setRouteResult(null);
-                    setSelectedRouteId(null);
-                    setIsSearchingRoutes(false);
-                    setActiveField('origin');
+            <Text style={styles.label}>To</Text>
+            <TextInput
+              value={destinationQuery}
+              onChangeText={(value) => {
+                resetDemoResults();
+                setDestinationQuery(value);
+                setDestinationSelection(null);
+                setActiveField('destination');
+              }}
+              onFocus={() => setActiveField('destination')}
+              placeholder="Search Sakai stops or Google places"
+              placeholderTextColor="#8191A0"
+              style={styles.input}
+            />
+
+            <View style={styles.examples}>
+              {SEARCH_EXAMPLES.map((example) => (
+                <Pressable
+                  key={example}
+                  style={styles.exampleChip}
+                  onPress={() => {
+                    resetDemoResults();
+                    setDestinationQuery(example);
+                    setDestinationSelection(buildDemoSelectedPlace(example));
+                    setActiveField(null);
+                    setSuggestions([]);
                   }}
-                  onFocus={() => setActiveField('origin')}
-                  placeholder="Current location or a stop"
-                  placeholderTextColor="#8191A0"
-                  style={styles.input}
-                />
+                >
+                  <Text style={styles.exampleText}>{example}</Text>
+                </Pressable>
+              ))}
+            </View>
 
-                <Text style={styles.label}>To</Text>
-                <TextInput
-                  value={destinationQuery}
-                  onChangeText={(value) => {
-                    routeSearchRequestIdRef.current += 1;
-                    setDestinationQuery(value);
-                    setDestinationSelection(null);
-                    setRouteResult(null);
-                    setSelectedRouteId(null);
-                    setIsSearchingRoutes(false);
-                    setActiveField('destination');
-                  }}
-                  onFocus={() => setActiveField('destination')}
-                  placeholder="Search Sakai stops or Google places"
-                  placeholderTextColor="#8191A0"
-                  style={styles.input}
-                />
+            <Pressable style={styles.searchButton} onPress={() => void handleSearchPress()}>
+              <Text style={styles.searchButtonText}>Search</Text>
+            </Pressable>
 
-                <View style={styles.examples}>
-                  {SEARCH_EXAMPLES.map((example) => (
-                    <Pressable
-                      key={example}
-                      style={styles.exampleChip}
-                      onPress={() => {
-                        routeSearchRequestIdRef.current += 1;
-                        setDestinationQuery(example);
-                        setDestinationSelection(null);
-                        setRouteResult(null);
-                        setSelectedRouteId(null);
-                        setIsSearchingRoutes(false);
-                        setActiveField('destination');
-                      }}
-                    >
-                      <Text style={styles.exampleText}>{example}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                {(loadingSuggestions || suggestions.length > 0) && (
-                  <View style={styles.suggestionPanel}>
-                    {loadingSuggestions ? <ActivityIndicator color={COLORS.primary} /> : null}
-                    {suggestions.map((suggestion) => (
-                      <Pressable
-                        key={getPlaceSuggestionKey(suggestion)}
-                        style={styles.suggestionRow}
-                        onPress={() => void selectSuggestion(suggestion)}
-                      >
-                        <View style={styles.suggestionBody}>
-                          <Text style={styles.suggestionTitle}>{suggestion.label}</Text>
-                          <Text style={styles.suggestionMeta}>
-                            {suggestion.source === 'sakai'
-                              ? `${suggestion.city} · Sakai`
-                              : suggestion.secondaryText || 'Google Maps'}
-                          </Text>
-                        </View>
-                        <Text style={styles.suggestionSource}>
-                          {suggestion.source === 'sakai' ? 'Sakai' : 'Google'}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </>
-            ) : (
-              <View style={styles.aiCard}>
-                <Text style={styles.label}>Describe your trip</Text>
-                <TextInput
-                  value={aiQuery}
-                  onChangeText={setAiQuery}
-                  placeholder="Cheapest way to Pasay from Bicutan"
-                  placeholderTextColor="#8191A0"
-                  style={[styles.input, styles.aiInput]}
-                  multiline={true}
-                />
-                <View style={styles.aiActions}>
-                  {voiceAvailable ? (
-                    <Pressable
-                      style={[
-                        styles.voiceButton,
-                        isListening && styles.voiceButtonActive,
-                        voiceTriggerArmed && styles.voiceButtonDisabled,
-                      ]}
-                      onPress={() => void toggleVoiceCapture()}
-                      disabled={voiceTriggerArmed}
-                    >
-                      <HugeiconsIcon icon={Mic01Icon} size={16} color={COLORS.white} />
-                      <Text style={styles.voiceButtonText}>
-                        {isListening ? 'Stop listening' : 'Speak trip'}
-                      </Text>
-                    </Pressable>
-                  ) : null}
+            {(loadingSuggestions || suggestions.length > 0) && (
+              <View style={styles.suggestionPanel}>
+                {loadingSuggestions ? <ActivityIndicator color={COLORS.primary} /> : null}
+                {suggestions.map((suggestion) => (
                   <Pressable
-                    style={[
-                      styles.askButton,
-                      aiQuery.trim().length === 0 && styles.askButtonDisabled,
-                    ]}
-                    disabled={aiQuery.trim().length === 0 || isSearchingRoutes}
-                    onPress={() => void runAiRouteQuery()}
+                    key={getPlaceSuggestionKey(suggestion)}
+                    style={styles.suggestionRow}
+                    onPress={() => void selectSuggestion(suggestion)}
                   >
-                    <Text style={styles.askButtonText}>Find routes</Text>
-                  </Pressable>
-                  {voiceAvailable ? (
-                    <Pressable
-                      style={[
-                        styles.voiceTriggerButton,
-                        voiceTriggerArmed && styles.voiceTriggerButtonActive,
-                      ]}
-                      onPress={() =>
-                        void (voiceTriggerArmed
-                          ? disarmVoiceTrigger('Voice trigger disarmed.')
-                          : armVoiceTrigger())
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.voiceTriggerButtonText,
-                          voiceTriggerArmed && styles.voiceTriggerButtonTextActive,
-                        ]}
-                      >
-                        {voiceTriggerArmed ? 'Disarm voice trigger' : 'Arm voice trigger'}
+                    <View style={styles.suggestionBody}>
+                      <Text style={styles.suggestionTitle}>{suggestion.label}</Text>
+                      <Text style={styles.suggestionMeta}>
+                        {suggestion.source === 'sakai'
+                          ? `${suggestion.city} · Sakai`
+                          : suggestion.secondaryText || 'Google Maps'}
                       </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-                <Text style={styles.voiceTriggerHint}>
-                  Prototype: works only while Sakai stays open. Say "Hey Sakai, cheapest way to
-                  Pasay from Bicutan."
-                </Text>
-                {voiceTriggerArmed && partialTranscript.trim().length > 0 ? (
-                  <Text style={styles.voiceTriggerTranscript}>Heard: {partialTranscript}</Text>
-                ) : null}
-                {voiceError ? <Text style={styles.voiceErrorText}>{voiceError}</Text> : null}
+                    </View>
+                    <Text style={styles.suggestionSource}>
+                      {suggestion.source === 'sakai' ? 'Sakai' : 'Google'}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
             )}
           </View>
         </View>
 
-        <View style={[styles.sectionCard, styles.canvasCard]}>
-          <View style={styles.canvasHeader}>
-            <View style={styles.canvasCopy}>
-              <Text style={styles.sectionTitle}>Map and route canvas</Text>
-              <Text style={styles.canvasSubtitle}>Google Maps drives the canvas.</Text>
-            </View>
-            <Text style={styles.canvasMeta}>Google Maps</Text>
+        {resultPhase === 'loading' ? (
+          <View style={[styles.sectionCard, styles.routeStatusCard]}>
+            <ActivityIndicator color={COLORS.primary} />
+            <Text style={styles.statusText}>{statusMessage}</Text>
           </View>
-          <View style={styles.canvasRailCard}>
-            <View style={styles.canvasRail}>
-              <View style={[styles.canvasDot, styles.canvasDotOrigin]} />
-              <View style={[styles.canvasTrack, styles.canvasTrackActive]} />
-              <View style={[styles.canvasDot, styles.canvasDotTransfer]} />
-              <View style={styles.canvasTrack} />
-              <View style={[styles.canvasDot, styles.canvasDotDestination]} />
-            </View>
-            <View style={styles.canvasLabels}>
-              <Text style={styles.canvasLabel}>Origin</Text>
-              <Text style={styles.canvasLabel}>Transfer</Text>
-              <Text style={styles.canvasLabel}>Destination</Text>
-            </View>
-          </View>
-        </View>
+        ) : null}
 
-        <View style={styles.routesSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Suggested routes</Text>
-            <Text style={styles.routesMeta}>Jeepney-first</Text>
-          </View>
-          {activeModifierLabels.length > 0 ? (
-            <View style={styles.modifierRow}>
-              {activeModifierLabels.map((label) => (
-                <View key={label} style={styles.modifierChip}>
-                  <Text style={styles.modifierChipText}>{label}</Text>
+        {resultPhase === 'ready' ? (
+          <>
+            <View style={[styles.sectionCard, styles.canvasCard]}>
+              <View style={styles.canvasHeader}>
+                <View style={styles.canvasCopy}>
+                  <Text style={styles.sectionTitle}>Map and route canvas</Text>
+                  <Text style={styles.canvasSubtitle}>Google Maps drives the canvas.</Text>
                 </View>
-              ))}
-            </View>
-          ) : null}
-          {hasLiveRoutes || !isSearchingRoutes ? null : (
-            <View style={[styles.sectionCard, styles.routeStatusCard]}>
-              {isSearchingRoutes ? <ActivityIndicator color={COLORS.primary} /> : null}
-              <Text style={styles.statusText}>{statusMessage}</Text>
-              {coordinateFallbackNote ? (
-                <View style={styles.fallbackNote}>
-                  <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
+                <Text style={styles.canvasMeta}>Google Maps</Text>
+              </View>
+              <View style={styles.canvasRailCard}>
+                <View style={styles.canvasRail}>
+                  <View style={[styles.canvasDot, styles.canvasDotOrigin]} />
+                  <View style={[styles.canvasTrack, styles.canvasTrackActive]} />
+                  <View style={[styles.canvasDot, styles.canvasDotTransfer]} />
+                  <View style={styles.canvasTrack} />
+                  <View style={[styles.canvasDot, styles.canvasDotDestination]} />
                 </View>
-              ) : null}
-            </View>
-          )}
-
-          {suggestedRouteCards.map((card) => (
-            <Pressable
-              key={card.id}
-              style={[
-                styles.routeCard,
-                !card.isDemo && selectedRoute?.id === card.id && styles.routeCardSelected,
-              ]}
-              onPress={() => {
-                if (card.isDemo) {
-                  showToast({
-                    tone: 'info',
-                    title: 'Demo preview',
-                    message: 'Showing sample route cards until live route results are available.',
-                  });
-                  return;
-                }
-
-                if (isNavigationActive && activeNavigationRouteId !== card.id) {
-                  showToast({
-                    tone: 'info',
-                    title: 'Navigation active',
-                    message: 'Stop the current trip before switching to another route.',
-                  });
-                  return;
-                }
-
-                setSelectedRouteId(card.id);
-              }}
-            >
-              <View style={styles.routeCardTop}>
-                <Text style={styles.routeEyebrow}>{card.eyebrow}</Text>
-                <View style={styles.routeBadge}>
-                  <Text style={styles.routeBadgeText}>{card.badge}</Text>
+                <View style={styles.canvasLabels}>
+                  <Text style={styles.canvasLabel}>Origin</Text>
+                  <Text style={styles.canvasLabel}>Transfer</Text>
+                  <Text style={styles.canvasLabel}>Destination</Text>
                 </View>
               </View>
-              <Text style={styles.routeTitle}>{card.title}</Text>
-              <Text style={styles.routeSummary}>{card.summary}</Text>
-              <Text style={styles.routeModeSummary}>{card.modes}</Text>
-              <View style={styles.routeStatsGrid}>
-                <View style={styles.routeStatCell}>
-                  <Text style={styles.routeStatLabel}>Time</Text>
-                  <Text style={styles.routeStatValue}>{card.duration}</Text>
-                </View>
-                <View style={styles.routeStatDivider} />
-                <View style={styles.routeStatCell}>
-                  <Text style={styles.routeStatLabel}>Fare</Text>
-                  <Text style={styles.routeStatValue}>{card.fare}</Text>
-                </View>
-                <View style={styles.routeStatDivider} />
-                <View style={styles.routeStatCell}>
-                  <Text style={styles.routeStatLabel}>Transfers</Text>
-                  <Text style={styles.routeStatValue}>{card.transfers}</Text>
-                </View>
-              </View>
-            </Pressable>
-          ))}
-
-          {routeResult ? (
-            <View style={styles.communityActionRow}>
-              <Pressable
-                style={styles.communityButton}
-                onPress={() =>
-                  showToast({
-                    tone: 'info',
-                    title: 'Community hub unavailable',
-                    message: 'Community actions are not wired into this build yet.',
-                  })
-                }
-              >
-                <Text style={styles.communityButtonText}>Ask the community</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.communityButton, styles.communityButtonSecondary]}
-                onPress={() =>
-                  showToast({
-                    tone: 'info',
-                    title: 'Community hub unavailable',
-                    message: 'Community actions are not wired into this build yet.',
-                  })
-                }
-              >
-                <Text style={[styles.communityButtonText, styles.communityButtonTextSecondary]}>
-                  Submit an update
-                </Text>
-              </Pressable>
             </View>
-          ) : null}
 
-          {visibleIncidents.length > 0 ? (
-            <View style={[styles.sectionCard, styles.areaUpdatesCard]}>
-              <View style={styles.areaUpdatesHeader}>
-                <Text style={styles.areaUpdatesTitle}>Area updates</Text>
-                <Text style={styles.areaUpdatesMeta}>Route relevant</Text>
+            <View style={styles.routesSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Suggested routes</Text>
+                <Text style={styles.routesMeta}>Jeepney-first</Text>
               </View>
-              <Text style={styles.areaUpdatesSubtitle}>Only corridor-relevant alerts.</Text>
-              <View style={styles.areaUpdatesList}>
-                {visibleIncidents.slice(0, 2).map((incident, index) => (
-                  <View
-                    key={incident.id}
-                    style={[
-                      styles.areaUpdateItem,
-                      index < visibleIncidents.slice(0, 2).length - 1 && styles.areaUpdateItemBorder,
-                    ]}
-                  >
-                    <View style={styles.areaUpdateBullet} />
-                    <View style={styles.areaUpdateCopy}>
-                      <Text style={styles.areaUpdateName}>{incident.location}</Text>
-                      <Text style={styles.areaUpdateSummary}>{incident.summary}</Text>
+
+              {DEMO_ROUTE_CARDS.map((card) => (
+                <Pressable
+                  key={card.id}
+                  style={[
+                    styles.routeCard,
+                    selectedRouteId === card.id && styles.routeCardSelected,
+                  ]}
+                  onPress={() => setSelectedRouteId(card.id)}
+                >
+                  <View style={styles.routeCardTop}>
+                    <Text style={styles.routeEyebrow}>{card.eyebrow}</Text>
+                    <View style={styles.routeBadge}>
+                      <Text style={styles.routeBadgeText}>{card.badge}</Text>
                     </View>
                   </View>
-                ))}
-              </View>
+                  <Text style={styles.routeTitle}>{card.title}</Text>
+                  <Text style={styles.routeSummary}>{card.summary}</Text>
+                  <Text style={styles.routeModeSummary}>{card.modes}</Text>
+                  <View style={styles.routeStatsGrid}>
+                    <View style={styles.routeStatCell}>
+                      <Text style={styles.routeStatLabel}>Time</Text>
+                      <Text style={styles.routeStatValue}>{card.duration}</Text>
+                    </View>
+                    <View style={styles.routeStatDivider} />
+                    <View style={styles.routeStatCell}>
+                      <Text style={styles.routeStatLabel}>Fare</Text>
+                      <Text style={styles.routeStatValue}>{card.fare}</Text>
+                    </View>
+                    <View style={styles.routeStatDivider} />
+                    <View style={styles.routeStatCell}>
+                      <Text style={styles.routeStatLabel}>Transfers</Text>
+                      <Text style={styles.routeStatValue}>{card.transfers}</Text>
+                    </View>
+                  </View>
+                </Pressable>
+              ))}
             </View>
-          ) : null}
-        </View>
+          </>
+        ) : null}
       </ScrollView>
     </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: SPACING.xl, gap: SPACING.xl },
+  content: {
+    paddingBottom: SPACING.xl,
+    gap: SPACING.xl,
+  },
   hero: {
     backgroundColor: '#102033',
     padding: SPACING.lg,
@@ -1163,7 +582,11 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: RADIUS.md,
     gap: SPACING.md,
   },
-  title: { fontSize: TYPOGRAPHY.fontSizes.hero, fontFamily: FONTS.bold, color: COLORS.white },
+  title: {
+    fontSize: TYPOGRAPHY.fontSizes.hero,
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
+  },
   subtitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
@@ -1182,31 +605,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: SPACING.xs,
   },
-  modeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-    marginBottom: SPACING.xs,
-  },
-  modeChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  modeChipActive: { backgroundColor: COLORS.white },
-  modeChipText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.white,
-  },
-  modeChipTextActive: { color: '#102033' },
   label: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
     color: 'rgba(255,255,255,0.72)',
   },
-  link: { fontSize: TYPOGRAPHY.fontSizes.small, fontFamily: FONTS.semibold, color: COLORS.white },
+  link: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.white,
+  },
   input: {
     backgroundColor: COLORS.white,
     borderRadius: 6,
@@ -1215,73 +623,6 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.medium,
     color: '#102033',
-  },
-  aiCard: { gap: SPACING.sm },
-  aiInput: { minHeight: 88, textAlignVertical: 'top' },
-  aiActions: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, alignItems: 'center' },
-  voiceButton: {
-    flexDirection: 'row',
-    gap: SPACING.xs,
-    alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 12,
-    backgroundColor: COLORS.primary,
-  },
-  voiceButtonActive: { backgroundColor: COLORS.warning },
-  voiceButtonDisabled: { opacity: 0.45 },
-  voiceButtonText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.white,
-  },
-  voiceTriggerButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  voiceTriggerButtonActive: {
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    borderColor: 'rgba(255,255,255,0.96)',
-  },
-  voiceTriggerButtonText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.white,
-  },
-  voiceTriggerButtonTextActive: { color: '#102033' },
-  voiceTriggerHint: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.regular,
-    color: 'rgba(255,255,255,0.72)',
-    lineHeight: 20,
-  },
-  voiceTriggerTranscript: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.white,
-    lineHeight: 20,
-  },
-  askButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 12,
-    backgroundColor: COLORS.white,
-  },
-  askButtonDisabled: { opacity: 0.5 },
-  askButtonText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#102033',
-  },
-  voiceErrorText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: '#FFD2D2',
-    lineHeight: 20,
   },
   examples: {
     flexDirection: 'row',
@@ -1295,8 +636,29 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  exampleText: { fontSize: TYPOGRAPHY.fontSizes.small, fontFamily: FONTS.medium, color: COLORS.white },
-  suggestionPanel: { backgroundColor: COLORS.white, borderRadius: 6, overflow: 'hidden' },
+  exampleText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: COLORS.white,
+  },
+  searchButton: {
+    minHeight: 48,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+    marginTop: SPACING.xs,
+  },
+  searchButtonText: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
+  suggestionPanel: {
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
   suggestionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1305,7 +667,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#EEF2F6',
   },
-  suggestionBody: { flex: 1, gap: SPACING.xs },
+  suggestionBody: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
   suggestionTitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.semibold,
@@ -1330,23 +695,18 @@ const styles = StyleSheet.create({
     borderColor: '#EEF2F6',
     gap: SPACING.sm,
   },
-  modifierRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
-  modifierChip: {
-    borderRadius: 999,
-    backgroundColor: '#E9F4FF',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 1,
-  },
-  modifierChipText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.primary,
-  },
-  sectionHeader: {
-    marginHorizontal: SPACING.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  routeStatusCard: {
+    minHeight: 76,
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  statusText: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.regular,
+    color: '#657789',
+    lineHeight: 22,
+    textAlign: 'center',
   },
   canvasCard: {
     gap: SPACING.md,
@@ -1358,7 +718,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: SPACING.md,
   },
-  canvasCopy: { flex: 1, gap: SPACING.xs },
+  canvasCopy: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  sectionTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
   canvasSubtitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
@@ -1387,9 +755,15 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 999,
   },
-  canvasDotOrigin: { backgroundColor: '#102033' },
-  canvasDotTransfer: { backgroundColor: '#8BBBEA' },
-  canvasDotDestination: { backgroundColor: '#4A87B1' },
+  canvasDotOrigin: {
+    backgroundColor: '#102033',
+  },
+  canvasDotTransfer: {
+    backgroundColor: '#8BBBEA',
+  },
+  canvasDotDestination: {
+    backgroundColor: '#4A87B1',
+  },
   canvasTrack: {
     flex: 1,
     height: 4,
@@ -1397,7 +771,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#CFE1F0',
     marginHorizontal: SPACING.sm,
   },
-  canvasTrackActive: { backgroundColor: '#4A87B1' },
+  canvasTrackActive: {
+    backgroundColor: '#4A87B1',
+  },
   canvasLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1408,258 +784,21 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
     color: '#6B8297',
-    textAlign: 'left',
-  },
-  liveMapCard: {
-    gap: SPACING.md,
-  },
-  liveMapTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
   },
   routesSection: {
     gap: SPACING.md,
     marginTop: -SPACING.sm,
   },
+  sectionHeader: {
+    marginHorizontal: SPACING.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   routesMeta: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: '#7890A5',
-  },
-  sectionTag: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 10,
-    backgroundColor: '#F6F8FB',
-    borderWidth: 1,
-    borderColor: '#E9EEF4',
-  },
-  sectionTagText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#6A7D90',
-  },
-  sectionTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-  },
-  sectionMeta: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: '#5D7286',
-  },
-  navigationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  navigationSectionCard: {
-    padding: SPACING.lg,
-    gap: SPACING.md,
-  },
-  navigationLiveBadge: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 1,
-    borderRadius: 10,
-    backgroundColor: '#EAF7EE',
-    borderWidth: 1,
-    borderColor: '#BEE3C8',
-  },
-  navigationLiveBadgeText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.bold,
-    color: COLORS.success,
-  },
-  navigationSummaryCard: {
-    borderRadius: 6,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E8EDF3',
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  navigationSummaryTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-  },
-  navigationSummaryText: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: '#415466',
-    lineHeight: 22,
-  },
-  navigationSummaryMeta: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.primary,
-  },
-  navigationSettingCard: {
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E8EDF3',
-    backgroundColor: '#FAFBFC',
-    padding: SPACING.lg,
-    gap: SPACING.md,
-  },
-  navigationSettingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  navigationSettingCopy: {
-    flex: 1,
-    gap: SPACING.xs,
-  },
-  navigationSettingTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.semibold,
-    color: '#102033',
-  },
-  navigationSettingDescription: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.regular,
-    color: '#6A7D90',
-    lineHeight: 20,
-  },
-  navigationOptionGroup: { gap: SPACING.md },
-  navigationGroupTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#102033',
-  },
-  navigationHintCompact: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.regular,
-    color: '#6A7D90',
-    lineHeight: 22,
-  },
-  toggleChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 10,
-    backgroundColor: '#F4F8FB',
-    borderWidth: 1,
-    borderColor: '#D7E5EF',
-  },
-  toggleChipActive: {
-    backgroundColor: '#102033',
-    borderColor: '#102033',
-  },
-  toggleChipText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#415466',
-  },
-  toggleChipTextActive: { color: COLORS.white },
-  navigationChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md },
-  navigationChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 10,
-    backgroundColor: '#F4F8FB',
-    borderWidth: 1,
-    borderColor: '#D7E5EF',
-  },
-  navigationChipActive: {
-    backgroundColor: '#102033',
-    borderColor: '#102033',
-  },
-  navigationChipText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#415466',
-  },
-  navigationChipTextActive: { color: COLORS.white },
-  navigationStatsCard: {
-    borderRadius: 6,
-    backgroundColor: '#FFF6EC',
-    borderWidth: 1,
-    borderColor: '#F5D3AA',
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  navigationStatsTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.bold,
-    color: '#8A5317',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  navigationStatsText: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
-    color: '#8A5317',
-  },
-  navigationStatsMeta: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: '#8A5317',
-    lineHeight: 20,
-  },
-  navigationButton: {
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    marginTop: SPACING.xs,
-  },
-  navigationButtonStart: { backgroundColor: COLORS.black },
-  navigationButtonStop: { backgroundColor: COLORS.danger },
-  navigationButtonDisabled: { opacity: 0.55 },
-  navigationButtonText: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
-    color: COLORS.white,
-  },
-  routeStatusCard: {
-    minHeight: 76,
-    justifyContent: 'center',
-  },
-  statusText: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: '#657789',
-    lineHeight: 22,
-  },
-  communityActionRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginTop: SPACING.sm,
-  },
-  communityButton: {
-    flex: 1,
-    borderRadius: RADIUS.md,
-    backgroundColor: '#102033',
-    paddingVertical: SPACING.sm,
-    alignItems: 'center',
-  },
-  communityButtonSecondary: {
-    backgroundColor: '#E7F1FF',
-  },
-  communityButtonText: {
-    color: COLORS.white,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.small,
-  },
-  communityButtonTextSecondary: {
-    color: COLORS.primary,
-  },
-  fallbackNote: {
-    borderRadius: 6,
-    backgroundColor: '#FAFBFC',
-    padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: '#EEF2F6',
-  },
-  fallbackNoteText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: '#415466',
-    lineHeight: 20,
   },
   routeCard: {
     marginHorizontal: SPACING.md,
@@ -1686,12 +825,6 @@ const styles = StyleSheet.create({
     color: '#5C90B8',
     letterSpacing: 0.8,
   },
-  routeTitle: {
-    flex: 1,
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-  },
   routeBadge: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm - 2,
@@ -1702,6 +835,12 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: '#6A9BC8',
+  },
+  routeTitle: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontFamily: FONTS.bold,
+    color: '#102033',
   },
   routeSummary: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
@@ -1741,70 +880,5 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.bold,
     color: '#102033',
-  },
-  areaUpdatesCard: {
-    gap: SPACING.xs,
-  },
-  areaUpdatesHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  areaUpdatesTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-  },
-  areaUpdatesMeta: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#7890A5',
-  },
-  areaUpdatesSubtitle: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.regular,
-    color: '#7A8EA3',
-  },
-  areaUpdatesList: {
-    marginTop: SPACING.sm,
-  },
-  areaUpdateItem: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    paddingVertical: SPACING.md,
-    alignItems: 'flex-start',
-  },
-  areaUpdateItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#EDF2F6',
-  },
-  areaUpdateBullet: {
-    width: 9,
-    height: 9,
-    borderRadius: 999,
-    backgroundColor: '#FFB01F',
-    marginTop: 6,
-  },
-  areaUpdateCopy: {
-    flex: 1,
-    gap: SPACING.xs,
-  },
-  areaUpdateName: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
-    color: '#2C3E50',
-  },
-  areaUpdateSummary: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: '#7A8EA3',
-    lineHeight: 22,
-  },
-  map: {
-    width: '100%',
-    height: 320,
-    borderRadius: 6,
-    backgroundColor: '#F7F8FA',
   },
 });
