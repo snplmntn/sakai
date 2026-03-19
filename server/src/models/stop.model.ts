@@ -15,9 +15,11 @@ export interface FindNearestStopsOptions {
   coordinates: Coordinates;
   limit: number;
   modes?: StopMode[];
+  maxDistanceMeters?: number;
 }
 
 const EARTH_RADIUS_METERS = 6_371_000;
+const METERS_PER_DEGREE_LATITUDE = 111_320;
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
 
@@ -90,6 +92,21 @@ export const findNearestStops = async (
 
   if (options.modes && options.modes.length > 0) {
     query = query.in("mode", [...new Set(options.modes)]);
+  }
+
+  if (options.maxDistanceMeters && options.maxDistanceMeters > 0) {
+    const latitudeDelta = options.maxDistanceMeters / METERS_PER_DEGREE_LATITUDE;
+    const longitudeDivisor = Math.max(
+      Math.cos((options.coordinates.latitude * Math.PI) / 180) * METERS_PER_DEGREE_LATITUDE,
+      1
+    );
+    const longitudeDelta = options.maxDistanceMeters / longitudeDivisor;
+
+    query = query
+      .gte("latitude", options.coordinates.latitude - latitudeDelta)
+      .lte("latitude", options.coordinates.latitude + latitudeDelta)
+      .gte("longitude", options.coordinates.longitude - longitudeDelta)
+      .lte("longitude", options.coordinates.longitude + longitudeDelta);
   }
 
   const { data, error } = await query;

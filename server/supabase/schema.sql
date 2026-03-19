@@ -262,6 +262,10 @@ create table if not exists public.places (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+grant select on public.places to service_role;
+grant select on public.places to authenticated;
+grant select on public.places to anon;
+
 create index if not exists places_canonical_name_idx
   on public.places (canonical_name);
 
@@ -271,6 +275,10 @@ create table if not exists public.place_aliases (
   alias text not null,
   normalized_alias text not null
 );
+
+grant select on public.place_aliases to service_role;
+grant select on public.place_aliases to authenticated;
+grant select on public.place_aliases to anon;
 
 create unique index if not exists place_aliases_place_id_normalized_alias_uidx
   on public.place_aliases (place_id, normalized_alias);
@@ -484,7 +492,7 @@ create table if not exists public.stops (
   external_stop_code text,
   stop_name text not null,
   mode text not null
-    check (mode in ('jeepney', 'uv', 'mrt3', 'lrt1', 'lrt2', 'walk_anchor')),
+    check (mode in ('jeepney', 'uv', 'mrt3', 'lrt1', 'lrt2', 'walk_anchor', 'car')),
   area text not null,
   latitude double precision not null,
   longitude double precision not null,
@@ -515,7 +523,7 @@ create table if not exists public.routes (
   code text not null unique,
   display_name text not null,
   primary_mode text not null
-    check (primary_mode in ('jeepney', 'uv', 'mrt3', 'lrt1', 'lrt2')),
+    check (primary_mode in ('jeepney', 'uv', 'mrt3', 'lrt1', 'lrt2', 'car')),
   operator_name text,
   source_name text not null,
   source_url text,
@@ -606,7 +614,7 @@ create table if not exists public.route_legs (
   route_variant_id uuid not null references public.route_variants(id) on delete cascade,
   sequence integer not null,
   mode text not null
-    check (mode in ('jeepney', 'uv', 'mrt3', 'lrt1', 'lrt2')),
+    check (mode in ('jeepney', 'uv', 'mrt3', 'lrt1', 'lrt2', 'car')),
   from_stop_id uuid not null references public.stops(id) on delete cascade,
   to_stop_id uuid not null references public.stops(id) on delete cascade,
   route_label text not null,
@@ -711,3 +719,127 @@ create index if not exists train_station_fares_origin_stop_id_idx
 
 create index if not exists train_station_fares_destination_stop_id_idx
   on public.train_station_fares (destination_stop_id);
+
+create table if not exists public.community_submissions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id),
+  submission_type text not null
+    check (submission_type in ('missing_route', 'route_correction', 'fare_update', 'route_note')),
+  status text not null default 'pending'
+    check (status in ('pending', 'reviewed', 'approved', 'rejected')),
+  title text not null,
+  payload jsonb not null,
+  source_context jsonb,
+  review_notes text,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+create trigger set_community_submissions_updated_at
+before update on public.community_submissions
+for each row
+execute function public.set_updated_at();
+
+alter table public.community_submissions enable row level security;
+
+grant select, insert, update, delete on public.community_submissions to authenticated;
+
+create policy "Allow users to view their own submissions"
+on public.community_submissions
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "Allow users to create submissions"
+on public.community_submissions
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+create policy "Allow users to update their own pending submissions"
+on public.community_submissions
+for update
+to authenticated
+using (auth.uid() = user_id AND status = 'pending')
+with check (auth.uid() = user_id);
+
+create table if not exists public.community_questions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id),
+  title text not null,
+  body text not null,
+  origin_label text not null,
+  destination_label text not null,
+  origin_place_id uuid references public.places(id) on delete set null,
+  destination_place_id uuid references public.places(id) on delete set null,
+  route_query_text text,
+  preference text check (preference in ('fastest', 'cheapest', 'balanced')),
+  passenger_type text check (passenger_type in ('regular', 'student', 'senior', 'pwd')),
+  source_context jsonb,
+  reply_count integer not null default 0,
+  last_answered_at timestamptz,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+create trigger set_community_questions_updated_at
+before update on public.community_questions
+for each row
+execute function public.set_updated_at();
+
+create table if not exists public.community_question_answers (
+  id uuid primary key default gen_random_uuid(),
+  question_id uuid not null references public.community_questions(id) on delete cascade,
+  user_id uuid not null references auth.users(id),
+  body text not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+create trigger set_community_question_answers_updated_at
+before update on public.community_question_answers
+for each row
+execute function public.set_updated_at();
+
+create or replace function public.increment_community_question_reply_count(question_id_input uuid)
+returns void
+language sql
+security definer
+as $$
+  update public.community_questions
+  set reply_count = reply_count + 1,
+      last_answered_at = timezone('utc', now()),
+      updated_at = timezone('utc', now())
+  where id = question_id_input;
+$$;
+
+alter table public.community_questions enable row level security;
+alter table public.community_question_answers enable row level security;
+
+grant select, insert on public.community_questions to authenticated;
+grant select, insert on public.community_question_answers to authenticated;
+grant execute on function public.increment_community_question_reply_count(uuid) to authenticated;
+
+create policy "Allow authenticated users to view community questions"
+on public.community_questions
+for select
+to authenticated
+using (true);
+
+create policy "Allow users to create community questions"
+on public.community_questions
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+create policy "Allow authenticated users to view question answers"
+on public.community_question_answers
+for select
+to authenticated
+using (true);
+
+create policy "Allow users to create answers"
+on public.community_question_answers
+for insert
+to authenticated
+with check (auth.uid() = user_id);

@@ -6,7 +6,10 @@ import OnboardingPassengerProfileScreen from '../screens/OnboardingPassengerProf
 import LoginScreen from '../screens/auth/LoginScreen';
 import SignupScreen from '../screens/auth/SignupScreen';
 import AuthLoadingScreen from '../screens/auth/AuthLoadingScreen';
+import CommunityHubScreen from '../screens/CommunityHubScreen';
+import CommunityQuestionDetailScreen from '../screens/CommunityQuestionDetailScreen';
 import MainTabNavigator from './MainTabNavigator';
+import type { CommunityLaunchDraft } from '../community/types';
 import type { RoutePreference } from '../preferences/types';
 
 export type RootStackParamList = {
@@ -16,6 +19,8 @@ export type RootStackParamList = {
   Login: { successMessage?: string } | undefined;
   Signup: undefined;
   MainTabs: undefined;
+  CommunityHub: { draft?: CommunityLaunchDraft } | undefined;
+  CommunityQuestionDetail: { questionId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,6 +39,12 @@ export default function AppNavigator() {
           name="MainTabs"
           component={MainTabNavigator}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen name="CommunityHub" component={CommunityHubScreen} options={{ title: 'Community' }} />
+        <Stack.Screen
+          name="CommunityQuestionDetail"
+          component={CommunityQuestionDetailScreen}
+          options={{ title: 'Community thread' }}
         />
       </Stack.Navigator>
     );
