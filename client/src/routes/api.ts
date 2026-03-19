@@ -5,6 +5,7 @@ import type {
   PassengerType,
   RideMode,
   RoutePreference,
+  RouteQueryIncident,
   RouteQueryLeg,
   RouteQueryOption,
   RouteQueryPointInput,
@@ -109,6 +110,30 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
   };
 };
 
+const parseIncident = (value: unknown): RouteQueryIncident => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid route incident');
+  }
+
+  const severity = parseString(value.severity, 'incident.severity');
+
+  if (severity !== 'low' && severity !== 'medium' && severity !== 'high') {
+    throw new Error('Invalid incident severity');
+  }
+
+  return {
+    id: parseString(value.id, 'incident.id'),
+    alertType: parseString(value.alertType, 'incident.alertType'),
+    location: parseString(value.location, 'incident.location'),
+    direction: parseNullableString(value.direction, 'incident.direction'),
+    severity,
+    summary: parseString(value.summary, 'incident.summary'),
+    displayUntil: parseString(value.displayUntil, 'incident.displayUntil'),
+    scrapedAt: parseString(value.scrapedAt, 'incident.scrapedAt'),
+    sourceUrl: parseString(value.sourceUrl, 'incident.sourceUrl'),
+  };
+};
+
 const parseRouteOption = (value: unknown): RouteQueryOption => {
   if (!isRecord(value)) {
     throw new Error('Invalid route option');
@@ -132,7 +157,9 @@ const parseRouteOption = (value: unknown): RouteQueryOption => {
       ? value.fareAssumptions.map((item) => parseString(item, 'option.fareAssumptions'))
       : [],
     legs: Array.isArray(value.legs) ? value.legs.map(parseLeg) : [],
-    relevantIncidents: Array.isArray(value.relevantIncidents) ? value.relevantIncidents : [],
+    relevantIncidents: Array.isArray(value.relevantIncidents)
+      ? value.relevantIncidents.map(parseIncident)
+      : [],
   };
 };
 

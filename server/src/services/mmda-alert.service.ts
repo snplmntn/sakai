@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 
+import {
+  computeDisplayUntil,
+  extractMmdaAlertWithAi
+} from "../ai/mmda-alert.js";
 import { getEnv } from "../config/env.js";
 
 const DEFAULT_MMDA_SOURCE_URLS = [
@@ -18,6 +22,11 @@ export interface ScrapedMmdaAlert {
   reportedTimeText: string | null;
   laneStatus: string | null;
   trafficStatus: string | null;
+  severity: "low" | "medium" | "high";
+  summary: string;
+  corridorTags: string[];
+  normalizedLocation: string;
+  displayUntil: string;
   rawText: string;
   scrapedAt: string;
 }
@@ -63,7 +72,10 @@ export const parseMmdaAlertMessage = (
   rawMessage: string,
   sourceUrl: string,
   now = new Date()
-): ScrapedMmdaAlert => {
+): Omit<
+  ScrapedMmdaAlert,
+  "severity" | "summary" | "corridorTags" | "normalizedLocation" | "displayUntil"
+> => {
   const rawText = rawMessage.replace(/\s+/g, " ").trim();
   const withoutHashtag = rawText.replace(/\s+#mmda\b/gi, "").trim();
   const alertBody = withoutHashtag.replace(/^MMDA ALERT:\s*/i, "").trim();
@@ -165,7 +177,13 @@ export const refreshMmdaAlerts = async (
 
     for (const message of messages) {
       const parsedAlert = parseMmdaAlertMessage(message, sourceUrl, now);
-      alerts.set(parsedAlert.externalId, parsedAlert);
+      const aiExtraction = await extractMmdaAlertWithAi(parsedAlert);
+
+      alerts.set(parsedAlert.externalId, {
+        ...parsedAlert,
+        ...aiExtraction,
+        displayUntil: computeDisplayUntil(aiExtraction.severity, parsedAlert.scrapedAt)
+      });
     }
   }
 

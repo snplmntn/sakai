@@ -190,16 +190,60 @@ create table if not exists public.area_updates (
   reported_time_text text,
   lane_status text,
   traffic_status text,
+  severity text not null default 'medium'
+    check (severity in ('low', 'medium', 'high')),
+  summary text not null default '',
+  corridor_tags text[] not null default '{}',
+  normalized_location text not null default '',
+  display_until timestamptz not null default timezone('utc', now()) + interval '3 hour',
   raw_text text not null,
   scraped_at timestamptz not null,
   created_at timestamptz not null default timezone('utc', now())
 );
+
+alter table if exists public.area_updates
+  add column if not exists severity text,
+  add column if not exists summary text,
+  add column if not exists corridor_tags text[] default '{}',
+  add column if not exists normalized_location text,
+  add column if not exists display_until timestamptz;
+
+update public.area_updates
+set severity = coalesce(severity, 'medium'),
+    summary = coalesce(
+      nullif(summary, ''),
+      concat(alert_type, ' near ', location)
+    ),
+    corridor_tags = coalesce(corridor_tags, '{}'),
+    normalized_location = coalesce(
+      nullif(normalized_location, ''),
+      lower(regexp_replace(location, '[^a-zA-Z0-9\s-]+', ' ', 'g'))
+    ),
+    display_until = coalesce(display_until, scraped_at + interval '3 hour');
+
+alter table if exists public.area_updates
+  alter column severity set not null,
+  alter column summary set not null,
+  alter column corridor_tags set not null,
+  alter column normalized_location set not null,
+  alter column display_until set not null,
+  alter column severity set default 'medium',
+  alter column corridor_tags set default '{}';
 
 create unique index if not exists area_updates_external_id_uidx
   on public.area_updates (external_id);
 
 create index if not exists area_updates_scraped_at_idx
   on public.area_updates (scraped_at desc);
+
+create index if not exists area_updates_display_until_idx
+  on public.area_updates (display_until desc);
+
+create index if not exists area_updates_normalized_location_idx
+  on public.area_updates (normalized_location);
+
+create index if not exists area_updates_corridor_tags_gin_idx
+  on public.area_updates using gin (corridor_tags);
 
 create table if not exists public.places (
   id uuid primary key default gen_random_uuid(),

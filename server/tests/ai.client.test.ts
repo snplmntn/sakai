@@ -93,7 +93,7 @@ describe("ai client", () => {
     process.env.AUTH_GOOGLE_REDIRECT_URI = "http://localhost:3000/api/auth/google/callback";
     process.env.AUTH_APP_REDIRECT_URI = "http://localhost:8081/auth/callback";
     process.env.AUTH_STATE_SIGNING_SECRET = "12345678901234567890123456789012";
-    process.env.AI_PROVIDER = "gemini_developer";
+    process.env.AI_PROVIDER = "vertex_express";
     delete process.env.GEMINI_API_KEY;
     delete process.env.VERTEX_API_KEY;
     delete process.env.GEMINI_MODEL_PRIMARY;
@@ -106,6 +106,8 @@ describe("ai client", () => {
   });
 
   it("treats Gemini Developer API as disabled when no key is configured", async () => {
+    process.env.AI_PROVIDER = "gemini_developer";
+
     const client = await import("../src/ai/client.js");
 
     expect(client.isAiEnabled()).toBe(false);
@@ -154,6 +156,7 @@ describe("ai client", () => {
   });
 
   it("retries transient Gemini failures and returns validated JSON", async () => {
+    process.env.AI_PROVIDER = "gemini_developer";
     process.env.GEMINI_API_KEY = "test-key";
 
     const fetchMock = vi

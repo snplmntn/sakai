@@ -4,9 +4,20 @@ vi.mock("../src/models/fare.model.js", () => ({
   getActiveFareCatalog: vi.fn()
 }));
 
+vi.mock("../src/models/area-update.model.js", () => ({
+  listActiveAreaUpdates: vi.fn()
+}));
+
 vi.mock("../src/models/place.model.js", () => ({
   resolvePlaceReference: vi.fn(),
-  getPlaceById: vi.fn()
+  getPlaceById: vi.fn(),
+  normalizePlaceSearchText: vi.fn((value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+  )
 }));
 
 vi.mock("../src/models/route.model.js", () => ({
@@ -36,6 +47,7 @@ vi.mock("../src/ai/route-summary.js", () => ({
 
 import { AiUnavailableError } from "../src/ai/client.js";
 import * as intentParser from "../src/ai/intent-parser.js";
+import * as areaUpdateModel from "../src/models/area-update.model.js";
 import * as routeSummary from "../src/ai/route-summary.js";
 import * as fareModel from "../src/models/fare.model.js";
 import * as placeModel from "../src/models/place.model.js";
@@ -47,6 +59,7 @@ import { queryRoutes } from "../src/services/route-query.service.js";
 
 const mockedFareModel = vi.mocked(fareModel);
 const mockedIntentParser = vi.mocked(intentParser);
+const mockedAreaUpdateModel = vi.mocked(areaUpdateModel);
 const mockedPlaceModel = vi.mocked(placeModel);
 const mockedRouteModel = vi.mocked(routeModel);
 const mockedRouteSummary = vi.mocked(routeSummary);
@@ -138,6 +151,7 @@ describe("route query service", () => {
       confidence: "high"
     });
     mockedRouteSummary.generateRouteSummary.mockImplementation(async () => "Route summary");
+    mockedAreaUpdateModel.listActiveAreaUpdates.mockResolvedValue([]);
     mockedPlaceModel.getPlaceById.mockResolvedValue(null);
     mockedStopModel.findNearestStops.mockResolvedValue([]);
     mockedTransferPointModel.listTransferPointsByStopIds.mockResolvedValue([]);
@@ -245,7 +259,6 @@ describe("route query service", () => {
         ]
       }
     ]);
-
     const result = await queryRoutes({
       request: {
         origin: {
@@ -793,6 +806,133 @@ describe("route query service", () => {
     expect(result.message).toBe(
       "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
     );
+  });
+
+  it("resolves a stored google place id before falling back to coordinates", async () => {
+    const originStop = createStop("stop-origin", "Alabang", "jeepney", "place-origin");
+    const destinationStop = createStop("stop-destination", "Pasay", "jeepney", "place-destination");
+
+    mockedUserPreferenceModel.getUserPreferenceByUserId.mockResolvedValue(null);
+    mockedPlaceModel.resolvePlaceReference
+      .mockResolvedValueOnce({
+        status: "resolved",
+        place: {
+          id: "place-origin",
+          canonicalName: "Alabang",
+          city: "Muntinlupa",
+          kind: "terminal",
+          latitude: 14.423127,
+          longitude: 121.045653,
+          googlePlaceId: null,
+          createdAt: "2026-03-19T00:00:00.000Z",
+          matchedBy: "canonicalName",
+          matchedText: "Alabang"
+        }
+      })
+      .mockResolvedValueOnce({
+        status: "resolved",
+        place: {
+          id: "place-destination",
+          canonicalName: "Pasay",
+          city: "Pasay",
+          kind: "terminal",
+          latitude: 14.537745,
+          longitude: 121.001557,
+          googlePlaceId: "google-place-pasay",
+          createdAt: "2026-03-19T00:00:00.000Z",
+          matchedBy: "googlePlaceId",
+          matchedText: "google-place-pasay"
+        }
+      });
+    mockedStopModel.listStopsByPlaceId
+      .mockResolvedValueOnce([originStop])
+      .mockResolvedValueOnce([destinationStop]);
+    mockedRouteModel.listActiveRouteVariants.mockResolvedValue([
+      {
+        id: "variant-1",
+        routeId: "route-1",
+        code: "JEEP-ALABANG-PASAY:OUTBOUND",
+        displayName: "Alabang to Pasay",
+        directionLabel: "Outbound",
+        originPlaceId: "place-origin",
+        destinationPlaceId: "place-destination",
+        isActive: true,
+        createdAt: "2026-03-19T00:00:00.000Z",
+        route: {
+          id: "route-1",
+          code: "JEEP-ALABANG-PASAY",
+          displayName: "Alabang - Pasay",
+          primaryMode: "jeepney",
+          operatorName: null,
+          sourceName: "seed",
+          sourceUrl: null,
+          trustLevel: "trusted_seed",
+          isActive: true,
+          createdAt: "2026-03-19T00:00:00.000Z"
+        },
+        legs: [
+          {
+            id: "leg-1",
+            routeVariantId: "variant-1",
+            sequence: 1,
+            mode: "jeepney",
+            fromStop: originStop,
+            toStop: destinationStop,
+            routeLabel: "Alabang - Pasay",
+            distanceKm: 18,
+            durationMinutes: 48,
+            fareProductCode: "puj_traditional",
+            corridorTag: "alabang-pasay",
+            createdAt: "2026-03-19T00:00:00.000Z"
+          }
+        ]
+      }
+    ]);
+    mockedAreaUpdateModel.listActiveAreaUpdates.mockResolvedValue([
+      {
+        id: "incident-1",
+        externalId: "mmda-1",
+        source: "mmda",
+        sourceUrl: "https://x.com/MMDA",
+        alertType: "Road crash incident",
+        location: "Cubao corridor",
+        direction: "EB",
+        involved: "2 vehicles",
+        reportedTimeText: "5:29 PM",
+        laneStatus: "One lane occupied",
+        trafficStatus: "MMDA enforcers are on site managing traffic",
+        severity: "medium",
+        summary: "Crash along the Cubao corridor may slow this route.",
+        corridorTags: ["cubao"],
+        normalizedLocation: "cubao corridor",
+        displayUntil: "2026-03-19T13:05:00.000Z",
+        rawText: "MMDA ALERT...",
+        scrapedAt: "2026-03-19T10:05:00.000Z",
+        createdAt: "2026-03-19T10:05:00.000Z"
+      }
+    ]);
+    const result = await queryRoutes({
+      request: {
+        origin: {
+          label: "Alabang"
+        },
+        destination: {
+          googlePlaceId: "google-place-pasay",
+          label: "Pasay Rotonda"
+        },
+        preference: "balanced",
+        passengerType: "regular"
+      }
+    });
+
+    expect(mockedPlaceModel.resolvePlaceReference).toHaveBeenNthCalledWith(2, {
+      placeId: undefined,
+      googlePlaceId: "google-place-pasay",
+      query: "Pasay Rotonda"
+    });
+    expect(result.normalizedQuery.destination.placeId).toBe("place-destination");
+    expect(result.normalizedQuery.destination.matchedBy).toBe("googlePlaceId");
+    expect(result.options).toHaveLength(1);
   });
 
   it("falls back to nearby coordinates when a google-selected label is not stored internally", async () => {

@@ -17,6 +17,11 @@ export interface AreaUpdate {
   reportedTimeText: string | null;
   laneStatus: string | null;
   trafficStatus: string | null;
+  severity: "low" | "medium" | "high";
+  summary: string;
+  corridorTags: string[];
+  normalizedLocation: string;
+  displayUntil: string;
   rawText: string;
   scrapedAt: string;
   createdAt: string;
@@ -25,6 +30,7 @@ export interface AreaUpdate {
 export interface ListAreaUpdatesOptions {
   area?: string;
   limit: number;
+  onlyActive?: boolean;
 }
 
 export interface UpsertAreaUpdateInput {
@@ -38,6 +44,11 @@ export interface UpsertAreaUpdateInput {
   reportedTimeText?: string | null;
   laneStatus?: string | null;
   trafficStatus?: string | null;
+  severity: "low" | "medium" | "high";
+  summary: string;
+  corridorTags: string[];
+  normalizedLocation: string;
+  displayUntil: string;
   rawText: string;
   scrapedAt: string;
 }
@@ -54,6 +65,11 @@ const mapAreaUpdate = (row: AreaUpdateRow): AreaUpdate => ({
   reportedTimeText: row.reported_time_text,
   laneStatus: row.lane_status,
   trafficStatus: row.traffic_status,
+  severity: row.severity,
+  summary: row.summary,
+  corridorTags: row.corridor_tags,
+  normalizedLocation: row.normalized_location,
+  displayUntil: row.display_until,
   rawText: row.raw_text,
   scrapedAt: row.scraped_at,
   createdAt: row.created_at
@@ -66,7 +82,13 @@ export const listAreaUpdates = async (
   let query = client.from("area_updates").select("*");
 
   if (options.area) {
-    query = query.ilike("location", `%${options.area}%`);
+    query = query.or(
+      `location.ilike.%${options.area}%,normalized_location.ilike.%${options.area.toLowerCase()}%`
+    );
+  }
+
+  if (options.onlyActive ?? true) {
+    query = query.gt("display_until", new Date().toISOString());
   }
 
   const { data, error } = await query
@@ -99,6 +121,11 @@ export const upsertAreaUpdates = async (
     reported_time_text: payload.reportedTimeText ?? null,
     lane_status: payload.laneStatus ?? null,
     traffic_status: payload.trafficStatus ?? null,
+    severity: payload.severity,
+    summary: payload.summary,
+    corridor_tags: payload.corridorTags,
+    normalized_location: payload.normalizedLocation,
+    display_until: payload.displayUntil,
     raw_text: payload.rawText,
     scraped_at: payload.scrapedAt
   }));
@@ -116,3 +143,9 @@ export const upsertAreaUpdates = async (
 
   return ((data ?? []) as AreaUpdateRow[]).map(mapAreaUpdate);
 };
+
+export const listActiveAreaUpdates = async (limit = 100): Promise<AreaUpdate[]> =>
+  listAreaUpdates({
+    limit,
+    onlyActive: true
+  });

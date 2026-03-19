@@ -77,6 +77,27 @@ const parseGoogleSuggestion = (value: unknown): GooglePlaceSuggestion => {
   };
 };
 
+const parseGoogleResponseStatus = (
+  body: unknown,
+  allowedStatuses: readonly string[],
+  fallbackMessage: string
+): string => {
+  if (!isRecord(body) || typeof body.status !== 'string') {
+    throw new Error(fallbackMessage);
+  }
+
+  if (!allowedStatuses.includes(body.status)) {
+    const errorMessage =
+      typeof body.error_message === 'string' && body.error_message.trim().length > 0
+        ? body.error_message
+        : fallbackMessage;
+
+    throw new Error(errorMessage);
+  }
+
+  return body.status;
+};
+
 const buildGoogleUrl = (path: string, params: Record<string, string>): string => {
   const query = new URLSearchParams(params).toString();
   return `${path}?${query}`;
@@ -96,20 +117,40 @@ export const searchSakaiPlaces = async (
 
 export const searchGooglePlaces = async (
   query: string,
-  limit = 5
+  limit = 5,
+  options?: {
+    sessionToken?: string;
+  }
 ): Promise<GooglePlaceSuggestion[]> => {
+  const params: Record<string, string> = {
+    input: query,
+    key: readGooglePlacesApiKey(),
+    components: 'country:ph',
+    language: 'en',
+    region: 'ph',
+  };
+
+  if (options?.sessionToken) {
+    params.sessiontoken = options.sessionToken;
+  }
+
   const response = await fetch(
-    buildGoogleUrl('https://maps.googleapis.com/maps/api/place/autocomplete/json', {
-      input: query,
-      key: readGooglePlacesApiKey(),
-      components: 'country:ph',
-      language: 'en',
-    })
+    buildGoogleUrl('https://maps.googleapis.com/maps/api/place/autocomplete/json', params)
   );
   const body = (await response.json()) as unknown;
 
   if (!isRecord(body) || !Array.isArray(body.predictions)) {
     throw new Error('Invalid Google autocomplete response');
+  }
+
+  const status = parseGoogleResponseStatus(
+    body,
+    ['OK', 'ZERO_RESULTS'],
+    'Google Maps autocomplete is unavailable right now.'
+  );
+
+  if (status === 'ZERO_RESULTS') {
+    return [];
   }
 
   return body.predictions
@@ -118,16 +159,27 @@ export const searchGooglePlaces = async (
 };
 
 export const getGooglePlaceDetails = async (
-  googlePlaceId: string
+  googlePlaceId: string,
+  options?: {
+    sessionToken?: string;
+  }
 ): Promise<SelectedPlace> => {
+  const params: Record<string, string> = {
+    place_id: googlePlaceId,
+    key: readGooglePlacesApiKey(),
+    fields: 'place_id,name,formatted_address,geometry',
+  };
+
+  if (options?.sessionToken) {
+    params.sessiontoken = options.sessionToken;
+  }
+
   const response = await fetch(
-    buildGoogleUrl('https://maps.googleapis.com/maps/api/place/details/json', {
-      place_id: googlePlaceId,
-      key: readGooglePlacesApiKey(),
-      fields: 'place_id,name,formatted_address,geometry',
-    })
+    buildGoogleUrl('https://maps.googleapis.com/maps/api/place/details/json', params)
   );
   const body = (await response.json()) as unknown;
+
+  parseGoogleResponseStatus(body, ['OK'], 'Google Maps place details are unavailable right now.');
 
   if (!isRecord(body) || !isRecord(body.result) || !isRecord(body.result.geometry)) {
     throw new Error('Invalid Google place details response');
@@ -166,6 +218,21 @@ export const reverseGeocodeCurrentLocation = async (input: {
 
   if (!isRecord(body) || !Array.isArray(body.results)) {
     throw new Error('Invalid Google reverse geocode response');
+  }
+
+  const status = parseGoogleResponseStatus(
+    body,
+    ['OK', 'ZERO_RESULTS'],
+    'Google Maps reverse geocoding is unavailable right now.'
+  );
+
+  if (status === 'ZERO_RESULTS') {
+    return {
+      source: 'current-location',
+      label: 'Current location',
+      latitude: input.latitude,
+      longitude: input.longitude,
+    };
   }
 
   const firstResult = body.results.find((result) => isRecord(result));
