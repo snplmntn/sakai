@@ -10,6 +10,7 @@ import { ToastProvider } from './src/toast/ToastContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import './src/navigation-alert/task';
 import { configureArrivalNotifications } from './src/navigation-alert/notification-service';
+import { NavigationAlarmProvider } from './src/navigation-alert/NavigationAlarmContext';
 
 WebBrowser.maybeCompleteAuthSession();
 SplashScreen.preventAutoHideAsync();
@@ -47,9 +48,11 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <PreferencesProvider>
-            <NavigationContainer>
-              <AppNavigator />
-            </NavigationContainer>
+            <NavigationAlarmProvider>
+              <NavigationContainer>
+                <AppNavigator />
+              </NavigationContainer>
+            </NavigationAlarmProvider>
           </PreferencesProvider>
         </AuthProvider>
       </ToastProvider>
