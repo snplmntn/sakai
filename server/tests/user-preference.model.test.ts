@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/config/supabase.js", () => ({
-  getSupabaseAdminClient: vi.fn()
+  getSupabaseAdminClient: vi.fn(),
+  createSupabaseUserClient: vi.fn()
 }));
 
-import { getSupabaseAdminClient } from "../src/config/supabase.js";
+import {
+  createSupabaseUserClient,
+  getSupabaseAdminClient
+} from "../src/config/supabase.js";
 import {
   getUserPreferenceByUserId,
   upsertUserPreference
 } from "../src/models/user-preference.model.js";
 
 const mockedGetSupabaseAdminClient = vi.mocked(getSupabaseAdminClient);
+const mockedCreateSupabaseUserClient = vi.mocked(createSupabaseUserClient);
 
 describe("user preference model", () => {
   beforeEach(() => {
@@ -127,5 +132,37 @@ describe("user preference model", () => {
       createdAt: "2026-03-19T10:05:00.000Z",
       updatedAt: "2026-03-19T10:06:00.000Z"
     });
+  });
+
+  it("uses the user-scoped client when an access token is provided", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        user_id: "user-1",
+        default_preference: "fastest",
+        passenger_type: "regular",
+        created_at: "2026-03-19T10:05:00.000Z",
+        updated_at: "2026-03-19T10:05:00.000Z"
+      },
+      error: null
+    });
+    const eq = vi.fn().mockReturnValue({
+      maybeSingle
+    });
+    const select = vi.fn().mockReturnValue({
+      eq
+    });
+    const client = {
+      from: vi.fn().mockReturnValue({
+        select
+      })
+    };
+
+    mockedCreateSupabaseUserClient.mockReturnValue(client as never);
+
+    const result = await getUserPreferenceByUserId("user-1", "access-token");
+
+    expect(mockedCreateSupabaseUserClient).toHaveBeenCalledWith("access-token");
+    expect(mockedGetSupabaseAdminClient).not.toHaveBeenCalled();
+    expect(result?.defaultPreference).toBe("fastest");
   });
 });

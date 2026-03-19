@@ -118,4 +118,43 @@ describe("stop model", () => {
     expect(stops.map((stop) => stop.stopName)).toEqual(["Near Stop", "Far Stop"]);
     expect(stops[0].distanceMeters).toBeLessThan(stops[1].distanceMeters);
   });
+
+  it("filters inactive stops when loading by id", async () => {
+    const eqIsActive = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: "stop-1",
+          place_id: null,
+          stop_name: "Active Stop",
+          mode: "jeepney",
+          area: "Cubao",
+          latitude: 14.6196,
+          longitude: 121.0513,
+          is_active: true,
+          created_at: "2026-03-19T10:05:00.000Z"
+        }
+      ],
+      error: null
+    });
+    const inIds = vi.fn().mockReturnValue({
+      eq: eqIsActive
+    });
+    const select = vi.fn().mockReturnValue({
+      in: inIds
+    });
+    const client = {
+      from: vi.fn().mockReturnValue({
+        select
+      })
+    };
+
+    mockedGetSupabaseAdminClient.mockReturnValue(client as never);
+
+    const { getStopsByIds } = await import("../src/models/stop.model.js");
+    const stops = await getStopsByIds(["stop-1", "stop-2"]);
+
+    expect(inIds).toHaveBeenCalledWith("id", ["stop-1", "stop-2"]);
+    expect(eqIsActive).toHaveBeenCalledWith("is_active", true);
+    expect(stops.map((stop) => stop.id)).toEqual(["stop-1"]);
+  });
 });

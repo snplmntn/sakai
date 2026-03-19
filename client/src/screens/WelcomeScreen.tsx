@@ -19,7 +19,7 @@ import {
   RouteIcon,
   UserGroupIcon,
 } from '@hugeicons/core-free-icons';
-import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, FONTS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
 
 const ONBOARDING_STEPS = [
@@ -198,7 +198,6 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
                 </TouchableOpacity>
               </View>
             )}
-
           </View>
         </View>
       </View>

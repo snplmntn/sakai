@@ -5,7 +5,11 @@ vi.mock("../src/models/auth.model.js", () => ({
   getCurrentUser: vi.fn()
 }));
 
-import { authenticateRequest, getAuthenticatedLocals } from "../src/middlewares/auth.middleware.js";
+import {
+  authenticateOptionalRequest,
+  authenticateRequest,
+  getAuthenticatedLocals
+} from "../src/middlewares/auth.middleware.js";
 import * as authModel from "../src/models/auth.model.js";
 
 const mockedAuthModel = vi.mocked(authModel);
@@ -57,5 +61,17 @@ describe("auth middleware", () => {
         userMetadata: {}
       }
     });
+  });
+
+  it("allows optional auth when no authorization header is present", async () => {
+    const request = createRequest();
+    const response = createResponse();
+    const next = vi.fn();
+
+    await authenticateOptionalRequest(request, response, next);
+
+    expect(mockedAuthModel.getCurrentUser).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith();
+    expect(response.locals).toEqual({});
   });
 });

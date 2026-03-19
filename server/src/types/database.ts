@@ -4,6 +4,10 @@ type PlaceKind = "landmark" | "station" | "area" | "campus" | "mall" | "terminal
 type RideMode = "jeepney" | "uv" | "mrt3" | "lrt1" | "lrt2";
 type StopMode = RideMode | "walk_anchor";
 type RouteTrustLevel = "trusted_seed" | "community_reviewed" | "demo_fallback";
+type FareRuleMode = RideMode | "car";
+type FareRuleVersionTrustLevel = "official" | "estimated" | "demo_fallback";
+type FareProductMode = "jeepney" | "uv" | "car";
+type FarePricingStrategy = "minimum_plus_succeeding" | "per_km";
 
 export interface Database {
   public: {
@@ -45,6 +49,11 @@ export interface Database {
           reported_time_text: string | null;
           lane_status: string | null;
           traffic_status: string | null;
+          severity: "low" | "medium" | "high";
+          summary: string;
+          corridor_tags: string[];
+          normalized_location: string;
+          display_until: string;
           raw_text: string;
           scraped_at: string;
           created_at: string;
@@ -61,6 +70,11 @@ export interface Database {
           reported_time_text?: string | null;
           lane_status?: string | null;
           traffic_status?: string | null;
+          severity: "low" | "medium" | "high";
+          summary: string;
+          corridor_tags: string[];
+          normalized_location: string;
+          display_until: string;
           raw_text: string;
           scraped_at: string;
           created_at?: string;
@@ -77,6 +91,11 @@ export interface Database {
           reported_time_text?: string | null;
           lane_status?: string | null;
           traffic_status?: string | null;
+          severity?: "low" | "medium" | "high";
+          summary?: string;
+          corridor_tags?: string[];
+          normalized_location?: string;
+          display_until?: string;
           raw_text?: string;
           scraped_at?: string;
           created_at?: string;
@@ -137,10 +156,59 @@ export interface Database {
         };
         Relationships: [];
       };
+      route_stop_import_rows: {
+        Row: {
+          id: string;
+          import_batch: string;
+          route_code: string;
+          variant_code: string;
+          direction_label: string;
+          sequence: number;
+          external_stop_code: string;
+          stop_name: string;
+          latitude: number | null;
+          longitude: number | null;
+          source_name: string;
+          source_url: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          import_batch: string;
+          route_code: string;
+          variant_code: string;
+          direction_label: string;
+          sequence: number;
+          external_stop_code: string;
+          stop_name: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          source_name: string;
+          source_url?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          import_batch?: string;
+          route_code?: string;
+          variant_code?: string;
+          direction_label?: string;
+          sequence?: number;
+          external_stop_code?: string;
+          stop_name?: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          source_name?: string;
+          source_url?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       stops: {
         Row: {
           id: string;
           place_id: string | null;
+          external_stop_code: string | null;
           stop_name: string;
           mode: StopMode;
           area: string;
@@ -152,6 +220,7 @@ export interface Database {
         Insert: {
           id?: string;
           place_id?: string | null;
+          external_stop_code?: string | null;
           stop_name: string;
           mode: StopMode;
           area: string;
@@ -163,6 +232,7 @@ export interface Database {
         Update: {
           id?: string;
           place_id?: string | null;
+          external_stop_code?: string | null;
           stop_name?: string;
           mode?: StopMode;
           area?: string;
@@ -216,6 +286,7 @@ export interface Database {
         Row: {
           id: string;
           route_id: string;
+          code: string;
           display_name: string;
           direction_label: string;
           origin_place_id: string | null;
@@ -226,6 +297,7 @@ export interface Database {
         Insert: {
           id?: string;
           route_id: string;
+          code: string;
           display_name: string;
           direction_label: string;
           origin_place_id?: string | null;
@@ -236,6 +308,7 @@ export interface Database {
         Update: {
           id?: string;
           route_id?: string;
+          code?: string;
           display_name?: string;
           direction_label?: string;
           origin_place_id?: string | null;
@@ -316,6 +389,126 @@ export interface Database {
           walking_distance_m?: number;
           walking_duration_minutes?: number;
           is_accessible?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      fare_rule_versions: {
+        Row: {
+          id: string;
+          mode: FareRuleMode;
+          version_name: string;
+          source_name: string;
+          source_url: string;
+          effectivity_date: string;
+          verified_at: string;
+          is_active: boolean;
+          trust_level: FareRuleVersionTrustLevel;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          mode: FareRuleMode;
+          version_name: string;
+          source_name: string;
+          source_url: string;
+          effectivity_date: string;
+          verified_at: string;
+          is_active?: boolean;
+          trust_level: FareRuleVersionTrustLevel;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          mode?: FareRuleMode;
+          version_name?: string;
+          source_name?: string;
+          source_url?: string;
+          effectivity_date?: string;
+          verified_at?: string;
+          is_active?: boolean;
+          trust_level?: FareRuleVersionTrustLevel;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      fare_products: {
+        Row: {
+          id: string;
+          fare_rule_version_id: string;
+          product_code: string;
+          mode: FareProductMode;
+          pricing_strategy: FarePricingStrategy;
+          vehicle_class: string;
+          minimum_distance_km: number;
+          minimum_fare_regular: number;
+          minimum_fare_discounted: number | null;
+          succeeding_distance_km: number;
+          succeeding_fare_regular: number;
+          succeeding_fare_discounted: number | null;
+          notes: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          fare_rule_version_id: string;
+          product_code: string;
+          mode: FareProductMode;
+          pricing_strategy: FarePricingStrategy;
+          vehicle_class: string;
+          minimum_distance_km: number;
+          minimum_fare_regular: number;
+          minimum_fare_discounted?: number | null;
+          succeeding_distance_km: number;
+          succeeding_fare_regular: number;
+          succeeding_fare_discounted?: number | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          fare_rule_version_id?: string;
+          product_code?: string;
+          mode?: FareProductMode;
+          pricing_strategy?: FarePricingStrategy;
+          vehicle_class?: string;
+          minimum_distance_km?: number;
+          minimum_fare_regular?: number;
+          minimum_fare_discounted?: number | null;
+          succeeding_distance_km?: number;
+          succeeding_fare_regular?: number;
+          succeeding_fare_discounted?: number | null;
+          notes?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      train_station_fares: {
+        Row: {
+          id: string;
+          fare_rule_version_id: string;
+          origin_stop_id: string;
+          destination_stop_id: string;
+          regular_fare: number;
+          discounted_fare: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          fare_rule_version_id: string;
+          origin_stop_id: string;
+          destination_stop_id: string;
+          regular_fare: number;
+          discounted_fare: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          fare_rule_version_id?: string;
+          origin_stop_id?: string;
+          destination_stop_id?: string;
+          regular_fare?: number;
+          discounted_fare?: number;
           created_at?: string;
         };
         Relationships: [];

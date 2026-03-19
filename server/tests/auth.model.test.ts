@@ -4,7 +4,7 @@ vi.mock("../src/config/env.js", () => ({
   getEnv: vi.fn(() => ({
     SUPABASE_URL: "https://example.supabase.co",
     SUPABASE_ANON_KEY: "anon-key",
-    AUTH_GOOGLE_REDIRECT_URI: "http://localhost:3000/api/auth/google/callback",
+    AUTH_GOOGLE_REDIRECT_URI: "https://api.example.com/api/auth/google/callback",
     AUTH_APP_REDIRECT_URI: "sakai://auth/callback",
     AUTH_STATE_SIGNING_SECRET: "12345678901234567890123456789012"
   }))
@@ -168,6 +168,8 @@ describe("auth model", () => {
 
   it("starts Google sign in with a signed state and pkce challenge", async () => {
     const result = await getGoogleSignInUrl({
+      callbackUrl: "https://api.example.com/api/auth/google/callback",
+      appRedirectUri: "sakai://auth/callback",
       now: new Date("2026-03-19T10:05:00.000Z")
     });
     const url = new URL(result.url);
@@ -177,25 +179,31 @@ describe("auth model", () => {
     expect(url.pathname).toBe("/auth/v1/authorize");
     expect(url.searchParams.get("provider")).toBe("google");
     expect(url.searchParams.get("redirect_to")).toBe(
-      "http://localhost:3000/api/auth/google/callback"
+      "https://api.example.com/api/auth/google/callback"
     );
     expect(url.searchParams.get("code_challenge_method")).toBe("s256");
     expect(state).toBeTruthy();
-    expect(
-      verifySignedAuthState(state ?? "", {
-        now: new Date("2026-03-19T10:10:00.000Z")
-      }).codeVerifier
-    ).toHaveLength(43);
+    const signedState = verifySignedAuthState(state ?? "", {
+      now: new Date("2026-03-19T10:10:00.000Z")
+    });
+
+    expect(signedState.codeVerifier).toHaveLength(43);
+    expect(signedState.appRedirectUri).toBe("sakai://auth/callback");
   });
 
   it("rejects tampered signed auth state values", () => {
-    const state = createSignedAuthState("test-code-verifier-123456789012345678901234567", {
-      now: new Date("2026-03-19T10:05:00.000Z")
-    });
+    const state = createSignedAuthState(
+      "test-code-verifier-123456789012345678901234567",
+      "sakai://auth/callback",
+      {
+        now: new Date("2026-03-19T10:05:00.000Z")
+      }
+    );
     const [encodedPayload, encodedSignature] = state.split(".");
     const tamperedPayload = Buffer.from(
       JSON.stringify({
         codeVerifier: "another-code-verifier-123456789012345678901234",
+        appRedirectUri: "sakai://auth/callback",
         iat: 1_779_911_100,
         exp: 1_779_911_700
       })
@@ -237,6 +245,7 @@ describe("auth model", () => {
     );
     const state = createSignedAuthState(
       "test-code-verifier-123456789012345678901234567",
+      "sakai://auth/callback",
       {
         now: new Date("2026-03-19T10:05:00.000Z")
       }

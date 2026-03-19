@@ -5,6 +5,11 @@ import { useAuth } from '../auth/AuthContext';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
+import { usePreferences } from '../preferences/PreferencesContext';
+import {
+  PASSENGER_TYPE_OPTIONS,
+  ROUTE_PREFERENCE_OPTIONS,
+} from '../preferences/types';
 import { useToast } from '../toast/ToastContext';
 
 type ProfileRow = {
@@ -81,6 +86,7 @@ const getErrorMessage = (error: unknown): string =>
 
 export default function ProfileScreen(_props: ProfileScreenProps) {
   const { user, refreshUser, signOut } = useAuth();
+  const { preferences, isUpdating, updatePreferences } = usePreferences();
   const { showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -132,6 +138,24 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
       });
     } finally {
       setIsSigningOut(false);
+    }
+  };
+
+  const handlePreferenceUpdate = async (input: {
+    defaultPreference: typeof preferences.defaultPreference;
+    passengerType: typeof preferences.passengerType;
+  }) => {
+    try {
+      await updatePreferences(input);
+      showToast({
+        tone: 'success',
+        message: 'Commute preferences updated.',
+      });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        message: getErrorMessage(error),
+      });
     }
   };
 

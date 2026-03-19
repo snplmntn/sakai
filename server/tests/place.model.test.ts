@@ -5,7 +5,7 @@ vi.mock("../src/config/supabase.js", () => ({
 }));
 
 import { getSupabaseAdminClient } from "../src/config/supabase.js";
-import { resolvePlaceReference } from "../src/models/place.model.js";
+import { resolvePlaceReference, searchPlaces } from "../src/models/place.model.js";
 
 const mockedGetSupabaseAdminClient = vi.mocked(getSupabaseAdminClient);
 
@@ -278,5 +278,143 @@ describe("place model", () => {
     expect(result).toEqual({
       status: "unresolved"
     });
+  });
+
+  it("resolves a place from googlePlaceId before falling back to label matching", async () => {
+    const placesMaybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        id: "place-1",
+        canonical_name: "Pasay",
+        city: "Pasay",
+        kind: "terminal",
+        latitude: 14.537745,
+        longitude: 121.001557,
+        google_place_id: "google-place-1",
+        created_at: "2026-03-19T10:05:00.000Z"
+      },
+      error: null
+    });
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === "places") {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: placesMaybeSingle
+              })
+            })
+          };
+        }
+
+        throw new Error(`Unexpected table: ${table}`);
+      })
+    };
+
+    mockedGetSupabaseAdminClient.mockReturnValue(client as never);
+
+    const result = await resolvePlaceReference({
+      googlePlaceId: "google-place-1",
+      query: "Pasay Rotonda"
+    });
+
+    expect(result).toEqual({
+      status: "resolved",
+      place: {
+        id: "place-1",
+        canonicalName: "Pasay",
+        city: "Pasay",
+        kind: "terminal",
+        latitude: 14.537745,
+        longitude: 121.001557,
+        googlePlaceId: "google-place-1",
+        createdAt: "2026-03-19T10:05:00.000Z",
+        matchedBy: "googlePlaceId",
+        matchedText: "google-place-1"
+      }
+    });
+  });
+
+  it("returns searchable place suggestions from aliases before canonical names", async () => {
+    const aliasPlacesQuery = {
+      in: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: "place-1",
+            canonical_name: "Pasay",
+            city: "Pasay",
+            kind: "terminal",
+            latitude: 14.537745,
+            longitude: 121.001557,
+            google_place_id: null,
+            created_at: "2026-03-19T10:05:00.000Z"
+          }
+        ],
+        error: null
+      })
+    };
+    const aliasesSelect = vi.fn().mockReturnValue({
+      ilike: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "alias-1",
+              place_id: "place-1",
+              alias: "Pasay Rotonda",
+              normalized_alias: "pasay rotonda"
+            }
+          ],
+          error: null
+        })
+      })
+    });
+    const canonicalPlacesQuery = {
+      ilike: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "place-2",
+              canonical_name: "Pasig",
+              city: "Pasig",
+              kind: "area",
+              latitude: 14.5764,
+              longitude: 121.0851,
+              google_place_id: null,
+              created_at: "2026-03-19T10:05:00.000Z"
+            }
+          ],
+          error: null
+        })
+      })
+    };
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === "place_aliases") {
+          return {
+            select: aliasesSelect
+          };
+        }
+
+        if (table === "places") {
+          return {
+            select: vi.fn(() => ({
+              ...aliasPlacesQuery,
+              ...canonicalPlacesQuery
+            }))
+          };
+        }
+
+        throw new Error(`Unexpected table: ${table}`);
+      })
+    };
+
+    mockedGetSupabaseAdminClient.mockReturnValue(client as never);
+
+    const results = await searchPlaces("pas", {
+      limit: 5
+    });
+
+    expect(results.map((result) => result.canonicalName)).toEqual(["Pasay", "Pasig"]);
+    expect(results[0]?.matchedBy).toBe("alias");
+    expect(results[1]?.matchedBy).toBe("canonicalName");
   });
 });

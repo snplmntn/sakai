@@ -67,7 +67,11 @@ export const getStopsByIds = async (stopIds: string[]): Promise<Stop[]> => {
   }
 
   const client = getSupabaseAdminClient();
-  const { data, error } = await client.from("stops").select("*").in("id", [...new Set(stopIds)]);
+  const { data, error } = await client
+    .from("stops")
+    .select("*")
+    .in("id", [...new Set(stopIds)])
+    .eq("is_active", true);
 
   if (error) {
     throw new HttpError(500, `Failed to fetch stops by id: ${error.message}`);

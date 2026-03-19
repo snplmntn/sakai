@@ -37,3 +37,22 @@ export const createSupabaseAuthClient = (): SupabaseClient<Database> => {
     }
   });
 };
+
+export const createSupabaseUserClient = (
+  accessToken: string
+): SupabaseClient<Database> => {
+  const env = getEnv();
+
+  return createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }
+  });
+};

@@ -6,9 +6,14 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  AUTH_GOOGLE_REDIRECT_URI: z.string().url(),
+  AUTH_GOOGLE_REDIRECT_URI: z.string().url().optional(),
   AUTH_APP_REDIRECT_URI: z.string().url(),
   AUTH_STATE_SIGNING_SECRET: z.string().min(32),
+  AI_PROVIDER: z.enum(["gemini_developer", "vertex_express"]).default("vertex_express"),
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  VERTEX_API_KEY: z.string().min(1).optional(),
+  GEMINI_MODEL_PRIMARY: z.string().min(1).optional(),
+  GEMINI_MODEL_LIGHT: z.string().min(1).optional(),
   MMDA_SOURCE_URLS: z.string().min(1).optional()
 });
 
