@@ -147,16 +147,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let isMounted = true;
 
     const hydrateAuthState = async () => {
-      const storedState = await readStoredAuthState();
-
-      if (!storedState) {
-        if (isMounted) {
-          setAuthState(UNAUTHENTICATED_STATE);
-        }
-        return;
-      }
-
       try {
+        const storedState = await readStoredAuthState();
+
+        if (!storedState) {
+          if (isMounted) {
+            setAuthState(UNAUTHENTICATED_STATE);
+          }
+          return;
+        }
+
         const refreshedPayload = await refreshSession({
           refreshToken: storedState.session.refreshToken,
         });
