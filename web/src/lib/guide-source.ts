@@ -15,43 +15,56 @@ const VEHICLE_CONFIG = [
     vehicleType: "walking",
     slug: "walking-guide",
     imageSrc: "/walking.jpg",
+    stepImageDir: "/walking",
   },
   {
     label: "Jeepney",
     vehicleType: "jeepney",
     slug: "jeepney-guide",
     imageSrc: "/jeepney.jpg",
+    stepImageDir: "/jeep",
   },
   {
     label: "MRT/LRT",
     vehicleType: "train",
     slug: "mrt-lrt-guide",
     imageSrc: "/mrt-lrt.jpg",
+    stepImageDir: "/mrt-lrt",
   },
   {
     label: "Bus",
     vehicleType: "bus",
     slug: "bus-guide",
     imageSrc: "/bus.jpg",
+    stepImageDir: "/bus",
   },
   {
     label: "Tricycle",
     vehicleType: "tricycle",
     slug: "tricycle-guide",
     imageSrc: "/tricycle.jpg",
+    stepImageDir: "/tricycle",
   },
-  { label: "FX", vehicleType: "fx", slug: "fx-guide", imageSrc: "/fx.jpg" },
+  {
+    label: "FX",
+    vehicleType: "fx",
+    slug: "fx-guide",
+    imageSrc: "/fx.jpg",
+    stepImageDir: "/fx-",
+  },
   {
     label: "Taxi",
     vehicleType: "taxi",
     slug: "taxi-guide",
     imageSrc: "/taxi.jpg",
+    stepImageDir: "/taxi",
   },
   {
     label: "Comet E-Jeep",
     vehicleType: "e-jeep",
     slug: "comet-e-jeep-guide",
     imageSrc: "/ejeep.jpg",
+    stepImageDir: "/e-jeep",
   },
 ] as const;
 
@@ -63,6 +76,7 @@ export interface ParsedGuideSource {
   label: string;
   vehicleType: string;
   imageSrc: string;
+  stepImages: string[];
   summary: string;
   markdown: string;
   searchText: string;
@@ -238,6 +252,26 @@ function getGuideTitle(config: VehicleConfig, markdown: string) {
   return config.label === "Walking" ? "Walking Guide" : `${config.label} Guide`;
 }
 
+function getStepImages(config: VehicleConfig) {
+  const stepImages: string[] = [];
+  const publicDir = path.resolve(process.cwd(), "public");
+  const stepImageDir = config.stepImageDir.replace(/^\//, "");
+
+  for (let index = 1; ; index += 1) {
+    const relativePath = path.join(stepImageDir, `${index}.jpg`);
+    const relativeSrc = `/${relativePath.replace(/\\/g, "/")}`;
+    const imagePath = path.join(publicDir, relativePath);
+
+    if (!fs.existsSync(imagePath)) {
+      break;
+    }
+
+    stepImages.push(relativeSrc);
+  }
+
+  return stepImages;
+}
+
 export function getParsedGuideSource(): ParsedGuideSource[] {
   if (parsedGuideCache) {
     return parsedGuideCache;
@@ -263,6 +297,7 @@ export function getParsedGuideSource(): ParsedGuideSource[] {
         label: config.label,
         vehicleType: config.vehicleType,
         imageSrc: config.imageSrc,
+        stepImages: getStepImages(config),
         summary,
         markdown,
         searchText,

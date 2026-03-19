@@ -13,12 +13,31 @@ function renderInline(value: string) {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
-export function renderMarkdown(markdown: string) {
+function renderListItem(item: string, stepImageSrc?: string) {
+  const content = `<div class="guide-step-text">${renderInline(item)}</div>`;
+
+  if (!stepImageSrc) {
+    return `<li>${content}</li>`;
+  }
+
+  return [
+    "<li>",
+    content,
+    `<img src="${escapeHtml(stepImageSrc)}" alt="" class="guide-step-image" loading="lazy" />`,
+    "</li>",
+  ].join("");
+}
+
+export function renderMarkdown(
+  markdown: string,
+  options?: { stepImages?: string[] },
+) {
   const lines = markdown.split("\n");
   const html: string[] = [];
   let paragraph: string[] = [];
   let listItems: string[] = [];
   let listTag: "ol" | "ul" | null = null;
+  let stepImageIndex = 0;
 
   const flushParagraph = () => {
     if (paragraph.length === 0) {
@@ -37,7 +56,7 @@ export function renderMarkdown(markdown: string) {
     }
 
     const items = listItems
-      .map((item) => `<li>${renderInline(item)}</li>`)
+      .map((item) => renderListItem(item, options?.stepImages?.[stepImageIndex++]))
       .join("");
     html.push(`<${listTag}>${items}</${listTag}>`);
     listItems = [];
