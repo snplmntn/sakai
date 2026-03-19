@@ -5,7 +5,6 @@ import {
   mapFareProduct,
   mapFareRuleVersion,
   mapTrainStationFare,
-  type FareLookupKey,
   type FareProduct,
   type FareRuleMode,
   type FareRuleVersion,
@@ -17,19 +16,10 @@ type FareRuleVersionRow = Database["public"]["Tables"]["fare_rule_versions"]["Ro
 type FareProductRow = Database["public"]["Tables"]["fare_products"]["Row"];
 type TrainStationFareRow = Database["public"]["Tables"]["train_station_fares"]["Row"];
 
-const TRAIN_STOP_MODES = new Set(["mrt3", "lrt1", "lrt2"]);
-
-const getPairKey = (originStopId: string, destinationStopId: string) =>
-  `${originStopId}:${destinationStopId}`;
-
-export interface FareProductLookupOptions {
-  fareRuleVersionIds: string[];
-  productCodes: string[];
-}
-
-export interface TrainStationFareLookupOptions {
-  fareRuleVersionIds: string[];
-  stopPairs: FareLookupKey[];
+export interface ActiveFareCatalog {
+  ruleVersions: FareRuleVersion[];
+  fareProducts: FareProduct[];
+  trainStationFares: TrainStationFare[];
 }
 
 export const getActiveFareRuleVersionsByModes = async (
@@ -39,26 +29,28 @@ export const getActiveFareRuleVersionsByModes = async (
     return [];
   }
 
+  const uniqueModes = [...new Set(modes)];
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
+  const { data: ruleVersionData, error: ruleVersionError } = await client
     .from("fare_rule_versions")
     .select("*")
-    .in("mode", [...new Set(modes)])
+    .in("mode", uniqueModes)
     .eq("is_active", true);
 
-  if (error) {
-    throw new HttpError(500, `Failed to fetch fare rule versions: ${error.message}`);
+  if (ruleVersionError) {
+    throw new HttpError(500, `Failed to fetch fare rule versions: ${ruleVersionError.message}`);
   }
 
-  return ((data ?? []) as FareRuleVersionRow[])
+  return ((ruleVersionData ?? []) as FareRuleVersionRow[])
     .map(mapFareRuleVersion)
     .sort((left, right) => left.mode.localeCompare(right.mode) || left.id.localeCompare(right.id));
 };
 
-export const getFareProductsByVersionIdsAndCodes = async (
-  options: FareProductLookupOptions
-): Promise<FareProduct[]> => {
-  if (options.fareRuleVersionIds.length === 0 || options.productCodes.length === 0) {
+export const getFareProductsByVersionIdsAndCodes = async (input: {
+  fareRuleVersionIds: string[];
+  productCodes: string[];
+}): Promise<FareProduct[]> => {
+  if (input.fareRuleVersionIds.length === 0 || input.productCodes.length === 0) {
     return [];
   }
 
@@ -66,75 +58,109 @@ export const getFareProductsByVersionIdsAndCodes = async (
   const { data, error } = await client
     .from("fare_products")
     .select("*")
-    .in("fare_rule_version_id", [...new Set(options.fareRuleVersionIds)])
-    .in("product_code", [...new Set(options.productCodes)]);
+    .in("fare_rule_version_id", [...new Set(input.fareRuleVersionIds)])
+    .in("product_code", [...new Set(input.productCodes)]);
 
   if (error) {
-    throw new HttpError(500, `Failed to fetch fare products: ${error.message}`);
+    throw new HttpError(
+      500,
+      `Failed to fetch fare products: ${error.message}`
+    );
   }
 
   return ((data ?? []) as FareProductRow[])
     .map(mapFareProduct)
     .sort(
       (left, right) =>
-        left.productCode.localeCompare(right.productCode) ||
-        left.fareRuleVersionId.localeCompare(right.fareRuleVersionId) ||
-        left.id.localeCompare(right.id)
+        left.productCode.localeCompare(right.productCode) || left.id.localeCompare(right.id)
     );
 };
 
-export const getTrainStationFaresByVersionIdsAndPairs = async (
-  options: TrainStationFareLookupOptions
-): Promise<TrainStationFare[]> => {
-  if (options.fareRuleVersionIds.length === 0 || options.stopPairs.length === 0) {
+export const getTrainStationFaresByVersionIdsAndPairs = async (input: {
+  fareRuleVersionIds: string[];
+  stopPairs: Array<{
+    originStopId: string;
+    destinationStopId: string;
+  }>;
+}): Promise<TrainStationFare[]> => {
+  if (input.fareRuleVersionIds.length === 0 || input.stopPairs.length === 0) {
     return [];
   }
 
-  const uniquePairs = [...new Map(options.stopPairs.map((pair) => [getPairKey(pair.originStopId, pair.destinationStopId), pair])).values()];
-  const stopIds = uniquePairs.flatMap((pair) => [pair.originStopId, pair.destinationStopId]);
+  const stopIds = [
+    ...new Set(input.stopPairs.flatMap((stopPair) => [stopPair.originStopId, stopPair.destinationStopId]))
+  ];
   const stops = await getStopsByIds(stopIds);
-  const stopModeById = new Map(stops.map((stop) => [stop.id, stop.mode]));
 
-  for (const stopId of [...new Set(stopIds)]) {
-    const stopMode = stopModeById.get(stopId);
-
-    if (!stopMode) {
-      throw new HttpError(500, `Train station fare lookup references missing stop ${stopId}`);
-    }
-
-    if (!TRAIN_STOP_MODES.has(stopMode)) {
-      throw new HttpError(500, `Train station fare lookup requires train stop modes, received ${stopMode}`);
-    }
+  if (
+    stops.some(
+      (stop) => stop.mode !== "mrt3" && stop.mode !== "lrt1" && stop.mode !== "lrt2"
+    )
+  ) {
+    throw new HttpError(400, "Train station fare lookup requires train stop modes");
   }
 
   const client = getSupabaseAdminClient();
   const { data, error } = await client
     .from("train_station_fares")
     .select("*")
-    .in("fare_rule_version_id", [...new Set(options.fareRuleVersionIds)])
-    .in(
-      "origin_stop_id",
-      [...new Set(uniquePairs.map((pair) => pair.originStopId))]
-    )
+    .in("fare_rule_version_id", [...new Set(input.fareRuleVersionIds)])
+    .in("origin_stop_id", [...new Set(input.stopPairs.map((stopPair) => stopPair.originStopId))])
     .in(
       "destination_stop_id",
-      [...new Set(uniquePairs.map((pair) => pair.destinationStopId))]
+      [...new Set(input.stopPairs.map((stopPair) => stopPair.destinationStopId))]
     );
 
   if (error) {
     throw new HttpError(500, `Failed to fetch train station fares: ${error.message}`);
   }
 
-  const pairKeys = new Set(uniquePairs.map((pair) => getPairKey(pair.originStopId, pair.destinationStopId)));
-
   return ((data ?? []) as TrainStationFareRow[])
     .map(mapTrainStationFare)
-    .filter((fare) => pairKeys.has(getPairKey(fare.originStopId, fare.destinationStopId)))
     .sort(
       (left, right) =>
-        left.fareRuleVersionId.localeCompare(right.fareRuleVersionId) ||
         left.originStopId.localeCompare(right.originStopId) ||
         left.destinationStopId.localeCompare(right.destinationStopId) ||
         left.id.localeCompare(right.id)
     );
+};
+
+export const getActiveFareCatalog = async (
+  modes: FareRuleMode[]
+): Promise<ActiveFareCatalog> => {
+  const ruleVersions = await getActiveFareRuleVersionsByModes(modes);
+
+  if (ruleVersions.length === 0) {
+    return {
+      ruleVersions: [],
+      fareProducts: [],
+      trainStationFares: []
+    };
+  }
+
+  const fareRuleVersionIds = ruleVersions.map((ruleVersion) => ruleVersion.id);
+  const client = getSupabaseAdminClient();
+  const [fareProductsResult, trainStationFaresResult] = await Promise.all([
+    client.from("fare_products").select("*").in("fare_rule_version_id", fareRuleVersionIds),
+    client.from("train_station_fares").select("*").in("fare_rule_version_id", fareRuleVersionIds)
+  ]);
+
+  if (fareProductsResult.error) {
+    throw new HttpError(500, `Failed to fetch fare products: ${fareProductsResult.error.message}`);
+  }
+
+  if (trainStationFaresResult.error) {
+    throw new HttpError(
+      500,
+      `Failed to fetch train station fares: ${trainStationFaresResult.error.message}`
+    );
+  }
+
+  return {
+    ruleVersions,
+    fareProducts: ((fareProductsResult.data ?? []) as FareProductRow[]).map(mapFareProduct),
+    trainStationFares: ((trainStationFaresResult.data ?? []) as TrainStationFareRow[]).map(
+      mapTrainStationFare
+    )
+  };
 };

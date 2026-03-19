@@ -30,6 +30,10 @@ vi.mock("../src/models/user-preference.model.js", () => ({
   upsertUserPreference: vi.fn()
 }));
 
+vi.mock("../src/services/route-query.service.js", () => ({
+  queryRoutes: vi.fn()
+}));
+
 vi.mock("../src/services/mmda-alert.service.js", () => ({
   refreshMmdaAlerts: vi.fn()
 }));
@@ -38,11 +42,13 @@ import app from "../src/app.js";
 import * as areaUpdateModel from "../src/models/area-update.model.js";
 import * as authModel from "../src/models/auth.model.js";
 import * as mmdaAlertService from "../src/services/mmda-alert.service.js";
+import * as routeQueryService from "../src/services/route-query.service.js";
 import * as userPreferenceModel from "../src/models/user-preference.model.js";
 
 const mockedAreaUpdateModel = vi.mocked(areaUpdateModel);
 const mockedAuthModel = vi.mocked(authModel);
 const mockedMmdaAlertService = vi.mocked(mmdaAlertService);
+const mockedRouteQueryService = vi.mocked(routeQueryService);
 const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
 const appHandler = app as unknown as {
   handle: (
@@ -385,5 +391,171 @@ describe("app routes", () => {
       defaultPreference: "cheapest",
       passengerType: "student"
     });
+  });
+
+  it("validates route query payloads", async () => {
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/routes/query",
+      body: {
+        origin: {
+          latitude: 14.6
+        },
+        destination: {
+          label: "PUP Sta. Mesa"
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response._getJSONData()).toEqual({
+      success: false,
+      message: "Validation failed",
+      details: {
+        fieldErrors: {
+          origin: [
+            "Either placeId or label is required",
+            "Latitude and longitude must be provided together"
+          ]
+        },
+        formErrors: []
+      }
+    });
+  });
+
+  it("returns route query results from the mounted route", async () => {
+    mockedRouteQueryService.queryRoutes.mockResolvedValue({
+      normalizedQuery: {
+        origin: {
+          placeId: "place-1",
+          label: "Cubao",
+          matchedBy: "alias"
+        },
+        destination: {
+          placeId: "place-2",
+          label: "PUP Sta. Mesa",
+          matchedBy: "canonicalName"
+        },
+        preference: "cheapest",
+        passengerType: "student",
+        preferenceSource: "saved_preference",
+        passengerTypeSource: "saved_preference"
+      },
+      options: [],
+      message: "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
+    });
+
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/routes/query",
+      body: {
+        origin: {
+          label: "Cubao"
+        },
+        destination: {
+          label: "PUP Sta. Mesa"
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: {
+        normalizedQuery: {
+          origin: {
+            placeId: "place-1",
+            label: "Cubao",
+            matchedBy: "alias"
+          },
+          destination: {
+            placeId: "place-2",
+            label: "PUP Sta. Mesa",
+            matchedBy: "canonicalName"
+          },
+          preference: "cheapest",
+          passengerType: "student",
+          preferenceSource: "saved_preference",
+          passengerTypeSource: "saved_preference"
+        },
+        options: [],
+        message: "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
+      }
+    });
+    expect(mockedRouteQueryService.queryRoutes).toHaveBeenCalledWith({
+      request: {
+        origin: {
+          label: "Cubao"
+        },
+        destination: {
+          label: "PUP Sta. Mesa"
+        }
+      },
+      userId: undefined
+    });
+  });
+
+  it("accepts queryText-only route queries", async () => {
+    mockedRouteQueryService.queryRoutes.mockResolvedValue({
+      normalizedQuery: {
+        origin: {
+          placeId: "place-1",
+          label: "Cubao",
+          matchedBy: "alias"
+        },
+        destination: {
+          placeId: "place-2",
+          label: "PUP Sta. Mesa",
+          matchedBy: "canonicalName"
+        },
+        preference: "cheapest",
+        passengerType: "regular",
+        preferenceSource: "ai_parsed",
+        passengerTypeSource: "default"
+      },
+      options: []
+    });
+
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/routes/query",
+      body: {
+        queryText: "cheapest way to PUP Sta. Mesa from Cubao"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockedRouteQueryService.queryRoutes).toHaveBeenCalledWith({
+      request: {
+        queryText: "cheapest way to PUP Sta. Mesa from Cubao"
+      },
+      userId: undefined
+    });
+  });
+
+  it("rejects invalid bearer tokens on optional route auth", async () => {
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/routes/query",
+      headers: {
+        authorization: "Token access-token"
+      },
+      body: {
+        origin: {
+          label: "Cubao"
+        },
+        destination: {
+          label: "PUP Sta. Mesa"
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response._getJSONData()).toEqual({
+      success: false,
+      message: "Authorization header must use Bearer token format",
+      details: null
+    });
+    expect(mockedRouteQueryService.queryRoutes).not.toHaveBeenCalled();
   });
 });
