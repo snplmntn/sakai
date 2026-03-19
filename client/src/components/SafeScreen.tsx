@@ -35,7 +35,7 @@ const SafeScreen: React.FC<SafeScreenProps> = ({
           },
         ]}
       />
-      <StatusBar style={statusBarStyle} />
+      <StatusBar style={statusBarStyle} backgroundColor={topInsetBackgroundColor} />
       <SafeAreaView edges={['bottom', 'left', 'right']} style={[styles.container, style]}>
         {children}
       </SafeAreaView>

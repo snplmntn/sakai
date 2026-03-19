@@ -11,6 +11,7 @@ import AppNavigator from './src/navigation/AppNavigator';
 import './src/navigation-alert/task';
 import { configureArrivalNotifications } from './src/navigation-alert/notification-service';
 import { NavigationAlarmProvider } from './src/navigation-alert/NavigationAlarmContext';
+import { VoiceSearchProvider } from './src/voice/VoiceSearchContext';
 
 WebBrowser.maybeCompleteAuthSession();
 SplashScreen.preventAutoHideAsync();
@@ -49,9 +50,11 @@ export default function App() {
         <AuthProvider>
           <PreferencesProvider>
             <NavigationAlarmProvider>
-              <NavigationContainer>
-                <AppNavigator />
-              </NavigationContainer>
+              <VoiceSearchProvider>
+                <NavigationContainer>
+                  <AppNavigator />
+                </NavigationContainer>
+              </VoiceSearchProvider>
             </NavigationAlarmProvider>
           </PreferencesProvider>
         </AuthProvider>

@@ -10,8 +10,10 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  useCallback,
   type ReactNode,
 } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -89,14 +91,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const translateY = useRef(new Animated.Value(-14)).current;
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearHideTimer = () => {
+  const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const hideToast = () => {
+  const hideToast = useCallback(() => {
     clearHideTimer();
 
     Animated.parallel([
@@ -114,9 +116,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setIsVisible(false);
       setToast(null);
     });
-  };
+  }, [clearHideTimer, opacity, translateY]);
 
-  const showToast = (options: ToastOptions) => {
+  const showToast = useCallback((options: ToastOptions) => {
     clearHideTimer();
     setToast({
       id: Date.now(),
@@ -125,7 +127,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       title: options.title,
       tone: options.tone ?? 'info',
     });
-  };
+  }, [clearHideTimer]);
 
   useEffect(() => {
     if (!toast) {
@@ -162,10 +164,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => clearHideTimer(), []);
 
-  const contextValue: ToastContextValue = {
-    showToast,
-    hideToast,
-  };
+  const contextValue = useMemo<ToastContextValue>(
+    () => ({
+      showToast,
+      hideToast,
+    }),
+    [hideToast, showToast]
+  );
   const palette = getToastPalette(toast?.tone ?? 'info');
 
   return (
