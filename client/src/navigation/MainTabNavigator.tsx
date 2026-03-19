@@ -1,12 +1,10 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import { RouteIcon, UserIcon } from '@hugeicons/core-free-icons';
 import RoutesScreen from '../screens/RoutesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import { COLORS } from '../constants/theme';
+import CustomTabBar from '../components/CustomTabBar';
 
 export type MainTabParamList = {
-  Routes: undefined;
+  Home: undefined;
   Profile: undefined;
 };
 
@@ -15,30 +13,20 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 export default function MainTabNavigator() {
   return (
     <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: true,
-        tabBarActiveTintColor: COLORS.primary,
       }}
     >
       <Tab.Screen 
-        name="Routes" 
+        name="Home" 
         component={RoutesScreen} 
-        options={{
-          title: 'Routes',
-          tabBarIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={RouteIcon} size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Home' }}
       />
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen} 
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <HugeiconsIcon icon={UserIcon} size={size} color={color} />
-          ),
-        }}
+        options={{ title: 'Profile' }}
       />
     </Tab.Navigator>
   );

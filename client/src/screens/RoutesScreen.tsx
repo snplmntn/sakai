@@ -1,12 +1,14 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 
+import SafeScreen from '../components/SafeScreen';
+
 export default function RoutesScreen() {
   return (
-    <View style={styles.container}>
+    <SafeScreen style={styles.container} backgroundColor={COLORS.background}>
       <Text style={styles.title}>Routes</Text>
       <Text style={styles.subtitle}>View your routes here.</Text>
-    </View>
+    </SafeScreen>
   );
 }
 

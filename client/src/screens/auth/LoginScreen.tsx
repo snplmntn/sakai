@@ -4,6 +4,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 
+import SafeScreen from '../../components/SafeScreen';
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: { navigation: NavigationProp }) {
@@ -13,7 +15,7 @@ export default function LoginScreen({ navigation }: { navigation: NavigationProp
   };
 
   return (
-    <View style={styles.container}>
+    <SafeScreen style={styles.container}>
       <Text style={styles.title}>Login</Text>
 
       <TextInput
@@ -39,7 +41,7 @@ export default function LoginScreen({ navigation }: { navigation: NavigationProp
           Don't have an account? Sign up
         </Text>
       </TouchableOpacity>
-    </View>
+    </SafeScreen>
   );
 }
 

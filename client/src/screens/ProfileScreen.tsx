@@ -1,6 +1,8 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 
+import SafeScreen from '../components/SafeScreen';
+
 export default function ProfileScreen({ navigation }: { navigation: any }) {
   const handleLogout = () => {
     navigation.reset({
@@ -10,14 +12,14 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeScreen style={styles.container} backgroundColor={COLORS.background}>
       <Text style={styles.title}>Profile</Text>
       <Text style={styles.subtitle}>Manage your details here.</Text>
 
       <TouchableOpacity style={[styles.button, styles.logoutButton]} onPress={handleLogout}>
         <Text style={styles.buttonText}>Log Out</Text>
       </TouchableOpacity>
-    </View>
+    </SafeScreen>
   );
 }
 

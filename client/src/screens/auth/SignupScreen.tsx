@@ -4,6 +4,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 
+import SafeScreen from '../../components/SafeScreen';
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Signup'>;
 
 export default function SignupScreen({ navigation }: { navigation: NavigationProp }) {
@@ -13,7 +15,7 @@ export default function SignupScreen({ navigation }: { navigation: NavigationPro
   };
 
   return (
-    <View style={styles.container}>
+    <SafeScreen style={styles.container}>
       <Text style={styles.title}>Sign Up</Text>
 
       <TextInput
@@ -45,7 +47,7 @@ export default function SignupScreen({ navigation }: { navigation: NavigationPro
           Already have an account? Login
         </Text>
       </TouchableOpacity>
-    </View>
+    </SafeScreen>
   );
 }
 
