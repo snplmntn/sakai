@@ -13,10 +13,12 @@ import {
 } from 'react-native';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Mic01Icon, RouteIcon, UserGroupIcon } from '@hugeicons/core-free-icons';
-import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
+const CARD_HORIZONTAL_PADDING = SPACING.lg;
+const CARD_WIDTH = width - CARD_HORIZONTAL_PADDING * 2;
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
 
@@ -65,21 +67,21 @@ export default function WelcomeScreen({ navigation }: { navigation: NavigationPr
   };
 
   const renderStep = ({ item }: { item: typeof ONBOARDING_STEPS[0] }) => (
-    <View style={styles.slide}>
-      <View style={styles.iconCircle}>
-        <HugeiconsIcon icon={item.icon} size={48} color={COLORS.primary} />
+    <View style={styles.slideWrapper}>
+      <View style={styles.card}>
+        <View style={styles.iconCircle}>
+          <HugeiconsIcon icon={item.icon} size={88} color={COLORS.primary} />
+        </View>
+        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.subtitle}>{item.subtitle}</Text>
       </View>
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.subtitle}>{item.subtitle}</Text>
     </View>
   );
 
   return (
-    <SafeScreen>
-      {/* Skip */}
-      <TouchableOpacity style={styles.skipButton} onPress={handleGetStarted}>
-        <Text style={styles.skipText}>Skip</Text>
-      </TouchableOpacity>
+    <SafeScreen backgroundColor={COLORS.white} useGradient={true}>
+      {/* Minimal Header */}
+      <View style={styles.header} />
 
       {/* Carousel */}
       <FlatList
@@ -95,7 +97,6 @@ export default function WelcomeScreen({ navigation }: { navigation: NavigationPr
         style={styles.flatList}
       />
 
-      {/* Dots + Button */}
       <View style={styles.footer}>
         <View style={styles.dotsContainer}>
           {ONBOARDING_STEPS.map((_, index) => (
@@ -109,9 +110,15 @@ export default function WelcomeScreen({ navigation }: { navigation: NavigationPr
           ))}
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleNext}>
+        <TouchableOpacity style={styles.button} onPress={handleNext} activeOpacity={0.85}>
           <Text style={styles.buttonText}>
             {isLastStep ? 'Get Started' : 'Next'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.signInLink}>
+          <Text style={styles.signInText}>
+            Existing user? <Text style={styles.signInHighlight}>Sign in</Text>
           </Text>
         </TouchableOpacity>
       </View>
@@ -120,47 +127,57 @@ export default function WelcomeScreen({ navigation }: { navigation: NavigationPr
 }
 
 const styles = StyleSheet.create({
-  skipButton: {
-    alignSelf: 'flex-end',
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.md,
   },
   skipText: {
     color: COLORS.subText,
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontWeight: TYPOGRAPHY.fontWeights.medium,
+    fontFamily: FONTS.medium,
   },
   flatList: {
     flex: 1,
   },
-  slide: {
+  slideWrapper: {
     width,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
+    paddingHorizontal: CARD_HORIZONTAL_PADDING,
+  },
+  card: {
+    width: CARD_WIDTH,
+    paddingVertical: SPACING.xxl + 16,
+    paddingHorizontal: SPACING.lg,
+    alignItems: 'center',
   },
   iconCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#EBF2FF',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#FAFAFA',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: SPACING.xl,
   },
   title: {
     fontSize: TYPOGRAPHY.fontSizes.title,
-    fontWeight: TYPOGRAPHY.fontWeights.bold,
+    fontFamily: FONTS.bold,
     color: COLORS.text,
     textAlign: 'center',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   subtitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.regular,
     color: COLORS.subText,
     textAlign: 'center',
     lineHeight: 24,
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.sm,
   },
   footer: {
     paddingBottom: SPACING.xl,
@@ -172,27 +189,38 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#D0D0D0',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E0E0E0',
     marginHorizontal: 4,
   },
   dotActive: {
-    backgroundColor: COLORS.primary,
-    width: 24,
+    backgroundColor: COLORS.black,
   },
   button: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.xxl,
-    paddingVertical: SPACING.md,
-    borderRadius: 30,
-    width: '100%',
+    backgroundColor: COLORS.black,
+    paddingVertical: SPACING.md + 2,
+    paddingHorizontal: SPACING.xxl * 2,
+    borderRadius: RADIUS.xl,
     alignItems: 'center',
+    marginBottom: SPACING.lg,
   },
   buttonText: {
     color: COLORS.white,
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontWeight: TYPOGRAPHY.fontWeights.bold,
+    fontFamily: FONTS.bold,
+  },
+  signInLink: {
+    marginTop: SPACING.xs,
+  },
+  signInText: {
+    color: COLORS.subText,
+    fontFamily: FONTS.regular,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+  },
+  signInHighlight: {
+    color: COLORS.primary,
+    fontFamily: FONTS.semibold,
   },
 });

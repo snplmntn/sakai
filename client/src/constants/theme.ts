@@ -3,11 +3,26 @@ export const COLORS = {
   secondary: '#5856D6',
   white: '#FFFFFF',
   black: '#000000',
-  background: '#f0f4f8',
+  surface: '#F4F7F9',
+  background: '#FFFFFF',
+  gradientStart: '#F7FBFE',
+  gradientEnd: '#DDEBF4',
+  card: '#FFFFFF',
   danger: '#FF3B30',
-  border: '#cccccc',
-  text: '#333333',
-  subText: '#666666',
+  border: '#E0E0E0',
+  text: '#1A1A1A',
+  subText: '#757575',
+  success: '#34C759',
+  warning: '#FF9500',
+  info: '#5AC8FA',
+};
+
+export const RADIUS = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 20,
+  xl: 32,
 };
 
 export const SPACING = {
@@ -17,6 +32,17 @@ export const SPACING = {
   lg: 24,
   xl: 32,
   xxl: 40,
+};
+
+export const FONTS = {
+  regular: 'Inter_400Regular',
+  medium: 'Inter_500Medium',
+  semibold: 'Inter_600SemiBold',
+  bold: 'Inter_700Bold',
+};
+
+export const GRADIENTS = {
+  soft: [COLORS.gradientStart, COLORS.gradientEnd] as [string, string],
 };
 
 export const TYPOGRAPHY = {
