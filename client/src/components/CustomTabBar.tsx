@@ -20,7 +20,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
   return (
     <View style={styles.wrapper}>
-      {/* Floating MIC Button */}
       <View style={styles.fabContainer}>
         <TouchableOpacity
           style={[styles.fab, micExpanded && styles.fabActive]}
@@ -35,7 +34,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
         </TouchableOpacity>
       </View>
 
-      {/* Tab Bar */}
       <View style={styles.container}>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
