@@ -9,7 +9,7 @@ export interface AuthenticatedLocals {
   user: AuthUser;
 }
 
-const parseBearerToken = (authorizationHeader?: string): string => {
+export const parseBearerToken = (authorizationHeader?: string): string => {
   if (!authorizationHeader) {
     throw new HttpError(401, "Missing authorization header");
   }
@@ -37,6 +37,26 @@ export const getAuthenticatedLocals = (
 
 export const authenticateRequest: RequestHandler = async (req, res, next) => {
   try {
+    const accessToken = parseBearerToken(req.headers.authorization);
+    const user = await authModel.getCurrentUser(accessToken);
+    const locals = res.locals as Partial<AuthenticatedLocals>;
+
+    locals.accessToken = accessToken;
+    locals.user = user;
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const authenticateOptionalRequest: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.headers.authorization) {
+      next();
+      return;
+    }
+
     const accessToken = parseBearerToken(req.headers.authorization);
     const user = await authModel.getCurrentUser(accessToken);
     const locals = res.locals as Partial<AuthenticatedLocals>;

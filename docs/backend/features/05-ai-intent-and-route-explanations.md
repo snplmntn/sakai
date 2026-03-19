@@ -32,13 +32,20 @@ Out of scope:
 Use a provider abstraction rather than placing model calls inside controllers.
 
 Required env:
+- `AI_PROVIDER`
 - `GEMINI_API_KEY`
+- `VERTEX_API_KEY`
 - optional `GEMINI_MODEL_PRIMARY`
 - optional `GEMINI_MODEL_LIGHT`
 
 Locked defaults:
+- provider: `gemini_developer`
 - primary: `gemini-2.5-flash`
 - lightweight background model: `gemini-2.5-flash-lite`
+
+Provider modes:
+- `gemini_developer`: use `GEMINI_API_KEY`
+- `vertex_express`: use `VERTEX_API_KEY` with Vertex AI express mode
 
 Suggested server modules:
 - `ai/client.ts`

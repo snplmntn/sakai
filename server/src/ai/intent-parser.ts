@@ -1,0 +1,29 @@
+import { generateJson, getPrimaryModel } from "./client.js";
+import {
+  routeIntentResponseSchema,
+  routeIntentSchema,
+  type RouteIntent
+} from "./types.js";
+
+const buildIntentPrompt = (queryText: string) => `You are extracting commute-search intent for Sakai, a Philippines commute assistant.
+
+Return JSON only.
+
+Rules:
+- Extract only originText, destinationText, preference, passengerType, requiresClarification, clarificationField, confidence.
+- Do not invent route names, stops, prices, or extra fields.
+- preference may only be fastest, cheapest, balanced, or null.
+- passengerType may only be regular, student, senior, pwd, or null.
+- If the query does not clearly identify an origin, destination, or both, set requiresClarification to true.
+- If no clarification is needed, clarificationField must be null.
+
+User query:
+${queryText}`;
+
+export const parseRouteIntent = async (queryText: string): Promise<RouteIntent> =>
+  generateJson({
+    model: getPrimaryModel(),
+    prompt: buildIntentPrompt(queryText),
+    outputSchema: routeIntentSchema,
+    responseSchema: routeIntentResponseSchema
+  });

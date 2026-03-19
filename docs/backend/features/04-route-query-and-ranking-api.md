@@ -3,11 +3,11 @@
 ## Goal
 Ship the main backend route-planning endpoint that turns normalized origin and destination inputs into ranked, fare-aware route options.
 
-This is the product's main backend capability and the first feature that should make the backend feel like Sakai instead of a starter Express app.
+This is the product's main backend capability and the first feature that should make the backend feel like Sakai instead of a starter Express app. It must stay Sakai-owned and deterministic rather than outsourcing route generation to Google Maps or an LLM.
 
 ## Current State
 - Features 01 to 03 will provide the preference data, route graph, and fare engine.
-- There is currently no trip-planning endpoint.
+- The trip-planning endpoint is now implemented as `POST /api/routes/query`.
 - The PRD requires:
   - multiple route combinations when available
   - jeepney-first multimodal suggestions
@@ -35,7 +35,8 @@ Out of scope:
 ### `POST /api/routes/query`
 Auth:
 - optional for v1
-- when a bearer token is present, the backend may load saved user preferences
+- when a valid bearer token is present, the backend may load saved user preferences
+- when an auth header is present but invalid, the endpoint returns `401`
 
 Request body:
 ```json
@@ -50,19 +51,18 @@ Request body:
     "placeId": "optional-place-uuid",
     "label": "PUP Sta. Mesa"
   },
-  "queryText": "cheapest way to PUP Sta. Mesa from Cubao",
   "preference": "cheapest",
-  "passengerType": "student",
-  "currentArea": "Cubao"
+  "passengerType": "student"
 }
 ```
 
 Normalization rules:
 - `origin` and `destination` each require either `placeId` or a `label`
-- coordinates are optional but recommended for `origin`
+- coordinates are optional and are used to add nearby access or egress stops within `500m`
 - `preference` and `passengerType` are optional request overrides
 - if omitted, use saved user preferences when authenticated
 - if still unavailable, use defaults from feature 01
+- `queryText` is intentionally out of scope for v1
 
 Success response:
 ```json
@@ -72,31 +72,35 @@ Success response:
     "normalizedQuery": {
       "origin": {
         "placeId": "uuid",
-        "label": "Cubao"
+        "label": "Cubao",
+        "matchedBy": "alias"
       },
       "destination": {
         "placeId": "uuid",
-        "label": "PUP Sta. Mesa"
+        "label": "PUP Sta. Mesa",
+        "matchedBy": "canonicalName"
       },
       "preference": "cheapest",
       "passengerType": "student",
-      "querySource": "request_override"
+      "preferenceSource": "saved_preference",
+      "passengerTypeSource": "saved_preference"
     },
     "options": [
       {
-        "id": "route-option-1",
-        "summary": "Ride a jeep to Aurora Blvd, transfer to LRT-2, then take a short jeepney ride to PUP.",
+        "id": "stable-option-id",
+        "summary": "Ride Cubao - PUP from Cubao Terminal to PUP Main Gate",
         "recommendationLabel": "Cheapest option",
-        "totalDurationMinutes": 42,
-        "totalFare": 28.4,
+        "highlights": ["Fewest transfers"],
+        "totalDurationMinutes": 27,
+        "totalFare": 13.28,
         "fareConfidence": "official",
         "fareAssumptions": [],
-        "transferCount": 2,
-        "corridorTags": ["cubao", "aurora", "sta-mesa"],
+        "transferCount": 0,
+        "corridorTags": ["cubao", "sta-mesa"],
         "legs": [
           {
             "id": "leg-1",
-            "kind": "ride_leg",
+            "type": "ride",
             "mode": "jeepney",
             "fare": {
               "amount": 13,
@@ -120,12 +124,14 @@ Empty-result response:
 - return `200` with `options: []`
 - include a plain-language message such as `No supported route found for the current demo coverage`
 - do not fabricate routes
+- unresolved or ambiguous places should return `422` instead of guessing
 
 ## Route Composition Rules
 Candidate assembly for v1:
 1. resolve origin and destination places
-2. find route variants whose stop coverage and transfer graph can connect the endpoints
-3. compose ride legs and transfer walks in sequence
+2. collect place-linked stops and nearby coordinate-based stops within `500m`
+3. find direct routes or routes connected by one explicit transfer point
+4. compose ride legs and walk legs in sequence
 4. compute total duration from leg durations plus transfer walking durations
 5. compute fares using feature 03
 6. rank candidates
@@ -135,6 +141,7 @@ Candidate assembly for v1:
 Transfer count:
 - count each transition from one ride leg to another ride leg
 - pure walk segments between legs do not increment separately
+- v1 supports direct routes and routes with exactly one explicit transfer point only
 
 Graceful degradation:
 - if fare data is mixed official and estimated but still resolvable, return the route with `fareConfidence = partially_estimated`
@@ -182,6 +189,7 @@ Suggested modules:
 - `route-ranking.service`
 - `route-query.schema`
 - `route.routes`
+- `fare-engine.service`
 
 Temporary starter cleanup:
 - once this endpoint is live and tested, remove `courses` from the public README API list
@@ -190,11 +198,14 @@ Temporary starter cleanup:
 Coverage must include:
 - authenticated request falls back to saved preferences when overrides are absent
 - unauthenticated request uses defaults
+- invalid optional auth headers return `401`
 - fastest, cheapest, and balanced rankings produce expected order for a seeded candidate set
 - transfer counts are computed correctly
+- one-transfer options include an explicit walk leg
 - empty coverage returns no routes without erroring
 - route options include fare totals and fare confidence values
 - route options include leg-level fare breakdowns alongside totals
+- ambiguous place resolution returns `422`
 - duplicate candidates are not returned
 
 ## Acceptance Criteria
@@ -206,3 +217,4 @@ Coverage must include:
 - Depends on features 01 to 03.
 - AI query parsing can be integrated later without changing the public response shape.
 - MMDA incidents can be appended later without breaking the core route contract.
+- Google Maps remains place and map infrastructure only and is not used as the routing engine.
