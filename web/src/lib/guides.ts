@@ -6,6 +6,7 @@ export interface GuideSummary {
   title: string;
   label: string;
   vehicleType: string;
+  imageSrc: string;
   summary: string;
   preview: string;
   readTimeLabel: string;
@@ -35,6 +36,7 @@ function buildGuideSummary(guide: ParsedGuideSource): GuideSummary {
     title: guide.title,
     label: guide.label,
     vehicleType: guide.vehicleType,
+    imageSrc: guide.imageSrc,
     summary: guide.summary,
     preview: guide.summary,
     readTimeLabel: getReadTimeLabel(guide.markdown),
