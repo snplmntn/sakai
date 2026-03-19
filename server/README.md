@@ -17,7 +17,9 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
 6. Add `AUTH_GOOGLE_REDIRECT_URI` to the Supabase allowed redirect URLs
 7. Set `AUTH_APP_REDIRECT_URI` to the app or local web callback that should receive auth results after the backend exchanges the Google code
 8. Apply `supabase/schema.sql` to your Supabase database
-9. Run `npm run dev`
+9. Apply `supabase/seeds/fare-baseline.sql` for the feature 03 fare baseline
+   This always seeds fare versions and fare products. The seeded LRT-2 train fares only load after matching LRT-2 station stops already exist in `public.stops`, so re-run the seed after route-network stop data is loaded.
+10. Run `npm run dev`
 
 ## Scripts
 
@@ -42,6 +44,8 @@ src/
   server.ts     process entrypoint
 supabase/
   schema.sql    Supabase schema for Sakai backend tables
+  seeds/
+    fare-baseline.sql  Minimal fare baseline for feature 03; train fares require matching seeded train stops
 tests/
   app.test.ts
 ```
@@ -72,6 +76,16 @@ The backend now includes normalized route-network tables and internal read model
 
 These are import-ready foundations for the separate jeepney seed pipeline and future route-query work. Feature 02 does not add public `/api/routes/*` endpoints yet, and it does not ship temporary route seed content.
 The separate seed pipeline should write directly into these normalized tables instead of a staging area.
+
+## Internal Fare Engine Foundation
+
+The backend now also includes versioned fare tables and an internal fare-pricing service for:
+- active fare-rule version lookup by mode
+- product-backed jeepney, UV, and car-estimate pricing
+- stop-to-stop train fare lookups
+- route-level fare confidence and assumption reporting
+
+Feature 03 does not add public `/api/fares/*` endpoints yet. Route-query work should compose ride legs and transfer walks first, then call the internal fare engine to attach leg-by-leg fare breakdowns and totals.
 
 ### Google OAuth Callback Behavior
 

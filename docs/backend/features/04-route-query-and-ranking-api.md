@@ -90,9 +90,25 @@ Success response:
         "totalDurationMinutes": 42,
         "totalFare": 28.4,
         "fareConfidence": "official",
+        "fareAssumptions": [],
         "transferCount": 2,
         "corridorTags": ["cubao", "aurora", "sta-mesa"],
-        "legs": [],
+        "legs": [
+          {
+            "id": "leg-1",
+            "kind": "ride_leg",
+            "mode": "jeepney",
+            "fare": {
+              "amount": 13,
+              "pricingType": "official",
+              "fareProductCode": "puj_traditional",
+              "ruleVersionName": "LTFRB PUJ Baseline 2026",
+              "effectivityDate": "2026-01-01",
+              "isDiscountApplied": false,
+              "assumptionText": null
+            }
+          }
+        ],
         "relevantIncidents": []
       }
     ]
@@ -121,7 +137,8 @@ Transfer count:
 - pure walk segments between legs do not increment separately
 
 Graceful degradation:
-- if fare data is partial, still return the route with `fareConfidence = partially_estimated`
+- if fare data is mixed official and estimated but still resolvable, return the route with `fareConfidence = partially_estimated`
+- if a candidate cannot be priced because required fare data is missing, exclude that candidate instead of inventing a fare
 - if route coverage is incomplete, do not guess missing stops or transfers
 
 ## Ranking Logic
@@ -177,6 +194,7 @@ Coverage must include:
 - transfer counts are computed correctly
 - empty coverage returns no routes without erroring
 - route options include fare totals and fare confidence values
+- route options include leg-level fare breakdowns alongside totals
 - duplicate candidates are not returned
 
 ## Acceptance Criteria
