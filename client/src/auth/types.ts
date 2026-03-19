@@ -21,6 +21,29 @@ export interface AuthPayload {
   requiresEmailConfirmation: boolean;
 }
 
+export interface GoogleAuthUrlPayload {
+  url: string;
+}
+
+export type GoogleAuthOrigin = 'login' | 'signup';
+
+export interface GoogleAuthCallbackSuccess {
+  status: 'success';
+  userId: string;
+  email: string | null;
+  session: AuthSession;
+}
+
+export interface GoogleAuthCallbackError {
+  status: 'error';
+  errorCode: string;
+  message: string;
+}
+
+export type GoogleAuthCallbackResult =
+  | GoogleAuthCallbackSuccess
+  | GoogleAuthCallbackError;
+
 export type AuthStatus = 'hydrating' | 'authenticated' | 'unauthenticated';
 
 export interface StoredAuthState {
@@ -79,6 +102,38 @@ const readMetadata = (value: unknown): AuthMetadata => {
   return isRecord(value) ? value : null;
 };
 
+const readUrlSearchParam = (value: string | null, fieldName: string): string => {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Expected ${fieldName} to be a non-empty string`);
+  }
+
+  return value;
+};
+
+const readOptionalUrlSearchParam = (value: string | null): string | null =>
+  typeof value === 'string' && value.trim().length > 0 ? value : null;
+
+const readUrlSearchParamNumber = (value: string | null, fieldName: string): number => {
+  const parsedValue = Number(readUrlSearchParam(value, fieldName));
+
+  if (Number.isNaN(parsedValue)) {
+    throw new Error(`Expected ${fieldName} to be a number`);
+  }
+
+  return parsedValue;
+};
+
+const readOptionalUrlSearchParamNumber = (
+  value: string | null,
+  fieldName: string
+): number | null => {
+  if (value === null) {
+    return null;
+  }
+
+  return readUrlSearchParamNumber(value, fieldName);
+};
+
 export const parseAuthUser = (value: unknown): AuthUser => {
   if (!isRecord(value)) {
     throw new Error('Expected auth user to be an object');
@@ -122,6 +177,52 @@ export const parseAuthPayload = (value: unknown): AuthPayload => {
       'requiresEmailConfirmation'
     ),
   };
+};
+
+export const parseGoogleAuthUrlPayload = (value: unknown): GoogleAuthUrlPayload => {
+  if (!isRecord(value)) {
+    throw new Error('Expected Google auth URL payload to be an object');
+  }
+
+  return {
+    url: readString(value.url, 'url'),
+  };
+};
+
+export const parseGoogleAuthCallbackResult = (
+  callbackUrl: string
+): GoogleAuthCallbackResult => {
+  const parsedUrl = new URL(callbackUrl);
+  const fragment = parsedUrl.hash.startsWith('#')
+    ? parsedUrl.hash.slice(1)
+    : parsedUrl.hash;
+  const params = new URLSearchParams(fragment);
+  const status = readUrlSearchParam(params.get('status'), 'status');
+
+  if (status === 'success') {
+    return {
+      status: 'success',
+      userId: readUrlSearchParam(params.get('user_id'), 'user_id'),
+      email: readOptionalUrlSearchParam(params.get('email')),
+      session: {
+        accessToken: readUrlSearchParam(params.get('access_token'), 'access_token'),
+        refreshToken: readUrlSearchParam(params.get('refresh_token'), 'refresh_token'),
+        expiresIn: readUrlSearchParamNumber(params.get('expires_in'), 'expires_in'),
+        expiresAt: readOptionalUrlSearchParamNumber(params.get('expires_at'), 'expires_at'),
+        tokenType: readUrlSearchParam(params.get('token_type'), 'token_type'),
+      },
+    };
+  }
+
+  if (status === 'error') {
+    return {
+      status: 'error',
+      errorCode: readUrlSearchParam(params.get('error'), 'error'),
+      message: readUrlSearchParam(params.get('message'), 'message'),
+    };
+  }
+
+  throw new Error('Unknown Google auth callback status');
 };
 
 export const parseStoredAuthState = (value: unknown): StoredAuthState => {

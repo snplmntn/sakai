@@ -4,173 +4,206 @@ import SafeScreen from '../components/SafeScreen';
 
 const SEARCH_EXAMPLES = ['Cubao', 'MOA', 'PUP Sta. Mesa'];
 
-const PREFERENCES = ['Balanced', 'Cheapest', 'Fastest'];
+const PREFERENCES = [
+  { label: 'Balanced', active: true },
+  { label: 'Cheapest', active: false },
+  { label: 'Fastest', active: false },
+];
 
 const ROUTE_OPTIONS = [
   {
     title: 'Best for your preference',
     destination: 'España to BGC',
+    summary: 'Jeep to MRT, then a short BGC Bus transfer with less walking near the end.',
     duration: '52 min',
     fare: 'PHP 34',
+    fareStatus: 'Estimated',
     transfers: '2 transfers',
-    description: 'Jeep to MRT, then a short BGC Bus transfer with less walking near the end.',
-    accent: '#DCEEFF',
-    badge: 'Balanced',
     modes: ['Jeepney', 'MRT', 'Bus'],
   },
   {
     title: 'Lower fare option',
     destination: 'España to BGC',
+    summary: 'Longer jeepney segment with one transfer and a slightly longer final walk.',
     duration: '61 min',
     fare: 'PHP 24',
+    fareStatus: 'Estimated',
     transfers: '1 transfer',
-    description: 'Longer jeepney segment with one transfer and a slightly longer final walk.',
-    accent: '#DFF5EC',
-    badge: 'Cheapest',
     modes: ['Jeepney', 'Jeepney', 'Walk'],
   },
 ];
 
 const ALERTS = [
-  'Northbound lane obstruction near EDSA Guadalupe may affect BGC-bound transfers.',
-  'MMDA update: moderate slowdown near Ayala tunnel approach.',
+  {
+    title: 'EDSA Guadalupe',
+    detail: 'Northbound lane obstruction may slow BGC-bound transfers.',
+  },
+  {
+    title: 'Ayala approach',
+    detail: 'Moderate slowdown reported near the tunnel corridor.',
+  },
 ];
 
 export default function RoutesScreen() {
   return (
-    <SafeScreen backgroundColor={COLORS.surface} useGradient={true}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+    <SafeScreen
+      backgroundColor={COLORS.surface}
+      topInsetBackgroundColor="#102033"
+      statusBarStyle="light"
+      useGradient={true}
+    >
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
-          <View style={styles.heroGlow} />
-          <Text style={styles.heroEyebrow}>Voice-first commute planning</Text>
-          <Text style={styles.greeting}>Hello, Commuter</Text>
+          <View style={styles.heroRule} />
+          <View style={styles.heroTopRow}>
+            <Text style={styles.heroSectionLabel}>Routes</Text>
+            <View style={styles.heroPreferenceBadge}>
+              <Text style={styles.heroPreferenceText}>Balanced</Text>
+            </View>
+          </View>
           <Text style={styles.heroTitle}>Where to Sakai today?</Text>
           <Text style={styles.heroSubtitle}>
-            Search by voice or text, let Google Maps handle place lookup and map context, then compare
-            Sakai’s jeepney-first route combinations.
+            Voice-first route planning with jeepney-aware options, fare visibility, and relevant corridor
+            updates.
           </Text>
 
-          <View style={styles.searchPanel}>
-            <View style={styles.searchMetaRow}>
-              <Text style={styles.searchLabel}>Start with a destination</Text>
-              <View style={styles.googleMapsPill}>
-                <Text style={styles.googleMapsText}>Google Maps route</Text>
-              </View>
+          <View style={styles.searchCard}>
+            <View style={styles.searchHeader}>
+              <Text style={styles.searchTitle}>Destination</Text>
+              <Text style={styles.searchMeta}>Google Maps lookup</Text>
             </View>
-            <Text style={styles.searchPrompt}>
-              Type a place, choose a suggestion, or speak naturally. Origin defaults to your current location.
+            <View style={styles.searchField}>
+              <Text style={styles.searchFieldLabel}>From</Text>
+              <Text style={styles.searchFieldValue}>Bambang, Manila</Text>
+            </View>
+            <Text style={styles.searchHint}>
+              Type a place, choose a suggestion, or speak naturally to start planning.
             </Text>
-
-            <View style={styles.searchInputShell}>
-              <Text style={styles.searchInputLabel}>Current location</Text>
-              <Text style={styles.searchInputValue}>Bambang, Manila</Text>
-            </View>
-
-            <View style={styles.destinationRow}>
+            <View style={styles.exampleRow}>
               {SEARCH_EXAMPLES.map((destination) => (
-                <View key={destination} style={styles.destinationChip}>
-                  <Text style={styles.destinationText}>{destination}</Text>
+                <View key={destination} style={styles.exampleChip}>
+                  <Text style={styles.exampleText}>{destination}</Text>
                 </View>
               ))}
             </View>
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Route preference</Text>
-          <Text style={styles.sectionDescription}>
-            Rankings should reflect the onboarding choice and still let riders compare alternatives.
-          </Text>
-          <View style={styles.actionRow}>
-            {PREFERENCES.map((action) => (
-              <View key={action} style={styles.actionCard}>
-                <Text style={styles.actionText}>{action}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.mapPreviewCard}>
-          <View style={styles.mapPreviewHeader}>
-            <Text style={styles.sectionTitle}>Map and route canvas</Text>
-            <Text style={styles.sectionMeta}>Powered by Google Maps</Text>
-          </View>
-          <Text style={styles.sectionDescription}>
-            Place search and map rendering come from Google Maps. Sakai layers preference-aware route
-            ranking, fare visibility, and jeepney-friendly explanations on top.
-          </Text>
-          <View style={styles.mapSurface}>
-            <View style={styles.mapPinRow}>
-              <View style={[styles.mapPin, styles.mapPinOrigin]} />
-              <View style={styles.mapLine} />
-              <View style={[styles.mapPin, styles.mapPinDestination]} />
+        <View style={styles.body}>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Route preference</Text>
+              <Text style={styles.sectionMeta}>Default ranking</Text>
             </View>
-            <View style={styles.mapLegendRow}>
-              <Text style={styles.mapLegendText}>Origin</Text>
-              <Text style={styles.mapLegendText}>Transfer</Text>
-              <Text style={styles.mapLegendText}>Destination</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Suggested route combinations</Text>
-            <Text style={styles.sectionMeta}>Jeepney-first ranking</Text>
-          </View>
-
-          {ROUTE_OPTIONS.map((route) => (
-            <View key={route.title} style={styles.routeCard}>
-              <View style={[styles.routeAccent, { backgroundColor: route.accent }]} />
-              <Text style={styles.routeCardEyebrow}>{route.title}</Text>
-              <View style={styles.routeHeader}>
-                <Text style={styles.routeTitle}>{route.destination}</Text>
-                <View style={styles.routeBadge}>
-                  <Text style={styles.routeBadgeText}>{route.badge}</Text>
+            <View style={styles.preferenceRow}>
+              {PREFERENCES.map((preference) => (
+                <View
+                  key={preference.label}
+                  style={[styles.preferenceChip, preference.active && styles.preferenceChipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.preferenceText,
+                      preference.active && styles.preferenceTextActive,
+                    ]}
+                  >
+                    {preference.label}
+                  </Text>
                 </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.panel}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Map and route canvas</Text>
+              <Text style={styles.sectionMeta}>Google Maps</Text>
+            </View>
+            <Text style={styles.sectionDescription}>
+              Place search and map rendering come from Google Maps. Sakai overlays simpler route comparison,
+              fares, and commute-friendly explanations on top.
+            </Text>
+            <View style={styles.mapSurface}>
+              <View style={styles.mapLineRow}>
+                <View style={[styles.mapNode, styles.mapNodeOrigin]} />
+                <View style={styles.mapTrack} />
+                <View style={styles.mapNodeTransfer} />
+                <View style={styles.mapTrackMuted} />
+                <View style={[styles.mapNode, styles.mapNodeDestination]} />
               </View>
-              <Text style={styles.routeDescription}>{route.description}</Text>
-              <View style={styles.modeRow}>
-                {route.modes.map((mode, index) => (
-                  <View key={`${route.title}-${mode}-${index}`} style={styles.modeChip}>
-                    <Text style={styles.modeChipText}>{mode}</Text>
+              <View style={styles.mapLegendRow}>
+                <Text style={styles.mapLegendText}>Origin</Text>
+                <Text style={styles.mapLegendText}>Transfer</Text>
+                <Text style={styles.mapLegendText}>Destination</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Suggested routes</Text>
+              <Text style={styles.sectionMeta}>Jeepney-first</Text>
+            </View>
+
+            {ROUTE_OPTIONS.map((route) => (
+              <View key={route.title} style={styles.routeCard}>
+                <View style={styles.routeTopRow}>
+                  <Text style={styles.routeEyebrow}>{route.title}</Text>
+                  <View style={styles.fareStatusBadge}>
+                    <Text style={styles.fareStatusText}>{route.fareStatus}</Text>
                   </View>
-                ))}
-              </View>
-              <View style={styles.routeStats}>
-                <View style={styles.statPill}>
-                  <Text style={styles.statLabel}>Trip time</Text>
-                  <Text style={styles.statValue}>{route.duration}</Text>
                 </View>
-                <View style={styles.statPill}>
-                  <Text style={styles.statLabel}>Estimated fare</Text>
-                  <Text style={styles.statValue}>{route.fare}</Text>
-                </View>
-                <View style={styles.statPill}>
-                  <Text style={styles.statLabel}>Transfers</Text>
-                  <Text style={styles.statValue}>{route.transfers}</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
 
-        <View style={styles.insightCard}>
-          <Text style={styles.insightTitle}>Trip-aware area updates</Text>
-          <Text style={styles.insightSubtitle}>
-            MMDA updates should only appear when they matter to the route being compared or navigated.
-          </Text>
+                <Text style={styles.routeTitle}>{route.destination}</Text>
+                <Text style={styles.routeSummary}>{route.summary}</Text>
 
-          <View style={styles.alertList}>
-            {ALERTS.map((item) => (
-              <View key={item} style={styles.alertItem}>
-                <View style={styles.alertDot} />
-                <Text style={styles.alertText}>{item}</Text>
+                <View style={styles.routeMetaRow}>
+                  {route.modes.map((mode, index) => (
+                    <Text key={`${route.destination}-${mode}-${index}`} style={styles.routeMetaText}>
+                      {index === route.modes.length - 1 ? mode : `${mode} •`}
+                    </Text>
+                  ))}
+                </View>
+
+                <View style={styles.routeStatsRow}>
+                  <View style={styles.routeStatBlock}>
+                    <Text style={styles.routeStatLabel}>Time</Text>
+                    <Text style={styles.routeStatValue}>{route.duration}</Text>
+                  </View>
+                  <View style={styles.routeStatDivider} />
+                  <View style={styles.routeStatBlock}>
+                    <Text style={styles.routeStatLabel}>Fare</Text>
+                    <Text style={styles.routeStatValue}>{route.fare}</Text>
+                  </View>
+                  <View style={styles.routeStatDivider} />
+                  <View style={styles.routeStatBlock}>
+                    <Text style={styles.routeStatLabel}>Transfers</Text>
+                    <Text style={styles.routeStatValue}>{route.transfers}</Text>
+                  </View>
+                </View>
               </View>
             ))}
+          </View>
+
+          <View style={styles.panel}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Area updates</Text>
+              <Text style={styles.sectionMeta}>Route relevant</Text>
+            </View>
+            <Text style={styles.sectionDescription}>
+              Show only MMDA updates that affect the rider’s corridor or transfer decision.
+            </Text>
+            <View style={styles.alertList}>
+              {ALERTS.map((alert) => (
+                <View key={alert.title} style={styles.alertRow}>
+                  <View style={styles.alertMarker} />
+                  <View style={styles.alertContent}>
+                    <Text style={styles.alertTitle}>{alert.title}</Text>
+                    <Text style={styles.alertDetail}>{alert.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -180,40 +213,54 @@ export default function RoutesScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.md,
     paddingBottom: SPACING.xl + 24,
   },
+  body: {
+    paddingHorizontal: SPACING.md,
+    gap: SPACING.lg,
+  },
   heroCard: {
-    position: 'relative',
-    overflow: 'hidden',
     backgroundColor: '#102033',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
+    borderBottomLeftRadius: RADIUS.lg,
+    borderBottomRightRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xl,
     marginBottom: SPACING.lg,
   },
-  heroGlow: {
-    position: 'absolute',
-    top: -44,
-    right: -12,
-    width: 168,
-    height: 168,
-    borderRadius: 84,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  heroRule: {
+    width: 40,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: COLORS.primary,
+    marginBottom: SPACING.md,
   },
-  heroEyebrow: {
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
+  },
+  heroSectionLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
-    color: 'rgba(255,255,255,0.72)',
+    color: 'rgba(255,255,255,0.68)',
     textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    marginBottom: SPACING.sm,
+    letterSpacing: 1,
   },
-  greeting: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
+  heroPreferenceBadge: {
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  heroPreferenceText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
     color: COLORS.white,
-    marginBottom: SPACING.xs,
   },
   heroTitle: {
     fontSize: TYPOGRAPHY.fontSizes.hero,
@@ -225,339 +272,296 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: 'rgba(255,255,255,0.78)',
+    color: 'rgba(255,255,255,0.72)',
     lineHeight: 24,
     marginBottom: SPACING.lg,
   },
-  searchPanel: {
-    backgroundColor: 'rgba(255,255,255,0.10)',
+  searchCard: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: RADIUS.md,
     padding: SPACING.md,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.10)',
   },
-  searchLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.semibold,
-    color: COLORS.white,
-  },
-  searchMetaRow: {
+  searchHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.xs,
     gap: SPACING.sm,
+    marginBottom: SPACING.sm,
   },
-  googleMapsPill: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  googleMapsText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
+  searchTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.semibold,
     color: COLORS.white,
   },
-  searchPrompt: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: 'rgba(255,255,255,0.72)',
-    lineHeight: 22,
-    marginBottom: SPACING.md,
+  searchMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.64)',
   },
-  searchInputShell: {
+  searchField: {
     backgroundColor: COLORS.white,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 4,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
-  searchInputLabel: {
+  searchFieldLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
     color: COLORS.subText,
     marginBottom: SPACING.xs,
   },
-  searchInputValue: {
+  searchFieldValue: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.semibold,
     color: '#102033',
   },
-  destinationRow: {
+  searchHint: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: 'rgba(255,255,255,0.68)',
+    lineHeight: 20,
+    marginBottom: SPACING.md,
+  },
+  exampleRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
-    marginBottom: -SPACING.xs,
+    gap: SPACING.sm,
   },
-  destinationChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
+  exampleChip: {
     borderRadius: 999,
-    backgroundColor: COLORS.white,
-    marginHorizontal: SPACING.xs,
-    marginBottom: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  destinationText: {
+  exampleText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#102033',
+    fontFamily: FONTS.medium,
+    color: COLORS.white,
   },
   section: {
-    marginBottom: SPACING.lg,
+    gap: SPACING.md,
+  },
+  panel: {
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#E2EAF0',
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.md,
+    gap: SPACING.sm,
   },
   sectionTitle: {
     fontSize: TYPOGRAPHY.fontSizes.large,
     fontFamily: FONTS.bold,
-    color: COLORS.text,
-  },
-  sectionDescription: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: COLORS.subText,
-    lineHeight: 22,
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.md,
+    color: '#102033',
   },
   sectionMeta: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: COLORS.subText,
+    color: '#5D7286',
   },
-  actionRow: {
+  sectionDescription: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.regular,
+    color: '#5D7286',
+    lineHeight: 22,
+  },
+  preferenceRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
-    marginBottom: -SPACING.xs,
-  },
-  actionCard: {
-    minWidth: '30%',
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.sm + 4,
-    paddingHorizontal: SPACING.sm + 4,
-    marginHorizontal: SPACING.xs,
-    marginBottom: SPACING.xs,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  actionText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.text,
-    lineHeight: 18,
-  },
-  mapPreviewCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
-    marginBottom: SPACING.lg,
-    borderWidth: 1,
-    borderColor: '#E4ECF2',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 3,
-  },
-  mapPreviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     gap: SPACING.sm,
   },
-  mapSurface: {
-    height: 180,
-    borderRadius: RADIUS.md,
-    backgroundColor: '#EAF3F8',
-    padding: SPACING.md,
-    justifyContent: 'center',
+  preferenceChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(16,32,51,0.04)',
+    borderWidth: 1,
+    borderColor: '#DCE7EF',
   },
-  mapPinRow: {
+  preferenceChipActive: {
+    backgroundColor: '#102033',
+    borderColor: '#102033',
+  },
+  preferenceText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#415466',
+  },
+  preferenceTextActive: {
+    color: COLORS.white,
+  },
+  mapSurface: {
+    borderRadius: RADIUS.md,
+    backgroundColor: '#F5F9FC',
+    padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#E4ECF2',
+  },
+  mapLineRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: SPACING.md,
   },
-  mapPin: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  mapNode: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
   },
-  mapPinOrigin: {
-    backgroundColor: '#0F172A',
+  mapNodeOrigin: {
+    backgroundColor: '#102033',
   },
-  mapPinDestination: {
+  mapNodeTransfer: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#7EAED8',
+  },
+  mapNodeDestination: {
     backgroundColor: COLORS.primary,
   },
-  mapLine: {
+  mapTrack: {
     flex: 1,
-    height: 4,
+    height: 3,
     borderRadius: 999,
-    backgroundColor: '#8BC4F6',
+    backgroundColor: COLORS.primary,
+    marginHorizontal: SPACING.sm,
+  },
+  mapTrackMuted: {
+    flex: 1,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: '#BFD8EB',
     marginHorizontal: SPACING.sm,
   },
   mapLegendRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: SPACING.md,
   },
   mapLegendText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: COLORS.subText,
+    color: '#5D7286',
   },
   routeCard: {
-    position: 'relative',
-    overflow: 'hidden',
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    marginBottom: SPACING.sm + 4,
+    padding: SPACING.lg,
     borderWidth: 1,
-    borderColor: '#E4ECF2',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 20,
-    elevation: 4,
+    borderColor: '#E2EAF0',
+    gap: SPACING.md,
   },
-  routeCardEyebrow: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.subText,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: SPACING.sm,
-  },
-  routeAccent: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 6,
-    height: '100%',
-  },
-  routeHeader: {
+  routeTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.sm,
+    alignItems: 'center',
     gap: SPACING.sm,
   },
-  routeTitle: {
-    flex: 1,
-    fontSize: TYPOGRAPHY.fontSizes.xlarge,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-  },
-  routeBadge: {
-    backgroundColor: '#EEF5FF',
-    borderRadius: 999,
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-  },
-  routeBadgeText: {
+  routeEyebrow: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  routeDescription: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: COLORS.subText,
-    lineHeight: 22,
-    marginBottom: SPACING.md,
-  },
-  modeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
-    marginBottom: SPACING.sm,
-  },
-  modeChip: {
-    backgroundColor: '#F1F5F9',
+  fareStatusBadge: {
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: SPACING.xs + 2,
     borderRadius: 999,
-    marginHorizontal: SPACING.xs,
-    marginBottom: SPACING.xs,
+    backgroundColor: '#EEF5FF',
   },
-  modeChipText: {
+  fareStatusText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: '#334155',
+    color: COLORS.primary,
   },
-  routeStats: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  statPill: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    padding: SPACING.sm + 4,
-  },
-  statLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.subText,
-    marginBottom: SPACING.xs,
-  },
-  statValue: {
+  routeTitle: {
     fontSize: TYPOGRAPHY.fontSizes.large,
     fontFamily: FONTS.bold,
-    color: COLORS.text,
+    color: '#102033',
   },
-  insightCard: {
-    backgroundColor: '#EFF4F7',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
-  },
-  insightTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.xlarge,
-    fontFamily: FONTS.bold,
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  insightSubtitle: {
+  routeSummary: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: COLORS.subText,
+    color: '#5D7286',
     lineHeight: 22,
-    marginBottom: SPACING.lg,
+  },
+  routeMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+  },
+  routeMetaText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: '#415466',
+  },
+  routeStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: '#F7FAFC',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#E8EFF4',
+  },
+  routeStatBlock: {
+    flex: 1,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+  },
+  routeStatDivider: {
+    width: 1,
+    backgroundColor: '#E4ECF2',
+  },
+  routeStatLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: '#6B7D8E',
+    marginBottom: SPACING.xs,
+  },
+  routeStatValue: {
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontFamily: FONTS.bold,
+    color: '#102033',
   },
   alertList: {
-    gap: SPACING.sm,
+    gap: SPACING.md,
   },
-  alertItem: {
+  alertRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.md,
-    padding: SPACING.sm + 4,
+    gap: SPACING.sm,
   },
-  alertDot: {
+  alertMarker: {
     width: 10,
     height: 10,
     borderRadius: 5,
     backgroundColor: COLORS.warning,
     marginTop: 6,
-    marginRight: SPACING.sm,
   },
-  alertText: {
+  alertContent: {
     flex: 1,
+    paddingBottom: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF2F6',
+  },
+  alertTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.semibold,
+    color: '#102033',
+    marginBottom: SPACING.xs,
+  },
+  alertDetail: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: COLORS.subText,
+    color: '#5D7286',
     lineHeight: 22,
   },
 });
