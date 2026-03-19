@@ -7,6 +7,7 @@ import {
 import { parseRouteIntent } from "../ai/intent-parser.js";
 import { generateRouteSummary } from "../ai/route-summary.js";
 import type { RouteIntent } from "../ai/types.js";
+import * as areaUpdateModel from "../models/area-update.model.js";
 import * as fareModel from "../models/fare.model.js";
 import * as placeModel from "../models/place.model.js";
 import * as routeModel from "../models/route.model.js";
@@ -36,6 +37,7 @@ const MAX_ACCESS_DISTANCE_METERS = 500;
 const ROUTE_SUMMARY_CONCURRENCY = 3;
 const WALKING_METERS_PER_MINUTE = 80;
 const RIDE_STOP_MODES: StopMode[] = ["jeepney", "uv", "mrt3", "lrt1", "lrt2"];
+const MAX_RELEVANT_INCIDENTS = 3;
 
 interface RouteQueryRequest {
   origin?: RouteQueryPointInput;
@@ -581,6 +583,81 @@ const buildRouteOption = (
 const buildRouteQueryMessage = (normalizedQuery: RouteQueryNormalizedInput) =>
   `No supported route found for ${normalizedQuery.origin.label} to ${normalizedQuery.destination.label} in the current coverage`;
 
+const getIncidentSeverityWeight = (severity: "low" | "medium" | "high") =>
+  severity === "high" ? 3 : severity === "medium" ? 2 : 1;
+
+const sortRelevantIncidents = (
+  incidents: areaUpdateModel.AreaUpdate[]
+) =>
+  [...incidents].sort(
+    (left, right) =>
+      getIncidentSeverityWeight(right.severity) - getIncidentSeverityWeight(left.severity) ||
+      right.scrapedAt.localeCompare(left.scrapedAt) ||
+      left.id.localeCompare(right.id)
+  );
+
+const attachRelevantIncidents = async (input: {
+  options: RouteQueryOption[];
+  normalizedQuery: RouteQueryNormalizedInput;
+}) => {
+  if (input.options.length === 0) {
+    return input.options;
+  }
+
+  let activeIncidents: areaUpdateModel.AreaUpdate[];
+
+  try {
+    activeIncidents = await areaUpdateModel.listActiveAreaUpdates(100);
+  } catch (error) {
+    console.warn("Unable to load active area updates for route query", {
+      operation: "route_query_incidents",
+      reason: error instanceof Error ? error.message : "unknown error"
+    });
+    return input.options;
+  }
+
+  if (activeIncidents.length === 0) {
+    return input.options;
+  }
+
+  const originLabel = placeModel.normalizePlaceSearchText(input.normalizedQuery.origin.label);
+  const destinationLabel = placeModel.normalizePlaceSearchText(
+    input.normalizedQuery.destination.label
+  );
+
+  return input.options.map((option) => {
+    const corridorTags = new Set(option.corridorTags.map((tag) => tag.toLowerCase()));
+    const relevantIncidents = sortRelevantIncidents(
+      activeIncidents.filter((incident) => {
+        const incidentLocation = placeModel.normalizePlaceSearchText(incident.normalizedLocation);
+
+        return (
+          incident.corridorTags.some((tag) => corridorTags.has(tag.toLowerCase())) ||
+          incidentLocation.includes(originLabel) ||
+          incidentLocation.includes(destinationLabel)
+        );
+      })
+    )
+      .slice(0, MAX_RELEVANT_INCIDENTS)
+      .map((incident) => ({
+        id: incident.id,
+        alertType: incident.alertType,
+        location: incident.location,
+        direction: incident.direction,
+        severity: incident.severity,
+        summary: incident.summary,
+        displayUntil: incident.displayUntil,
+        scrapedAt: incident.scrapedAt,
+        sourceUrl: incident.sourceUrl
+      }));
+
+    return {
+      ...option,
+      relevantIncidents
+    };
+  });
+};
+
 const dedupeCandidateDrafts = (drafts: CandidateDraft[]) => {
   const draftMap = new Map<string, CandidateDraft>();
 
@@ -872,8 +949,12 @@ export const queryRoutes = async (input: {
   }
 
   const rankedOptions = rankRouteOptions(routeOptions, normalizedQuery.preference);
+  const optionsWithIncidents = await attachRelevantIncidents({
+    options: rankedOptions,
+    normalizedQuery
+  });
   const summarizedOptions = await mapWithConcurrency(
-    rankedOptions,
+    optionsWithIncidents,
     ROUTE_SUMMARY_CONCURRENCY,
     async (option) => ({
       ...option,

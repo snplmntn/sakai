@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/ai/client.js", () => ({
   generateJson: vi.fn(),
-  getPrimaryModel: vi.fn(() => "gemini-2.5-flash"),
+  getLightModel: vi.fn(() => "gemini-2.5-flash-lite"),
   isAiEnabled: vi.fn(() => true),
   AiUnavailableError: class AiUnavailableError extends Error {
     constructor(message: string) {
@@ -111,7 +111,7 @@ describe("route summary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedAiClient.isAiEnabled.mockReturnValue(true);
-    mockedAiClient.getPrimaryModel.mockReturnValue("gemini-2.5-flash");
+    mockedAiClient.getLightModel.mockReturnValue("gemini-2.5-flash-lite");
   });
 
   it("builds a deterministic template summary", () => {
