@@ -72,7 +72,7 @@ const VEHICLE_CONFIG = [
     imageSrc: "/fx.jpg",
     stepImageDir: "/fx",
     stepImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg"],
-    sectionHeading: "FX (UV Express)",
+    sectionHeading: "FX",
   },
   {
     label: "Taxi",
@@ -123,8 +123,7 @@ function normalizeText(value: string) {
 function extractSectionContent(source: string, heading: string) {
   const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(
-    `^#\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^#\\s+|\\Z)`,
-    "m",
+    `(?:^|\\n)#\\s+${escapedHeading}\\s*\\n([\\s\\S]*?)(?=\\n#\\s+|$)`,
   );
   const match = source.match(pattern);
   return match?.[1]?.trim() ?? "";
