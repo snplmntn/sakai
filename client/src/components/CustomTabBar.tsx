@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   TouchableOpacity,
@@ -10,24 +10,37 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Home01Icon, UserIcon, Mic01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
 import { COLORS, RADIUS, FONTS } from '../constants/theme';
+import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const [micExpanded, setMicExpanded] = useState(false);
+  const { isListening, requestToggle } = useVoiceSearchTrigger();
+  const focusedOptions = descriptors[state.routes[state.index]?.key]?.options;
+  const flattenedTabBarStyle = StyleSheet.flatten(focusedOptions?.tabBarStyle);
+  const isTabBarHidden =
+    typeof flattenedTabBarStyle === 'object' &&
+    flattenedTabBarStyle !== null &&
+    'display' in flattenedTabBarStyle &&
+    flattenedTabBarStyle.display === 'none';
+
+  if (isTabBarHidden) {
+    return null;
+  }
 
   const handleMicPress = () => {
-    setMicExpanded(!micExpanded);
+    navigation.navigate('Home');
+    requestToggle();
   };
 
   return (
     <View style={styles.wrapper}>
       <View style={styles.fabContainer}>
         <TouchableOpacity
-          style={[styles.fab, micExpanded && styles.fabActive]}
+          style={[styles.fab, isListening && styles.fabActive]}
           onPress={handleMicPress}
           activeOpacity={0.8}
         >
           <HugeiconsIcon
-            icon={micExpanded ? Cancel01Icon : Mic01Icon}
+            icon={isListening ? Cancel01Icon : Mic01Icon}
             size={28}
             color={COLORS.white}
           />
