@@ -12,24 +12,29 @@ import {
 } from '../preferences/types';
 import { useToast } from '../toast/ToastContext';
 
-const PROFILE_STATS = [
-  { value: '08', label: 'Saved routes' },
-  { value: '21', label: 'Trips this month' },
-  { value: '06', label: 'Reports shared' },
-];
+type ProfileRow = {
+  title: string;
+  description: string;
+  badge?: string;
+};
 
-const ACCOUNT_SECTIONS = [
+const PROFILE_ROWS: ProfileRow[] = [
   {
-    title: 'Commute style',
-    description: 'Your saved route ranking and fare profile travel with your account.',
+    title: 'Route preferences',
+    description: 'Jeepney first, less walking, and cash fare view.',
+  },
+  {
+    title: 'Passenger profile',
+    description: 'Authenticated rider with saved commute defaults.',
   },
   {
     title: 'Saved places',
-    description: 'Home, Work, and 3 recent destinations are ready for quick planning.',
+    description: 'Home, work, and recent destinations for faster planning.',
   },
   {
     title: 'Community activity',
-    description: 'You helped verify 2 stop names and 1 transfer point this week.',
+    description: 'Reports and route improvements you shared with other riders.',
+    badge: 'New',
   },
 ];
 
@@ -159,31 +164,22 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
 
   return (
     <SafeScreen
-      backgroundColor={COLORS.surface}
-      topInsetBackgroundColor="#102033"
-      statusBarStyle="light"
-      useGradient={true}
+      backgroundColor={COLORS.white}
+      topInsetBackgroundColor={COLORS.white}
+      statusBarStyle="dark"
     >
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.headerCard}>
-          <View style={styles.headerRule} />
-          <Text style={styles.headerLabel}>Profile</Text>
-
-          <View style={styles.identityRow}>
+        <View style={styles.body}>
+          <View style={styles.hero}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{getInitial(displayName)}</Text>
             </View>
             <View style={styles.identityBlock}>
               <Text style={styles.name}>{displayName}</Text>
               <Text style={styles.email}>{emailAddress}</Text>
-              <View style={styles.memberBadge}>
-                <Text style={styles.memberBadgeText}>Authenticated rider</Text>
-              </View>
             </View>
           </View>
-        </View>
 
-        <View style={styles.body}>
           {isRefreshing ? (
             <View style={styles.statusRow}>
               <ActivityIndicator size="small" color={COLORS.primary} />
@@ -191,100 +187,25 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
             </View>
           ) : null}
 
-          <View style={styles.statsCard}>
-            {PROFILE_STATS.map((item, index) => (
-              <View
-                key={item.label}
-                style={[styles.statItem, index !== PROFILE_STATS.length - 1 && styles.statDivider]}
-              >
-                <Text style={styles.statValue}>{item.value}</Text>
-                <Text style={styles.statLabel}>{item.label}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Preferences</Text>
-            <Text style={styles.sectionSubtitle}>
-              These settings shape how Sakai ranks route suggestions for you.
-            </Text>
-            <Text style={styles.preferenceLabel}>Route preference</Text>
-            <View style={styles.preferenceRow}>
-              {ROUTE_PREFERENCE_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.preferenceChip,
-                    preferences.defaultPreference === option.value &&
-                      styles.preferenceChipActive,
-                  ]}
-                  activeOpacity={0.85}
-                  disabled={isUpdating}
-                  onPress={() => {
-                    void handlePreferenceUpdate({
-                      defaultPreference: option.value,
-                      passengerType: preferences.passengerType,
-                    });
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.preferenceText,
-                      preferences.defaultPreference === option.value &&
-                        styles.preferenceTextActive,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={styles.preferenceLabel}>Passenger type</Text>
-            <View style={styles.preferenceRow}>
-              {PASSENGER_TYPE_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.preferenceChip,
-                    preferences.passengerType === option.value &&
-                      styles.preferenceChipActive,
-                  ]}
-                  activeOpacity={0.85}
-                  disabled={isUpdating}
-                  onPress={() => {
-                    void handlePreferenceUpdate({
-                      defaultPreference: preferences.defaultPreference,
-                      passengerType: option.value,
-                    });
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.preferenceText,
-                      preferences.passengerType === option.value &&
-                        styles.preferenceTextActive,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={styles.preferenceHint}>
-              Jeepney fares use this passenger type when discounted pricing is available.
-            </Text>
-          </View>
-
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Account overview</Text>
-            <View style={styles.detailList}>
-              {ACCOUNT_SECTIONS.map((section, index) => (
+          <View style={styles.section}>
+            <View style={styles.list}>
+              {PROFILE_ROWS.map((item, index) => (
                 <View
-                  key={section.title}
-                  style={[styles.detailRow, index !== ACCOUNT_SECTIONS.length - 1 && styles.detailDivider]}
+                  key={item.title}
+                  style={[styles.listRow, index !== PROFILE_ROWS.length - 1 && styles.listDivider]}
                 >
-                  <Text style={styles.detailTitle}>{section.title}</Text>
-                  <Text style={styles.detailDescription}>{section.description}</Text>
+                  <View style={styles.rowCopy}>
+                    <Text style={styles.rowTitle}>{item.title}</Text>
+                    <Text style={styles.rowDescription}>{item.description}</Text>
+                  </View>
+                  <View style={styles.rowMeta}>
+                    {item.badge ? (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{item.badge}</Text>
+                      </View>
+                    ) : null}
+                    <Text style={styles.chevron}>{'>'}</Text>
+                  </View>
                 </View>
               ))}
             </View>
@@ -298,12 +219,12 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
             activeOpacity={0.88}
             disabled={isSigningOut}
           >
-            {isSigningOut ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.logoutText}>Log Out</Text>}
+            {isSigningOut ? (
+              <ActivityIndicator color={COLORS.black} />
+            ) : (
+              <Text style={styles.logoutText}>Log Out</Text>
+            )}
           </TouchableOpacity>
-
-          <Text style={styles.logoutHint}>
-            Logging out returns you to onboarding without deleting your saved commute preferences.
-          </Text>
         </View>
       </ScrollView>
     </SafeScreen>
@@ -312,223 +233,135 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
 
 const styles = StyleSheet.create({
   content: {
-    paddingBottom: SPACING.xl + 24,
+    paddingBottom: SPACING.xxl + 24,
   },
   body: {
-    paddingHorizontal: SPACING.md,
-    gap: SPACING.lg,
-  },
-  headerCard: {
-    backgroundColor: '#102033',
-    borderBottomLeftRadius: RADIUS.lg,
-    borderBottomRightRadius: RADIUS.lg,
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xl,
-    marginBottom: SPACING.lg,
   },
-  headerRule: {
-    width: 40,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: COLORS.primary,
-    marginBottom: SPACING.md,
-  },
-  headerLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: 'rgba(255,255,255,0.68)',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: SPACING.lg,
-  },
-  identityRow: {
+  hero: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: SPACING.xl,
   },
   avatar: {
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: COLORS.white,
+    backgroundColor: '#EFF4F8',
+    borderWidth: 1,
+    borderColor: '#E1E9F0',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: SPACING.md,
+    marginRight: SPACING.md + 2,
   },
   avatarText: {
     fontSize: TYPOGRAPHY.fontSizes.xlarge,
     fontFamily: FONTS.bold,
-    color: COLORS.primary,
+    color: COLORS.midnight,
   },
   identityBlock: {
     flex: 1,
   },
   name: {
     fontSize: TYPOGRAPHY.fontSizes.xlarge,
-    fontFamily: FONTS.bold,
-    color: COLORS.white,
+    fontFamily: FONTS.semibold,
+    color: COLORS.midnight,
     marginBottom: SPACING.xs,
   },
   email: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: 'rgba(255,255,255,0.72)',
-    marginBottom: SPACING.sm,
-  },
-  memberBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  memberBadgeText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.white,
+    fontFamily: FONTS.regular,
+    color: COLORS.subText,
+    marginBottom: SPACING.xs,
   },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
+    marginBottom: SPACING.lg,
   },
   statusText: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.medium,
-    color: '#5D7286',
-  },
-  statsCard: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: '#E2EAF0',
-  },
-  statItem: {
-    flex: 1,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.lg,
-    alignItems: 'center',
-  },
-  statDivider: {
-    borderRightWidth: 1,
-    borderRightColor: '#E4ECF2',
-  },
-  statValue: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-    marginBottom: SPACING.xs,
-  },
-  statLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: '#5D7286',
-    textAlign: 'center',
+    color: COLORS.subText,
   },
-  sectionCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
-    borderWidth: 1,
-    borderColor: '#E2EAF0',
+  section: {
+    marginBottom: SPACING.xl,
   },
   sectionTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-    marginBottom: SPACING.xs,
-  },
-  sectionSubtitle: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.regular,
-    color: '#5D7286',
-    lineHeight: 22,
+    fontSize: TYPOGRAPHY.fontSizes.xlarge,
+    fontFamily: FONTS.semibold,
+    color: COLORS.midnight,
     marginBottom: SPACING.md,
   },
-  preferenceRow: {
+  list: {
+    borderTopWidth: 1,
+    borderTopColor: '#EDF1F5',
+  },
+  listRow: {
+    minHeight: 72,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-  },
-  preferenceLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#5D7286',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: SPACING.sm,
-  },
-  preferenceChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    borderRadius: 999,
-    backgroundColor: '#F4F8FB',
-    borderWidth: 1,
-    borderColor: '#E2EAF0',
-  },
-  preferenceChipActive: {
-    backgroundColor: '#102033',
-    borderColor: '#102033',
-  },
-  preferenceText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#415466',
-  },
-  preferenceTextActive: {
-    color: COLORS.white,
-  },
-  preferenceHint: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.regular,
-    color: '#5D7286',
-    lineHeight: 20,
-    marginTop: SPACING.md,
-  },
-  detailList: {
-    marginTop: SPACING.sm,
-  },
-  detailRow: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: SPACING.md,
+    gap: SPACING.md,
   },
-  detailDivider: {
+  listDivider: {
     borderBottomWidth: 1,
-    borderBottomColor: '#EEF2F6',
+    borderBottomColor: '#EDF1F5',
   },
-  detailTitle: {
+  rowCopy: {
+    flex: 1,
+  },
+  rowTitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.semibold,
-    color: '#102033',
+    fontFamily: FONTS.medium,
+    color: COLORS.text,
     marginBottom: SPACING.xs,
   },
-  detailDescription: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+  rowDescription: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
-    color: '#5D7286',
-    lineHeight: 22,
+    color: COLORS.subText,
+    lineHeight: 18,
+  },
+  rowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  badge: {
+    borderRadius: 999,
+    backgroundColor: '#FDEAE4',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs,
+  },
+  badgeText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#D96B52',
+  },
+  chevron: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.medium,
+    color: '#9AA8B5',
   },
   logoutButton: {
-    backgroundColor: COLORS.black,
-    borderRadius: RADIUS.lg,
-    paddingVertical: SPACING.md + 2,
+    marginTop: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#E6EBF0',
+    paddingVertical: SPACING.md,
     alignItems: 'center',
+    backgroundColor: COLORS.white,
   },
   logoutButtonDisabled: {
     opacity: 0.7,
   },
   logoutText: {
-    color: COLORS.white,
+    color: COLORS.text,
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
-  },
-  logoutHint: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.regular,
-    color: '#5D7286',
-    lineHeight: 20,
-    textAlign: 'center',
+    fontFamily: FONTS.medium,
   },
 });
