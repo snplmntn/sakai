@@ -8,6 +8,8 @@ export type RouteQueryValueSource =
   | "saved_preference"
   | "default";
 
+export type RouteModifier = "jeep_if_possible" | "less_walking";
+
 export interface RouteQueryPointInput {
   placeId?: string;
   googlePlaceId?: string;
@@ -29,6 +31,8 @@ export interface RouteQueryNormalizedInput {
   passengerType: PassengerType;
   preferenceSource: RouteQueryValueSource;
   passengerTypeSource: RouteQueryValueSource;
+  modifiers: RouteModifier[];
+  modifierSource: RouteQueryValueSource;
 }
 
 export interface RouteQueryRideLeg {
@@ -59,7 +63,18 @@ export interface RouteQueryWalkLeg {
   fare: FareBreakdown;
 }
 
-export type RouteQueryLeg = RouteQueryRideLeg | RouteQueryWalkLeg;
+export interface RouteQueryDriveLeg {
+  type: "drive";
+  id: string;
+  mode: "car";
+  fromLabel: string;
+  toLabel: string;
+  distanceKm: number;
+  durationMinutes: number;
+  fare: FareBreakdown;
+}
+
+export type RouteQueryLeg = RouteQueryRideLeg | RouteQueryWalkLeg | RouteQueryDriveLeg;
 
 export interface RouteQueryIncident {
   id: string;

@@ -140,7 +140,9 @@ describe("route summary", () => {
         preference: "balanced",
         passengerType: "regular",
         preferenceSource: "default",
-        passengerTypeSource: "default"
+        passengerTypeSource: "default",
+        modifiers: [],
+        modifierSource: "default"
       }
     });
 
@@ -168,7 +170,9 @@ describe("route summary", () => {
         preference: "balanced",
         passengerType: "regular",
         preferenceSource: "default",
-        passengerTypeSource: "default"
+        passengerTypeSource: "default",
+        modifiers: [],
+        modifierSource: "default"
       }
     });
 
@@ -196,7 +200,9 @@ describe("route summary", () => {
         preference: "balanced",
         passengerType: "regular",
         preferenceSource: "default",
-        passengerTypeSource: "default"
+        passengerTypeSource: "default",
+        modifiers: [],
+        modifierSource: "default"
       }
     });
 

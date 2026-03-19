@@ -92,6 +92,25 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
     );
   }
 
+  if (leg.type === 'drive') {
+    return (
+      <View style={styles.legRow}>
+        <View style={[styles.legBadge, styles.legBadgeRide]}>
+          <Text style={styles.legBadgeText}>Car</Text>
+        </View>
+        <View style={styles.legInfo}>
+          <Text style={styles.legName}>
+            {leg.fromLabel} → {leg.toLabel}
+          </Text>
+          <Text style={styles.legMeta}>
+            {leg.distanceKm.toFixed(1)} km · {formatDuration(leg.durationMinutes)}
+          </Text>
+          <Text style={styles.legFare}>{formatFare(leg.fare.amount)}</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.legRow}>
       <View style={[styles.legBadge, styles.legBadgeRide]}>

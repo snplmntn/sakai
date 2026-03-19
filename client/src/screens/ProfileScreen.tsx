@@ -1,15 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useAuth } from '../auth/AuthContext';
+import NavigationAlarmCard from '../components/NavigationAlarmCard';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
-import type { MainTabParamList } from '../navigation/MainTabNavigator';
-import { usePreferences } from '../preferences/PreferencesContext';
-import {
-  PASSENGER_TYPE_OPTIONS,
-  ROUTE_PREFERENCE_OPTIONS,
-} from '../preferences/types';
 import { useToast } from '../toast/ToastContext';
 
 type ProfileRow = {
@@ -21,7 +15,7 @@ type ProfileRow = {
 const PROFILE_ROWS: ProfileRow[] = [
   {
     title: 'Route preferences',
-    description: 'Jeepney first, less walking, and cash fare view.',
+    description: 'Saved time, fare, and passenger defaults for each trip search.',
   },
   {
     title: 'Passenger profile',
@@ -37,8 +31,6 @@ const PROFILE_ROWS: ProfileRow[] = [
     badge: 'New',
   },
 ];
-
-type ProfileScreenProps = BottomTabScreenProps<MainTabParamList, 'Profile'>;
 
 const getMetadataString = (
   metadata: Record<string, unknown> | null,
@@ -84,9 +76,8 @@ const getErrorMessage = (error: unknown): string =>
     ? error.message
     : 'Unable to refresh your profile right now.';
 
-export default function ProfileScreen(_props: ProfileScreenProps) {
+export default function ProfileScreen() {
   const { user, refreshUser, signOut } = useAuth();
-  const { preferences, isUpdating, updatePreferences } = usePreferences();
   const { showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -141,24 +132,6 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
     }
   };
 
-  const handlePreferenceUpdate = async (input: {
-    defaultPreference: typeof preferences.defaultPreference;
-    passengerType: typeof preferences.passengerType;
-  }) => {
-    try {
-      await updatePreferences(input);
-      showToast({
-        tone: 'success',
-        message: 'Commute preferences updated.',
-      });
-    } catch (error) {
-      showToast({
-        tone: 'error',
-        message: getErrorMessage(error),
-      });
-    }
-  };
-
   const displayName = getDisplayName(user?.email ?? null, user?.userMetadata ?? null);
   const emailAddress = user?.email ?? 'No email available';
 
@@ -188,11 +161,25 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
           ) : null}
 
           <View style={styles.section}>
+            <NavigationAlarmCard />
+          </View>
+
+          <View style={styles.section}>
             <View style={styles.list}>
               {PROFILE_ROWS.map((item, index) => (
-                <View
+                <TouchableOpacity
                   key={item.title}
                   style={[styles.listRow, index !== PROFILE_ROWS.length - 1 && styles.listDivider]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    if (item.title === 'Community activity') {
+                      showToast({
+                        tone: 'info',
+                        title: 'Coming soon',
+                        message: 'Community activity is not available in this build yet.',
+                      });
+                    }
+                  }}
                 >
                   <View style={styles.rowCopy}>
                     <Text style={styles.rowTitle}>{item.title}</Text>
@@ -206,7 +193,7 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
                     ) : null}
                     <Text style={styles.chevron}>{'>'}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </View>

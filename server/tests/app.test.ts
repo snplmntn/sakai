@@ -519,7 +519,9 @@ describe("app routes", () => {
         preference: "cheapest",
         passengerType: "student",
         preferenceSource: "saved_preference",
-        passengerTypeSource: "saved_preference"
+        passengerTypeSource: "saved_preference",
+        modifiers: [],
+        modifierSource: "default"
       },
       options: [],
       message: "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
@@ -556,7 +558,9 @@ describe("app routes", () => {
           preference: "cheapest",
           passengerType: "student",
           preferenceSource: "saved_preference",
-          passengerTypeSource: "saved_preference"
+          passengerTypeSource: "saved_preference",
+          modifiers: [],
+          modifierSource: "default"
         },
         options: [],
         message: "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
@@ -592,7 +596,9 @@ describe("app routes", () => {
         preference: "cheapest",
         passengerType: "regular",
         preferenceSource: "ai_parsed",
-        passengerTypeSource: "default"
+        passengerTypeSource: "default",
+        modifiers: [],
+        modifierSource: "default"
       },
       options: []
     });

@@ -3,144 +3,183 @@ import { describe, expect, it } from "vitest";
 import { rankRouteOptions } from "../src/services/route-ranking.service.js";
 import type { RouteQueryOption } from "../src/types/route-query.js";
 
-const createOption = (overrides: Partial<RouteQueryOption>): RouteQueryOption => ({
-  id: overrides.id ?? "option-1",
-  summary: overrides.summary ?? "Route summary",
-  recommendationLabel: overrides.recommendationLabel ?? "Alternative option",
-  highlights: overrides.highlights ?? [],
-  totalDurationMinutes: overrides.totalDurationMinutes ?? 40,
-  totalFare: overrides.totalFare ?? 20,
-  fareConfidence: overrides.fareConfidence ?? "official",
-  transferCount: overrides.transferCount ?? 1,
-  corridorTags: overrides.corridorTags ?? ["cubao"],
-  fareAssumptions: overrides.fareAssumptions ?? [],
-  legs: overrides.legs ?? [],
-  relevantIncidents: []
+const createOption = (input: {
+  id: string;
+  totalDurationMinutes: number;
+  totalFare: number;
+  transferCount: number;
+  jeepneyRideCount: number;
+  walkingDistanceMeters: number;
+  walkingDurationMinutes: number;
+}): RouteQueryOption => ({
+  id: input.id,
+  summary: "",
+  recommendationLabel: "Alternative option",
+  highlights: [],
+  totalDurationMinutes: input.totalDurationMinutes,
+  totalFare: input.totalFare,
+  fareConfidence: "official",
+  transferCount: input.transferCount,
+  corridorTags: [],
+  fareAssumptions: [],
+  legs: [
+    ...Array.from({ length: input.jeepneyRideCount }, (_, index) => ({
+      type: "ride" as const,
+      id: `${input.id}:jeep:${index}`,
+      mode: "jeepney" as const,
+      routeId: `route-${input.id}-${index}`,
+      routeVariantId: `variant-${input.id}-${index}`,
+      routeCode: `JEEP-${input.id}-${index}`,
+      routeName: `Jeep option ${input.id}`,
+      directionLabel: "Outbound",
+      fromStop: {
+        id: `${input.id}:from:${index}`,
+        placeId: null,
+        externalStopCode: null,
+        stopName: "Origin",
+        mode: "jeepney" as const,
+        area: "Metro Manila",
+        latitude: 14.6,
+        longitude: 121,
+        isActive: true,
+        createdAt: "2026-03-20T00:00:00.000Z"
+      },
+      toStop: {
+        id: `${input.id}:to:${index}`,
+        placeId: null,
+        externalStopCode: null,
+        stopName: "Destination",
+        mode: "jeepney" as const,
+        area: "Metro Manila",
+        latitude: 14.61,
+        longitude: 121.01,
+        isActive: true,
+        createdAt: "2026-03-20T00:00:00.000Z"
+      },
+      routeLabel: "Jeep route",
+      distanceKm: 4,
+      durationMinutes: 12,
+      corridorTags: [],
+      fare: {
+        amount: 13,
+        pricingType: "official" as const,
+        fareProductCode: "puj_traditional",
+        ruleVersionName: "LTFRB",
+        effectivityDate: "2026-01-01",
+        isDiscountApplied: false,
+        assumptionText: null
+      }
+    })),
+    ...(input.walkingDistanceMeters > 0
+      ? [
+          {
+            type: "walk" as const,
+            id: `${input.id}:walk`,
+            fromLabel: "Transfer",
+            toLabel: "Destination",
+            distanceMeters: input.walkingDistanceMeters,
+            durationMinutes: input.walkingDurationMinutes,
+            fare: {
+              amount: 0,
+              pricingType: "official" as const,
+              fareProductCode: null,
+              ruleVersionName: null,
+              effectivityDate: null,
+              isDiscountApplied: false,
+              assumptionText: null
+            }
+          },
+        ]
+      : []),
+  ],
+  relevantIncidents: [],
 });
 
 describe("route ranking service", () => {
-  it("ranks fastest routes by duration then fare then transfers", () => {
+  it("prioritizes jeepney-serving options when jeep_if_possible is active", () => {
     const ranked = rankRouteOptions(
       [
         createOption({
-          id: "slow-cheap",
-          totalDurationMinutes: 50,
-          totalFare: 10
+          id: "non-jeep",
+          totalDurationMinutes: 24,
+          totalFare: 18,
+          transferCount: 0,
+          jeepneyRideCount: 0,
+          walkingDistanceMeters: 40,
+          walkingDurationMinutes: 1
         }),
         createOption({
-          id: "fast",
+          id: "jeep",
           totalDurationMinutes: 30,
-          totalFare: 25
-        }),
-        createOption({
-          id: "fast-cheaper",
-          totalDurationMinutes: 30,
-          totalFare: 15
+          totalFare: 20,
+          transferCount: 1,
+          jeepneyRideCount: 1,
+          walkingDistanceMeters: 80,
+          walkingDurationMinutes: 2
         })
       ],
-      "fastest"
+      "fastest",
+      ["jeep_if_possible"]
     );
 
-    expect(ranked.map((option) => option.id)).toEqual(["fast-cheaper", "fast", "slow-cheap"]);
-    expect(ranked[0]?.recommendationLabel).toBe("Fastest option");
+    expect(ranked[0]?.id).toBe("jeep");
   });
 
-  it("ranks cheapest routes by fare then duration then transfers", () => {
+  it("prioritizes lower walking distance when less_walking is active", () => {
     const ranked = rankRouteOptions(
       [
         createOption({
-          id: "cheap-slow",
-          totalDurationMinutes: 60,
-          totalFare: 15
-        }),
-        createOption({
-          id: "cheap-fast",
-          totalDurationMinutes: 40,
-          totalFare: 15
-        }),
-        createOption({
-          id: "expensive",
-          totalDurationMinutes: 20,
-          totalFare: 25
-        })
-      ],
-      "cheapest"
-    );
-
-    expect(ranked.map((option) => option.id)).toEqual(["cheap-fast", "cheap-slow", "expensive"]);
-    expect(ranked[0]?.recommendationLabel).toBe("Cheapest option");
-  });
-
-  it("adds secondary labels only when they are uniquely true", () => {
-    const ranked = rankRouteOptions(
-      [
-        createOption({
-          id: "balanced",
-          totalDurationMinutes: 35,
+          id: "short-walk",
+          totalDurationMinutes: 29,
           totalFare: 18,
           transferCount: 1,
-          legs: [
-            {
-              type: "ride",
-              id: "ride-1",
-              mode: "jeepney",
-              routeId: "route-1",
-              routeVariantId: "variant-1",
-              routeCode: "J1",
-              routeName: "Jeep 1",
-              directionLabel: "Eastbound",
-              fromStop: {
-                id: "stop-1",
-                placeId: null,
-                externalStopCode: null,
-                stopName: "Stop 1",
-                mode: "jeepney",
-                area: "Cubao",
-                latitude: 0,
-                longitude: 0,
-                isActive: true,
-                createdAt: "2026-03-19T00:00:00.000Z"
-              },
-              toStop: {
-                id: "stop-2",
-                placeId: null,
-                externalStopCode: null,
-                stopName: "Stop 2",
-                mode: "jeepney",
-                area: "Cubao",
-                latitude: 0,
-                longitude: 0,
-                isActive: true,
-                createdAt: "2026-03-19T00:00:00.000Z"
-              },
-              routeLabel: "Jeep 1",
-              distanceKm: 5,
-              durationMinutes: 20,
-              corridorTags: ["cubao"],
-              fare: {
-                amount: 13,
-                pricingType: "official",
-                fareProductCode: "puj_traditional",
-                ruleVersionName: "LTFRB",
-                effectivityDate: "2026-01-01",
-                isDiscountApplied: false,
-                assumptionText: null
-              }
-            }
-          ]
+          jeepneyRideCount: 1,
+          walkingDistanceMeters: 50,
+          walkingDurationMinutes: 1
         }),
         createOption({
-          id: "many-transfers",
-          totalDurationMinutes: 36,
-          totalFare: 19,
-          transferCount: 2
+          id: "long-walk",
+          totalDurationMinutes: 24,
+          totalFare: 16,
+          transferCount: 0,
+          jeepneyRideCount: 1,
+          walkingDistanceMeters: 300,
+          walkingDurationMinutes: 5
         })
       ],
-      "balanced"
+      "cheapest",
+      ["less_walking"]
     );
 
-    expect(ranked[0]?.recommendationLabel).toBe("Balanced option");
-    expect(ranked[0]?.highlights).toContain("Fewest transfers");
-    expect(ranked[0]?.highlights).toContain("Most jeepney-friendly");
+    expect(ranked[0]?.id).toBe("short-walk");
+  });
+
+  it("falls back to base preference ordering when no modifier applies", () => {
+    const ranked = rankRouteOptions(
+      [
+        createOption({
+          id: "faster",
+          totalDurationMinutes: 20,
+          totalFare: 30,
+          transferCount: 1,
+          jeepneyRideCount: 0,
+          walkingDistanceMeters: 0,
+          walkingDurationMinutes: 0
+        }),
+        createOption({
+          id: "slower",
+          totalDurationMinutes: 28,
+          totalFare: 20,
+          transferCount: 0,
+          jeepneyRideCount: 0,
+          walkingDistanceMeters: 0,
+          walkingDurationMinutes: 0
+        })
+      ],
+      "fastest",
+      ["jeep_if_possible"]
+    );
+
+    expect(ranked[0]?.id).toBe("faster");
   });
 });

@@ -10,10 +10,14 @@ const buildIntentPrompt = (queryText: string) => `You are extracting commute-sea
 Return JSON only.
 
 Rules:
-- Extract only originText, destinationText, preference, passengerType, requiresClarification, clarificationField, confidence.
+- Extract only originText, destinationText, preference, passengerType, modifiers, requiresClarification, clarificationField, confidence.
 - Do not invent route names, stops, prices, or extra fields.
 - preference may only be fastest, cheapest, balanced, or null.
 - passengerType may only be regular, student, senior, pwd, or null.
+- modifiers may only contain jeep_if_possible and less_walking.
+- Map phrasing like "jeep if possible", "jeepney if possible", or "more jeep" to jeep_if_possible.
+- Map phrasing like "less walking", "shorter walk", or "avoid walking too much" to less_walking.
+- Return an empty modifiers array when no modifier is clearly stated.
 - If the query does not clearly identify an origin, destination, or both, set requiresClarification to true.
 - If no clarification is needed, clarificationField must be null.
 
