@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   PanResponder,
   Pressable,
   ScrollView,
@@ -16,6 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import SafeScreen from '../components/SafeScreen';
@@ -33,12 +36,17 @@ import {
 } from '../places/search';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import { useToast } from '../toast/ToastContext';
+import { useVoiceInput } from '../hooks/useVoiceInput';
+import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
 
 const SEARCH_EXAMPLES = ['Pasay', 'Magallanes', 'Gate 3'];
 const DEMO_RESULT_DELAY_MS = 450;
 const SHEET_HANDLE_HEIGHT = 34;
 const SHEET_EXPANDED_RATIO = 0.68;
 const SHEET_COLLAPSED_RATIO = 0.32;
+const IDLE_TOP_COLOR_START = '#8FC8F1';
+const IDLE_TOP_COLOR_END = COLORS.gradientStart;
+const IDLE_TOP_COLOR_SCROLL_DISTANCE = 220;
 
 type ActiveField = 'origin' | 'destination' | null;
 type ResultPhase = 'idle' | 'loading' | 'ready';
@@ -137,6 +145,33 @@ const buildDemoSelectedPlace = (label: string): SelectedPlace => ({
   placeId: `demo-${label.trim().toLowerCase().replace(/\s+/gu, '-')}`,
 });
 
+const clampUnit = (value: number): number => Math.min(Math.max(value, 0), 1);
+
+const hexToRgb = (hex: string): [number, number, number] => {
+  const normalized = hex.replace('#', '');
+
+  if (normalized.length !== 6) {
+    return [0, 0, 0];
+  }
+
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+  return [red, green, blue];
+};
+
+const interpolateHexColor = (startHex: string, endHex: string, progress: number): string => {
+  const [startRed, startGreen, startBlue] = hexToRgb(startHex);
+  const [endRed, endGreen, endBlue] = hexToRgb(endHex);
+  const ratio = clampUnit(progress);
+  const mix = (start: number, end: number) => Math.round(start + (end - start) * ratio);
+
+  const toHex = (value: number) => value.toString(16).padStart(2, '0');
+
+  return `#${toHex(mix(startRed, endRed))}${toHex(mix(startGreen, endGreen))}${toHex(mix(startBlue, endBlue))}`;
+};
+
 function DemoMapBackground() {
   return (
     <View style={styles.demoMapSurface}>
@@ -190,6 +225,7 @@ export default function TripMapScreen() {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const { setNavigationCandidate } = useNavigationAlarm();
+  const { triggerToken, setIsListening: setTabBarVoiceListening } = useVoiceSearchTrigger();
   const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
     origin: createGooglePlacesSessionToken(),
     destination: createGooglePlacesSessionToken(),
@@ -208,6 +244,18 @@ export default function TripMapScreen() {
   const [resultPhase, setResultPhase] = useState<ResultPhase>('idle');
   const [hasAttemptedStructuredOrigin, setHasAttemptedStructuredOrigin] = useState(false);
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('expanded');
+  const [idleTopInsetColor, setIdleTopInsetColor] = useState(IDLE_TOP_COLOR_START);
+  const [voiceQuery, setVoiceQuery] = useState('');
+  const {
+    isListening,
+    transcript,
+    partialTranscript,
+    error: voiceError,
+    isAvailable: voiceAvailable,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useVoiceInput();
 
   const activeQuery = activeField === 'origin' ? originQuery : destinationQuery;
   const canUseGooglePlaces = hasGooglePlacesApiKey();
@@ -235,6 +283,14 @@ export default function TripMapScreen() {
       navigation.setOptions({ tabBarStyle: undefined });
     };
   }, [navigation, resultPhase]);
+
+  useEffect(() => {
+    setTabBarVoiceListening(isListening);
+
+    return () => {
+      setTabBarVoiceListening(false);
+    };
+  }, [isListening, setTabBarVoiceListening]);
 
   useEffect(() => {
     const listenerId = sheetTranslateY.addListener(({ value }) => {
@@ -291,6 +347,84 @@ export default function TripMapScreen() {
     setHasAttemptedStructuredOrigin(true);
     void resolveCurrentOrigin();
   }, [hasAttemptedStructuredOrigin, originSelection]);
+
+  useEffect(() => {
+    if (!transcript) {
+      return;
+    }
+
+    setVoiceQuery(transcript);
+  }, [transcript]);
+
+  useEffect(() => {
+    if (voiceError === null) {
+      return;
+    }
+
+    showToast({
+      tone: 'info',
+      title: 'Voice search unavailable',
+      message: voiceError,
+    });
+  }, [showToast, voiceError]);
+
+  useEffect(() => {
+    if (triggerToken === 0 || resultPhase !== 'idle') {
+      return;
+    }
+
+    void (async () => {
+      if (!voiceAvailable) {
+        showToast({
+          tone: 'info',
+          title: 'Voice search unavailable',
+          message: 'Voice input is not available in this build.',
+        });
+        return;
+      }
+
+      if (isListening) {
+        await stopListening();
+        return;
+      }
+
+      resetDemoResults();
+      setActiveField(null);
+      setSuggestions([]);
+      setVoiceQuery('');
+      resetTranscript();
+      await startListening();
+    })().catch(() => undefined);
+  }, [
+    isListening,
+    resetTranscript,
+    resultPhase,
+    startListening,
+    stopListening,
+    triggerToken,
+    voiceAvailable,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (isListening || voiceQuery.trim().length === 0 || resultPhase !== 'idle') {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      const nextDestination = voiceQuery.trim();
+      resetDemoResults();
+      setDestinationQuery(nextDestination);
+      setDestinationSelection(buildDemoSelectedPlace(nextDestination));
+      setActiveField(null);
+      setSuggestions([]);
+      void handleSearchFromVoice(nextDestination);
+    }, 260);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [handleSearchFromVoice, isListening, resultPhase, voiceQuery]);
 
   const clearDemoSearchTimer = () => {
     if (!demoSearchTimerRef.current) {
@@ -353,6 +487,7 @@ export default function TripMapScreen() {
     setSelectedRouteId(null);
     setSheetSnap('expanded');
     setStatusMessage('Choose a routeable stop or Google place.');
+    setVoiceQuery('');
     setNavigationCandidate(null);
   };
 
@@ -429,6 +564,22 @@ export default function TripMapScreen() {
     return fallbackOrigin;
   };
 
+  async function handleSearchFromVoice(spokenDestination: string): Promise<void> {
+    const trimmedDestination = spokenDestination.trim();
+
+    if (trimmedDestination.length === 0) {
+      return;
+    }
+
+    await ensureOriginSelection();
+    setDestinationSelection(buildDemoSelectedPlace(trimmedDestination));
+    setDestinationQuery(trimmedDestination);
+    setActiveField(null);
+    setSuggestions([]);
+    resetTranscript();
+    startDemoSearch();
+  }
+
   const startDemoSearch = () => {
     clearDemoSearchTimer();
     setResultPhase('loading');
@@ -469,6 +620,14 @@ export default function TripMapScreen() {
     setActiveField(null);
     setSuggestions([]);
     startDemoSearch();
+  };
+
+  const handleIdleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    const progress = clampUnit(scrollY / IDLE_TOP_COLOR_SCROLL_DISTANCE);
+    const nextColor = interpolateHexColor(IDLE_TOP_COLOR_START, IDLE_TOP_COLOR_END, progress);
+
+    setIdleTopInsetColor((currentColor) => (currentColor === nextColor ? currentColor : nextColor));
   };
 
   const resetGoogleSessionToken = (field: 'origin' | 'destination') => {
@@ -679,106 +838,150 @@ export default function TripMapScreen() {
 
   return (
     <SafeScreen
-      backgroundColor={COLORS.white}
-      topInsetBackgroundColor="#102033"
-      statusBarStyle="light"
+      backgroundColor={COLORS.gradientStart}
+      topInsetBackgroundColor={idleTopInsetColor}
+      statusBarStyle="dark"
       useGradient={false}
     >
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <Text style={styles.title}>Where to Sakai today?</Text>
-          <Text style={styles.subtitle}>
-            Sakai routeable stops are suggested first, with Google Places as fallback.
-          </Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleIdleScroll}
+        scrollEventThrottle={16}
+      >
+        <LinearGradient
+          colors={['#8FC8F1', '#4C78A3', '#102033']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.hero}
+        >
+          <View style={styles.heroContent}>
+            <Text style={styles.title}>Where to Sakai today?</Text>
+            <Text style={styles.subtitle}>
+              Sakai routeable stops are suggested first, with Google Places as fallback.
+            </Text>
 
-          <View style={styles.searchCard}>
-            <View style={styles.row}>
-              <Text style={styles.label}>From</Text>
-              <Pressable
-                onPress={() => {
-                  resetDemoResults();
-                  void resolveCurrentOrigin();
-                }}
-              >
-                <Text style={styles.link}>Use my location</Text>
-              </Pressable>
-            </View>
-            <TextInput
-              value={originQuery}
-              onChangeText={(value) => {
-                resetDemoResults();
-                setOriginQuery(value);
-                setOriginSelection(null);
-                setActiveField('origin');
-              }}
-              onFocus={() => setActiveField('origin')}
-              placeholder="Current location or a stop"
-              placeholderTextColor="#8191A0"
-              style={styles.input}
-            />
-
-            <Text style={styles.label}>To</Text>
-            <TextInput
-              value={destinationQuery}
-              onChangeText={(value) => {
-                resetDemoResults();
-                setDestinationQuery(value);
-                setDestinationSelection(null);
-                setActiveField('destination');
-              }}
-              onFocus={() => setActiveField('destination')}
-              placeholder="Search Sakai stops or Google places"
-              placeholderTextColor="#8191A0"
-              style={styles.input}
-            />
-
-            <View style={styles.examples}>
-              {SEARCH_EXAMPLES.map((example) => (
-                <Pressable
-                  key={example}
-                  style={styles.exampleChip}
-                  onPress={() => {
-                    resetDemoResults();
-                    setDestinationQuery(example);
-                    setDestinationSelection(buildDemoSelectedPlace(example));
-                    setActiveField(null);
-                    setSuggestions([]);
-                  }}
-                >
-                  <Text style={styles.exampleText}>{example}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Pressable style={styles.searchButton} onPress={() => void handleSearchPress()}>
-              <Text style={styles.searchButtonText}>Search</Text>
-            </Pressable>
-
-            {(loadingSuggestions || suggestions.length > 0) && (
-              <View style={styles.suggestionPanel}>
-                {loadingSuggestions ? <ActivityIndicator color={COLORS.primary} /> : null}
-                {suggestions.map((suggestion) => (
-                  <Pressable
-                    key={getPlaceSuggestionKey(suggestion)}
-                    style={styles.suggestionRow}
-                    onPress={() => void selectSuggestion(suggestion)}
-                  >
-                    <View style={styles.suggestionBody}>
-                      <Text style={styles.suggestionTitle}>{suggestion.label}</Text>
-                      <Text style={styles.suggestionMeta}>
-                        {suggestion.source === 'sakai'
-                          ? `${suggestion.city} · Sakai`
-                          : suggestion.secondaryText || 'Google Maps'}
-                      </Text>
-                    </View>
-                    <Text style={styles.suggestionSource}>
-                      {suggestion.source === 'sakai' ? 'Sakai' : 'Google'}
-                    </Text>
-                  </Pressable>
-                ))}
+            <View style={styles.searchCard}>
+              <View style={styles.searchCardHeader}>
+                <Text style={styles.searchCardTitle}>Plan a route</Text>
+                <Text style={styles.searchCardHint}>
+                  Search routeable stops first, then fall back to Google Places.
+                </Text>
               </View>
-            )}
+
+              <View style={styles.fieldBlock}>
+                <View style={styles.row}>
+                  <Text style={styles.label}>From</Text>
+                  <Pressable
+                    onPress={() => {
+                      resetDemoResults();
+                      void resolveCurrentOrigin();
+                    }}
+                  >
+                    <Text style={styles.link}>Use my location</Text>
+                  </Pressable>
+                </View>
+                <TextInput
+                  value={originQuery}
+                  onChangeText={(value) => {
+                    resetDemoResults();
+                    setOriginQuery(value);
+                    setOriginSelection(null);
+                    setActiveField('origin');
+                  }}
+                  onFocus={() => setActiveField('origin')}
+                  placeholder="Current location or a stop"
+                  placeholderTextColor="#8191A0"
+                  style={styles.input}
+                />
+              </View>
+
+              <View style={styles.fieldBlock}>
+                <Text style={styles.label}>To</Text>
+                <TextInput
+                  value={destinationQuery}
+                  onChangeText={(value) => {
+                    resetDemoResults();
+                    setDestinationQuery(value);
+                    setDestinationSelection(null);
+                    setActiveField('destination');
+                  }}
+                  onFocus={() => setActiveField('destination')}
+                  placeholder="Search Sakai stops or Google places"
+                  placeholderTextColor="#8191A0"
+                  style={styles.input}
+                />
+              </View>
+
+              <View style={styles.examplesSection}>
+                <Text style={styles.examplesLabel}>Popular stops</Text>
+                <View style={styles.examples}>
+                  {SEARCH_EXAMPLES.map((example) => (
+                    <Pressable
+                      key={example}
+                      style={styles.exampleChip}
+                      onPress={() => {
+                        resetDemoResults();
+                        setDestinationQuery(example);
+                        setDestinationSelection(buildDemoSelectedPlace(example));
+                        setActiveField(null);
+                        setSuggestions([]);
+                      }}
+                    >
+                      <Text style={styles.exampleText}>{example}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+
+              <Pressable style={styles.searchButton} onPress={() => void handleSearchPress()}>
+                <Text style={styles.searchButtonText}>Search</Text>
+              </Pressable>
+
+              {(isListening || partialTranscript.trim().length > 0 || voiceQuery.trim().length > 0) && (
+                <View style={styles.voiceStatusCard}>
+                  <Text style={styles.voiceStatusLabel}>
+                    {isListening ? 'Listening now' : 'Voice search captured'}
+                  </Text>
+                  <Text style={styles.voiceStatusText}>
+                    {partialTranscript.trim() || voiceQuery.trim() || 'Say your destination.'}
+                  </Text>
+                </View>
+              )}
+
+              {(loadingSuggestions || suggestions.length > 0) && (
+                <View style={styles.suggestionPanel}>
+                  {loadingSuggestions ? <ActivityIndicator color={COLORS.primary} /> : null}
+                  {suggestions.map((suggestion) => (
+                    <Pressable
+                      key={getPlaceSuggestionKey(suggestion)}
+                      style={styles.suggestionRow}
+                      onPress={() => void selectSuggestion(suggestion)}
+                    >
+                      <View style={styles.suggestionBody}>
+                        <Text style={styles.suggestionTitle}>{suggestion.label}</Text>
+                        <Text style={styles.suggestionMeta}>
+                          {suggestion.source === 'sakai'
+                            ? `${suggestion.city} · Sakai`
+                            : suggestion.secondaryText || 'Google Maps'}
+                        </Text>
+                      </View>
+                      <Text style={styles.suggestionSource}>
+                        {suggestion.source === 'sakai' ? 'Sakai' : 'Google'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
           </View>
+        </LinearGradient>
+
+        <View style={styles.preSearchInfoCard}>
+          <Text style={styles.preSearchInfoTitle}>Search to preview the route map</Text>
+          <Text style={styles.preSearchInfoBody}>
+            Results open in a map-first sheet with suggested routes you can compare quickly.
+          </Text>
         </View>
       </ScrollView>
     </SafeScreen>
@@ -788,68 +991,104 @@ export default function TripMapScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingBottom: SPACING.xl,
-    gap: SPACING.xl,
+    gap: SPACING.lg,
   },
   hero: {
-    backgroundColor: '#102033',
-    padding: SPACING.lg,
-    borderBottomLeftRadius: RADIUS.md,
-    borderBottomRightRadius: RADIUS.md,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xl,
+    borderBottomLeftRadius: RADIUS.lg,
+    borderBottomRightRadius: RADIUS.lg,
+    overflow: 'hidden',
+  },
+  heroContent: {
     gap: SPACING.md,
+    zIndex: 1,
   },
   title: {
     fontSize: TYPOGRAPHY.fontSizes.hero,
     fontFamily: FONTS.bold,
     color: COLORS.white,
+    lineHeight: 38,
   },
   subtitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: 'rgba(255,255,255,0.72)',
-    lineHeight: 22,
+    color: 'rgba(239,246,252,0.82)',
+    lineHeight: 24,
   },
   searchCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: RADIUS.sm,
-    padding: SPACING.lg,
-    gap: SPACING.md,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md + 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    gap: SPACING.sm + 6,
+  },
+  searchCardHeader: {
+    gap: SPACING.xs,
+  },
+  searchCardTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
+  },
+  searchCardHint: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: 'rgba(236,244,250,0.74)',
+    lineHeight: 18,
+  },
+  fieldBlock: {
+    gap: SPACING.xs + 6,
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: SPACING.xs,
   },
   label: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: 'rgba(255,255,255,0.72)',
+    fontFamily: FONTS.semibold,
+    color: 'rgba(240,246,251,0.82)',
   },
   link: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
-    color: COLORS.white,
+    color: '#F4FAFF',
   },
   input: {
     backgroundColor: COLORS.white,
-    borderRadius: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D7E0E8',
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.md - 2,
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.medium,
     color: '#102033',
   },
+  examplesSection: {
+    gap: SPACING.sm,
+  },
+  examplesLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: 'rgba(234,243,250,0.72)',
+  },
   examples: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING.md,
-    marginTop: SPACING.xs,
+    gap: SPACING.sm,
   },
   exampleChip: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 2,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
   exampleText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -858,21 +1097,43 @@ const styles = StyleSheet.create({
   },
   searchButton: {
     minHeight: 48,
-    borderRadius: 6,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.white,
-    marginTop: SPACING.xs,
+    backgroundColor: COLORS.black,
+    marginTop: SPACING.xs / 2,
   },
   searchButtonText: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.bold,
-    color: '#102033',
+    color: COLORS.white,
+  },
+  voiceStatusCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    gap: SPACING.xs,
+  },
+  voiceStatusLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#EEF7FF',
+  },
+  voiceStatusText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: 'rgba(239,246,252,0.88)',
+    lineHeight: 18,
   },
   suggestionPanel: {
-    backgroundColor: COLORS.white,
-    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 10,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E3EAF1',
   },
   suggestionRow: {
     flexDirection: 'row',
@@ -900,6 +1161,26 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
+  },
+  preSearchInfoCard: {
+    marginHorizontal: SPACING.md,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#E7EEF4',
+    gap: SPACING.xs,
+  },
+  preSearchInfoTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
+  preSearchInfoBody: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: '#667B8F',
+    lineHeight: 20,
   },
   resultsScreen: {
     flex: 1,
