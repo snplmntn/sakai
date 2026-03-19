@@ -19,14 +19,19 @@ import SafeScreen from '../components/SafeScreen';
 import { hasGoogleMapsApiKey, hasGooglePlacesApiKey } from '../config/env';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import {
-  getGooglePlaceDetails,
-  searchGooglePlaces,
-  searchSakaiPlaces,
-  toSelectedPlace,
-} from '../places/api';
+  createGooglePlacesSessionToken,
+  getPlaceSuggestionKey,
+  resolvePlaceSuggestion,
+  searchMergedPlaceSuggestions,
+} from '../places/search';
 import { usePreferences } from '../preferences/PreferencesContext';
 import { queryRoutes, queryRoutesByText } from '../routes/api';
-import { buildRouteMarkers, formatDuration, formatFare } from '../routes/view-models';
+import {
+  buildCoordinateFallbackNote,
+  buildRouteMarkers,
+  formatDuration,
+  formatFare,
+} from '../routes/view-models';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import type { PlaceSuggestion, SelectedPlace } from '../places/types';
 import type {
@@ -257,11 +262,19 @@ export default function RoutesScreen() {
 
   const mapRef = useRef<MapView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
+    origin: createGooglePlacesSessionToken(),
+    destination: createGooglePlacesSessionToken(),
+  });
 
   const activeText = activeField === 'origin' ? originText : destText;
   const accessToken = session?.accessToken;
   const isGoogleMapsConfigured = hasGoogleMapsApiKey();
   const canUseGooglePlaces = hasGooglePlacesApiKey();
+
+  const resetGoogleSessionToken = useCallback((field: 'origin' | 'destination') => {
+    googleSessionTokensRef.current[field] = createGooglePlacesSessionToken();
+  }, []);
 
   // ── Debounced suggestion fetch ──────────────────────────────────────────────
 
@@ -288,11 +301,14 @@ export default function RoutesScreen() {
     debounceRef.current = setTimeout(async () => {
       setSuggestionsLoading(true);
       try {
-        const [sakaiResults, googleResults] = await Promise.all([
-          searchSakaiPlaces(query),
-          canUseGooglePlaces ? searchGooglePlaces(query).catch(() => []) : Promise.resolve([]),
-        ]);
-        setSuggestions([...sakaiResults, ...googleResults]);
+        setSuggestions(
+          await searchMergedPlaceSuggestions({
+            query,
+            limit: 5,
+            canUseGooglePlaces,
+            googleSessionToken: googleSessionTokensRef.current[activeField],
+          })
+        );
       } catch {
         setSuggestions([]);
       } finally {
@@ -334,30 +350,43 @@ export default function RoutesScreen() {
 
   const handleSuggestionSelect = useCallback(
     async (suggestion: PlaceSuggestion) => {
+      const field = activeField;
+
+      if (!field) {
+        return;
+      }
+
       setSelectingPlace(true);
-      setSuggestions([]);
+      setQueryError(null);
       try {
-        let resolved: SelectedPlace;
-        if (suggestion.source === 'sakai') {
-          resolved = toSelectedPlace(suggestion);
-        } else {
-          resolved = await getGooglePlaceDetails(suggestion.googlePlaceId);
-        }
-        if (activeField === 'origin') {
+        const resolved = await resolvePlaceSuggestion(suggestion, {
+          googleSessionToken: googleSessionTokensRef.current[field],
+        });
+
+        if (field === 'origin') {
           setOrigin(resolved);
           setOriginText(resolved.label);
         } else {
           setDestination(resolved);
           setDestText(resolved.label);
         }
+        setRouteResult(null);
+        setSelectedOptionId(null);
+        setExpandedOptions(new Set());
+        resetGoogleSessionToken(field);
         setActiveField(null);
-      } catch {
-        // keep field open on error
+        setSuggestions([]);
+      } catch (error) {
+        setQueryError(
+          error instanceof Error
+            ? error.message
+            : 'Unable to load that place right now. Try another result.'
+        );
       } finally {
         setSelectingPlace(false);
       }
     },
-    [activeField]
+    [activeField, resetGoogleSessionToken]
   );
 
   const enterVoiceMode = useCallback(() => {
@@ -445,6 +474,8 @@ export default function RoutesScreen() {
       setDestText('');
     }
     setRouteResult(null);
+    setSelectedOptionId(null);
+    setQueryError(null);
     setActiveField(field);
   }, []);
 
@@ -452,6 +483,11 @@ export default function RoutesScreen() {
 
   const selectedOption = routeResult?.options.find((o) => o.id === selectedOptionId) ?? null;
   const mapMarkers = buildRouteMarkers({ origin, destination, option: selectedOption });
+  const coordinateFallbackNote = buildCoordinateFallbackNote({
+    routeResult,
+    origin,
+    destination,
+  });
   const canSearch = voiceMode
     ? voiceQuery.trim().length > 0
     : origin !== null && destination !== null;
@@ -544,6 +580,9 @@ export default function RoutesScreen() {
                       onChangeText={(text) => {
                         setOriginText(text);
                         if (origin) setOrigin(null);
+                        setRouteResult(null);
+                        setSelectedOptionId(null);
+                        setQueryError(null);
                         setActiveField('origin');
                       }}
                       onFocus={() => setActiveField('origin')}
@@ -574,6 +613,9 @@ export default function RoutesScreen() {
                       onChangeText={(text) => {
                         setDestText(text);
                         if (destination) setDestination(null);
+                        setRouteResult(null);
+                        setSelectedOptionId(null);
+                        setQueryError(null);
                         setActiveField('destination');
                       }}
                       onFocus={() => setActiveField('destination')}
@@ -620,7 +662,7 @@ export default function RoutesScreen() {
               ) : suggestions.length > 0 ? (
                 suggestions.map((s) => (
                   <SuggestionRow
-                    key={s.source === 'sakai' ? `sakai-${s.id}` : `google-${s.googlePlaceId}`}
+                    key={getPlaceSuggestionKey(s)}
                     suggestion={s}
                     onSelect={handleSuggestionSelect}
                   />
@@ -741,6 +783,15 @@ export default function RoutesScreen() {
             {routeResult && routeResult.options.length === 0 && routeResult.message && (
               <View style={styles.messageCard}>
                 <Text style={styles.messageText}>{routeResult.message}</Text>
+                {coordinateFallbackNote && (
+                  <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
+                )}
+              </View>
+            )}
+
+            {routeResult && routeResult.options.length > 0 && coordinateFallbackNote && (
+              <View style={styles.messageCard}>
+                <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
               </View>
             )}
 
@@ -1069,6 +1120,13 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     color: '#5D7286',
     lineHeight: 22,
+  },
+  fallbackNoteText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: '#415466',
+    lineHeight: 20,
+    marginTop: SPACING.sm,
   },
 
   // Route card

@@ -267,6 +267,11 @@ describe("app routes", () => {
         reportedTimeText: "5:29 PM",
         laneStatus: "One lane occupied",
         trafficStatus: "MMDA enforcers are on site managing traffic",
+        severity: "medium",
+        summary: "Crash near Ortigas Avenue is occupying one lane and may slow westbound travel.",
+        corridorTags: ["ortigas"],
+        normalizedLocation: "ortigas avenue",
+        displayUntil: "2026-03-19T13:05:00.000Z",
         rawText: "MMDA ALERT: Road crash incident at Ortigas Avenue WB...",
         scrapedAt: "2026-03-19T10:05:00.000Z",
         createdAt: "2026-03-19T10:05:00.000Z"

@@ -49,6 +49,11 @@ export interface Database {
           reported_time_text: string | null;
           lane_status: string | null;
           traffic_status: string | null;
+          severity: "low" | "medium" | "high";
+          summary: string;
+          corridor_tags: string[];
+          normalized_location: string;
+          display_until: string;
           raw_text: string;
           scraped_at: string;
           created_at: string;
@@ -65,6 +70,11 @@ export interface Database {
           reported_time_text?: string | null;
           lane_status?: string | null;
           traffic_status?: string | null;
+          severity: "low" | "medium" | "high";
+          summary: string;
+          corridor_tags: string[];
+          normalized_location: string;
+          display_until: string;
           raw_text: string;
           scraped_at: string;
           created_at?: string;
@@ -81,6 +91,11 @@ export interface Database {
           reported_time_text?: string | null;
           lane_status?: string | null;
           traffic_status?: string | null;
+          severity?: "low" | "medium" | "high";
+          summary?: string;
+          corridor_tags?: string[];
+          normalized_location?: string;
+          display_until?: string;
           raw_text?: string;
           scraped_at?: string;
           created_at?: string;

@@ -1,5 +1,5 @@
 import type { SelectedPlace } from '../places/types';
-import type { RouteQueryLeg, RouteQueryOption, RouteStop } from './types';
+import type { RouteQueryLeg, RouteQueryOption, RouteQueryResult, RouteStop } from './types';
 
 export interface MapMarkerViewModel {
   id: string;
@@ -120,4 +120,40 @@ export const buildRouteMarkers = (input: {
   });
 
   return [...markerMap.values()];
+};
+
+const buildCoordinateFallbackMessage = (
+  role: 'origin' | 'destination',
+  selectedPlace: SelectedPlace | null
+): string | null => {
+  if (!selectedPlace || selectedPlace.source === 'sakai') {
+    return null;
+  }
+
+  if (selectedPlace.source === 'current-location') {
+    return `Your ${role} is based on the nearest Sakai-supported stop to your current location.`;
+  }
+
+  return `Your ${role} is based on the nearest Sakai-supported stop near the selected Google Maps place.`;
+};
+
+export const buildCoordinateFallbackNote = (input: {
+  routeResult: RouteQueryResult | null;
+  origin: SelectedPlace | null;
+  destination: SelectedPlace | null;
+}): string | null => {
+  if (!input.routeResult) {
+    return null;
+  }
+
+  const messages = [
+    input.routeResult.normalizedQuery.origin.matchedBy === 'coordinates'
+      ? buildCoordinateFallbackMessage('origin', input.origin)
+      : null,
+    input.routeResult.normalizedQuery.destination.matchedBy === 'coordinates'
+      ? buildCoordinateFallbackMessage('destination', input.destination)
+      : null,
+  ].filter((message): message is string => message !== null);
+
+  return messages.length > 0 ? messages.join(' ') : null;
 };

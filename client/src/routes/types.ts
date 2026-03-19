@@ -66,6 +66,18 @@ export interface RouteQueryWalkLeg {
 
 export type RouteQueryLeg = RouteQueryRideLeg | RouteQueryWalkLeg;
 
+export interface RouteQueryIncident {
+  id: string;
+  alertType: string;
+  location: string;
+  direction: string | null;
+  severity: 'low' | 'medium' | 'high';
+  summary: string;
+  displayUntil: string;
+  scrapedAt: string;
+  sourceUrl: string;
+}
+
 export interface RouteQueryOption {
   id: string;
   summary: string;
@@ -78,7 +90,7 @@ export interface RouteQueryOption {
   corridorTags: string[];
   fareAssumptions: string[];
   legs: RouteQueryLeg[];
-  relevantIncidents: unknown[];
+  relevantIncidents: RouteQueryIncident[];
 }
 
 export interface RouteQueryResult {

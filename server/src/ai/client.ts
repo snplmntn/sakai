@@ -10,7 +10,7 @@ const DEFAULT_PRIMARY_MODEL = "gemini-2.5-flash";
 const DEFAULT_LIGHT_MODEL = "gemini-2.5-flash-lite";
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_RETRY_COUNT = 1;
-const DEFAULT_AI_PROVIDER = "gemini_developer";
+const DEFAULT_AI_PROVIDER = "vertex_express";
 
 export type AiProvider = "gemini_developer" | "vertex_express";
 
@@ -63,6 +63,9 @@ export class AiInvalidResponseError extends Error {
 
 const getAiProvider = (): AiProvider => getEnv().AI_PROVIDER ?? DEFAULT_AI_PROVIDER;
 
+const getProviderLabel = (provider: AiProvider) =>
+  provider === "vertex_express" ? "Vertex AI express mode" : "Gemini Developer API";
+
 const getApiKey = () => {
   const env = getEnv();
   const provider = getAiProvider();
@@ -92,7 +95,7 @@ const getRequestUrl = (model: string) => {
       provider === "vertex_express" ? "VERTEX_API_KEY" : "GEMINI_API_KEY";
 
     throw new AiUnavailableError(
-      `${provider === "vertex_express" ? "Vertex AI express mode" : "Gemini Developer API"} is disabled because ${missingKeyName} is not configured`
+      `${getProviderLabel(provider)} is disabled because ${missingKeyName} is not configured`
     );
   }
 
@@ -114,6 +117,7 @@ const shouldRetry = (error: unknown) => {
 };
 
 const parseResponseText = (payload: GeminiGenerateContentResponse) => {
+  const provider = getAiProvider();
   const parts = payload.candidates?.[0]?.content?.parts ?? [];
   const text = parts
     .map((part) => part.text?.trim() ?? "")
@@ -127,11 +131,11 @@ const parseResponseText = (payload: GeminiGenerateContentResponse) => {
 
   if (payload.promptFeedback?.blockReason) {
     throw new AiInvalidResponseError(
-      `Gemini blocked the response: ${payload.promptFeedback.blockReason}`
+      `${getProviderLabel(provider)} blocked the response: ${payload.promptFeedback.blockReason}`
     );
   }
 
-  throw new AiInvalidResponseError("Gemini returned no text content");
+  throw new AiInvalidResponseError(`${getProviderLabel(provider)} returned no text content`);
 };
 
 const postJson = async (
@@ -155,11 +159,13 @@ const postJson = async (
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new AiUnavailableError("Gemini request timed out");
+      throw new AiUnavailableError(`${getProviderLabel(getAiProvider())} request timed out`);
     }
 
     throw new AiUnavailableError(
-      error instanceof Error ? error.message : "Gemini request failed"
+      error instanceof Error
+        ? `${getProviderLabel(getAiProvider())} request failed: ${error.message}`
+        : `${getProviderLabel(getAiProvider())} request failed`
     );
   } finally {
     clearTimeout(timeout);
@@ -193,7 +199,9 @@ const requestJson = async <T>(options: GenerateJsonOptions<T>) => {
 
   if (!response.ok) {
     const errorBody = (await response.json().catch(() => null)) as GeminiErrorResponse | null;
-    const message = errorBody?.error?.message?.trim() || `Gemini request failed with status ${response.status}`;
+    const message =
+      errorBody?.error?.message?.trim() ||
+      `${getProviderLabel(getAiProvider())} request failed with status ${response.status}`;
 
     if (response.status === 429 || response.status >= 500) {
       throw new AiUnavailableError(message);
@@ -210,13 +218,15 @@ const requestJson = async <T>(options: GenerateJsonOptions<T>) => {
   try {
     parsedValue = JSON.parse(text) as unknown;
   } catch {
-    throw new AiInvalidResponseError("Gemini returned invalid JSON");
+    throw new AiInvalidResponseError(`${getProviderLabel(getAiProvider())} returned invalid JSON`);
   }
 
   const result = options.outputSchema.safeParse(parsedValue);
 
   if (!result.success) {
-    throw new AiInvalidResponseError("Gemini returned JSON that failed schema validation");
+    throw new AiInvalidResponseError(
+      `${getProviderLabel(getAiProvider())} returned JSON that failed schema validation`
+    );
   }
 
   return result.data;
@@ -237,5 +247,5 @@ export const generateJson = async <T>(options: GenerateJsonOptions<T>): Promise<
     }
   }
 
-  throw new AiUnavailableError("Gemini request failed after retries");
+  throw new AiUnavailableError(`${getProviderLabel(getAiProvider())} request failed after retries`);
 };

@@ -32,6 +32,11 @@ describe("area update model", () => {
           reported_time_text: "5:29 PM",
           lane_status: "One lane occupied",
           traffic_status: "MMDA enforcers are on site managing traffic",
+          severity: "medium",
+          summary: "Crash near Roxas Blvd EDSA is occupying one lane and may slow southbound travel.",
+          corridor_tags: ["edsa", "roxas-blvd"],
+          normalized_location: "roxas blvd edsa after flyover",
+          display_until: "2026-03-19T13:05:00.000Z",
           raw_text:
             "MMDA ALERT: Road crash incident at Roxas Blvd EDSA after flyover SB involving 2 motorcycles as of 5:29 PM. One lane occupied. MMDA enforcers are on site managing traffic. #mmda",
           scraped_at: "2026-03-19T10:05:00.000Z",
@@ -43,11 +48,19 @@ describe("area update model", () => {
     const order = vi.fn().mockReturnValue({
       limit
     });
-    const ilike = vi.fn().mockReturnValue({
+    const gt = vi.fn().mockReturnValue({
       order
+    });
+    const or = vi.fn().mockReturnValue({
+      gt
+    });
+    const ilike = vi.fn().mockReturnValue({
+      gt
     });
     const select = vi.fn().mockReturnValue({
       ilike,
+      or,
+      gt,
       order
     });
     const client = {
@@ -64,7 +77,10 @@ describe("area update model", () => {
     });
 
     expect(client.from).toHaveBeenCalledWith("area_updates");
-    expect(ilike).toHaveBeenCalledWith("location", "%Roxas%");
+    expect(or).toHaveBeenCalledWith(
+      "location.ilike.%Roxas%,normalized_location.ilike.%roxas%"
+    );
+    expect(gt).toHaveBeenCalledWith("display_until", expect.any(String));
     expect(updates).toEqual([
       {
         id: "514eb2eb-5e7d-4d6a-a5ad-d9d25cd71417",
@@ -78,6 +94,11 @@ describe("area update model", () => {
         reportedTimeText: "5:29 PM",
         laneStatus: "One lane occupied",
         trafficStatus: "MMDA enforcers are on site managing traffic",
+        severity: "medium",
+        summary: "Crash near Roxas Blvd EDSA is occupying one lane and may slow southbound travel.",
+        corridorTags: ["edsa", "roxas-blvd"],
+        normalizedLocation: "roxas blvd edsa after flyover",
+        displayUntil: "2026-03-19T13:05:00.000Z",
         rawText:
           "MMDA ALERT: Road crash incident at Roxas Blvd EDSA after flyover SB involving 2 motorcycles as of 5:29 PM. One lane occupied. MMDA enforcers are on site managing traffic. #mmda",
         scrapedAt: "2026-03-19T10:05:00.000Z",
@@ -101,6 +122,11 @@ describe("area update model", () => {
           reported_time_text: "5:53 PM",
           lane_status: "One lane occupied",
           traffic_status: "MMDA enforcers are on site managing traffic",
+          severity: "medium",
+          summary: "Stalled truck near Ortigas Avenue before EDSA is occupying one lane and may slow westbound travel.",
+          corridor_tags: ["edsa", "ortigas"],
+          normalized_location: "ortigas avenue before edsa intersection",
+          display_until: "2026-03-19T13:05:00.000Z",
           raw_text:
             "MMDA ALERT: Stalled truck due to mechanical trouble at Ortigas Avenue before EDSA intersection WB as of 5:53 PM. One lane occupied. MMDA enforcers are on site managing traffic. #mmda",
           scraped_at: "2026-03-19T10:05:00.000Z",
@@ -133,6 +159,12 @@ describe("area update model", () => {
         reportedTimeText: "5:53 PM",
         laneStatus: "One lane occupied",
         trafficStatus: "MMDA enforcers are on site managing traffic",
+        severity: "medium",
+        summary:
+          "Stalled truck near Ortigas Avenue before EDSA is occupying one lane and may slow westbound travel.",
+        corridorTags: ["edsa", "ortigas"],
+        normalizedLocation: "ortigas avenue before edsa intersection",
+        displayUntil: "2026-03-19T13:05:00.000Z",
         scrapedAt: "2026-03-19T10:05:00.000Z"
       }
     ]);
@@ -142,7 +174,9 @@ describe("area update model", () => {
         expect.objectContaining({
           external_id: "hash-1",
           alert_type: "Stalled truck due to mechanical trouble",
-          direction: "WB"
+          direction: "WB",
+          severity: "medium",
+          normalized_location: "ortigas avenue before edsa intersection"
         })
       ],
       {

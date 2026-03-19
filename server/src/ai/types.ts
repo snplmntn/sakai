@@ -5,6 +5,7 @@ import type { PassengerType } from "../types/fare.js";
 
 const routePreferenceValues = ["fastest", "cheapest", "balanced"] as const satisfies RoutePreference[];
 const passengerTypeValues = ["regular", "student", "senior", "pwd"] as const satisfies PassengerType[];
+const incidentSeverityValues = ["low", "medium", "high"] as const;
 
 export const routeIntentSchema = z.object({
   originText: z.string().trim().min(1).max(160).nullable(),
@@ -23,6 +24,22 @@ export const routeSummarySchema = z.object({
 });
 
 export type RouteSummaryResult = z.infer<typeof routeSummarySchema>;
+
+export const mmdaAlertExtractionSchema = z.object({
+  alertType: z.string().trim().min(1).max(160),
+  location: z.string().trim().min(1).max(200),
+  direction: z.enum(["NB", "SB", "EB", "WB"]).nullable(),
+  involved: z.string().trim().min(1).max(160).nullable(),
+  reportedTimeText: z.string().trim().min(1).max(40).nullable(),
+  laneStatus: z.string().trim().min(1).max(160).nullable(),
+  trafficStatus: z.string().trim().min(1).max(240).nullable(),
+  severity: z.enum(incidentSeverityValues),
+  summary: z.string().trim().min(1).max(240),
+  corridorTags: z.array(z.string().trim().min(1).max(60)).max(8),
+  normalizedLocation: z.string().trim().min(1).max(200)
+});
+
+export type MmdaAlertExtraction = z.infer<typeof mmdaAlertExtractionSchema>;
 
 export const routeIntentResponseSchema = {
   type: "OBJECT",
@@ -77,4 +94,66 @@ export const routeSummaryResponseSchema = {
     }
   },
   required: ["summary"]
+} as const;
+
+export const mmdaAlertExtractionResponseSchema = {
+  type: "OBJECT",
+  properties: {
+    alertType: {
+      type: "STRING"
+    },
+    location: {
+      type: "STRING"
+    },
+    direction: {
+      type: "STRING",
+      enum: ["NB", "SB", "EB", "WB"],
+      nullable: true
+    },
+    involved: {
+      type: "STRING",
+      nullable: true
+    },
+    reportedTimeText: {
+      type: "STRING",
+      nullable: true
+    },
+    laneStatus: {
+      type: "STRING",
+      nullable: true
+    },
+    trafficStatus: {
+      type: "STRING",
+      nullable: true
+    },
+    severity: {
+      type: "STRING",
+      enum: incidentSeverityValues
+    },
+    summary: {
+      type: "STRING"
+    },
+    corridorTags: {
+      type: "ARRAY",
+      items: {
+        type: "STRING"
+      }
+    },
+    normalizedLocation: {
+      type: "STRING"
+    }
+  },
+  required: [
+    "alertType",
+    "location",
+    "direction",
+    "involved",
+    "reportedTimeText",
+    "laneStatus",
+    "trafficStatus",
+    "severity",
+    "summary",
+    "corridorTags",
+    "normalizedLocation"
+  ]
 } as const;
