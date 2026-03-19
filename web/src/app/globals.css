@@ -241,8 +241,15 @@ a {
   object-fit: cover;
 }
 
+.guide-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .guide-card-title {
-  margin-top: 0.9rem;
+  margin-top: 0;
   font-size: 1.1rem;
   line-height: 1.25;
   color: var(--text-primary);
