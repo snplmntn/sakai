@@ -35,7 +35,7 @@ export function GuidesExplorer({
 
   return (
     <section className="space-y-6">
-      <div className="card-surface rounded-3xl p-5 sm:p-6">
+      <div className="guide-toolbar card-surface rounded-[28px] p-5 sm:p-6">
         <div className="flex flex-col gap-4">
           <label className="guide-search">
             <Search size={18} style={{ color: "var(--text-sub)" }} />
@@ -82,17 +82,23 @@ export function GuidesExplorer({
           ))}
         </div>
       ) : (
-        <div className="card-surface rounded-3xl p-8 text-center">
+        <div className="card-surface rounded-[28px] p-8 text-center">
           <h2
             className="text-xl font-semibold"
-            style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+            style={{
+              color: "var(--text-primary)",
+              fontFamily: "var(--font-display)",
+            }}
           >
             No guides matched that search
           </h2>
           <p className="mt-2 text-sm" style={{ color: "var(--text-sub)" }}>
             Try a vehicle name like Jeepney or Taxi, or clear the filters.
           </p>
-          <Link href="/guides" className="inline-flex mt-4 text-sm font-medium accent-color">
+          <Link
+            href="/guides"
+            className="inline-flex mt-4 text-sm font-medium accent-color"
+          >
             Reset guide search
           </Link>
         </div>

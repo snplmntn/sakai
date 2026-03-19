@@ -12,25 +12,32 @@ export default function GuidesPage() {
       <Navbar />
       <main className="px-4 pt-28 pb-16 sm:px-6">
         <div className="max-w-6xl mx-auto">
-          <section className="guide-hero card-surface rounded-[32px] p-6 sm:p-8 lg:p-10">
+          <section className="guide-hero">
             <div className="guide-hero-copy">
               <span className="guide-hero-kicker">Commuting Guides</span>
               <h1 className="guide-hero-title">
-                Find practical ride instructions by vehicle type.
+                Practical commuting guides for everyday rides.
               </h1>
               <p className="guide-hero-text">
-                Browse walking, jeepney, train, bus, tricycle, FX, taxi, and
-                e-jeep guides sourced from the shared Sakai guide document.
+                Browse practical guide pages for walking, jeepneys, trains,
+                buses, tricycles, FX, taxis, and e-jeeps using Sakai&apos;s
+                shared reference content.
               </p>
-            </div>
-            <div className="guide-hero-stats">
-              <div className="guide-stat-pill">
-                <strong>{guides.length}</strong>
-                <span>guide pages</span>
-              </div>
-              <div className="guide-stat-pill">
-                <strong>{vehicleGroups.length}</strong>
-                <span>vehicle types</span>
+              <div className="guide-hero-meta">
+                <div className="guide-meta-chip">
+                  <strong>{guides.length}</strong>
+                  <span>guide pages</span>
+                </div>
+                <div className="guide-meta-chip">
+                  <strong>{vehicleGroups.length}</strong>
+                  <span>vehicle types</span>
+                </div>
+                <div className="guide-meta-chip guide-meta-chip-note">
+                  <span>
+                    Built for quick scanning, mobile reading, and first-time
+                    commuters.
+                  </span>
+                </div>
               </div>
             </div>
           </section>
