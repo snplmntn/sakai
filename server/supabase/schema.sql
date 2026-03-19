@@ -246,6 +246,9 @@ create index if not exists area_updates_corridor_tags_gin_idx
   on public.area_updates using gin (corridor_tags);
 
 grant select, insert, update, delete on public.area_updates to service_role;
+grant usage on schema public to service_role;
+grant select on public.area_updates to authenticated;
+grant select on public.area_updates to anon;
 
 create table if not exists public.places (
   id uuid primary key default gen_random_uuid(),

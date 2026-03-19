@@ -349,6 +349,10 @@ export const syncMmdaAlerts = async (
       reason: error instanceof Error ? error.message : "unknown error",
       sources: [
         ...new Set(scrapedAlerts.map((alert) => alert.sourceUrl))
+      ],
+      suggestedFixSql: [
+        "grant select, insert, update, delete on public.area_updates to service_role;",
+        "grant insert, update, select on public.area_updates to authenticated;"
       ]
     });
 
