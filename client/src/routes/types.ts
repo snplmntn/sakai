@@ -2,7 +2,8 @@ import type { PlaceMatchSource } from '../places/types';
 
 export type RoutePreference = 'fastest' | 'cheapest' | 'balanced';
 export type PassengerType = 'regular' | 'student' | 'senior' | 'pwd';
-export type RideMode = 'jeepney' | 'uv' | 'mrt3' | 'lrt1' | 'lrt2';
+export type RouteModifier = 'jeep_if_possible' | 'less_walking';
+export type RideMode = 'jeepney' | 'uv' | 'mrt3' | 'lrt1' | 'lrt2' | 'car';
 export type FareConfidence = 'official' | 'estimated' | 'partially_estimated';
 
 export interface RouteQueryPointInput {
@@ -64,7 +65,18 @@ export interface RouteQueryWalkLeg {
   fare: FareBreakdown;
 }
 
-export type RouteQueryLeg = RouteQueryRideLeg | RouteQueryWalkLeg;
+export interface RouteQueryDriveLeg {
+  type: 'drive';
+  id: string;
+  mode: 'car';
+  fromLabel: string;
+  toLabel: string;
+  distanceKm: number;
+  durationMinutes: number;
+  fare: FareBreakdown;
+}
+
+export type RouteQueryLeg = RouteQueryRideLeg | RouteQueryWalkLeg | RouteQueryDriveLeg;
 
 export interface RouteQueryIncident {
   id: string;
@@ -109,6 +121,8 @@ export interface RouteQueryResult {
     passengerType: PassengerType;
     preferenceSource: string;
     passengerTypeSource: string;
+    modifiers: RouteModifier[];
+    modifierSource: string;
   };
   options: RouteQueryOption[];
   message?: string;

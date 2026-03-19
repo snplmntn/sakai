@@ -18,6 +18,8 @@ import {
 const buildLegLine = (leg: RouteQueryLeg) =>
   leg.type === "walk"
     ? `Walk ${leg.durationMinutes} minutes from ${leg.fromLabel} to ${leg.toLabel}.`
+    : leg.type === "drive"
+      ? `Drive ${leg.durationMinutes} minutes from ${leg.fromLabel} to ${leg.toLabel}.`
     : `Ride ${leg.routeName} from ${leg.fromStop.stopName} to ${leg.toStop.stopName}.`;
 
 export const buildTemplateRouteSummary = (option: RouteQueryOption): string =>

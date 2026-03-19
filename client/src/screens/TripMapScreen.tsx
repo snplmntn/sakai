@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,14 +13,18 @@ import {
 import * as Location from 'expo-location';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Mic01Icon } from '@hugeicons/core-free-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MapView, { Marker, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 
 import { ApiError, isRecord } from '../api/base';
 import { useAuth } from '../auth/AuthContext';
+import type { CommunityLaunchDraft } from '../community/types';
 import MapSetupNotice from '../components/MapSetupNotice';
 import SafeScreen from '../components/SafeScreen';
 import { hasGoogleMapsApiKey, hasGooglePlacesApiKey } from '../config/env';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import {
   clearActiveNavigationSession,
   readActiveNavigationSession,
@@ -48,7 +53,12 @@ import {
 } from '../places/search';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import { queryRoutes, queryRoutesByText } from '../routes/api';
-import type { RoutePreference, RouteQueryOption, RouteQueryResult } from '../routes/types';
+import type {
+  RouteModifier,
+  RoutePreference,
+  RouteQueryOption,
+  RouteQueryResult,
+} from '../routes/types';
 import {
   buildCoordinateFallbackNote,
   buildRouteMarkers,
@@ -81,6 +91,11 @@ const ALARM_MODES: Array<{ label: string; value: AlarmMode }> = [
   { label: 'Both', value: 'both' },
 ];
 const ALERT_VIBRATION_PATTERN = getNotificationAlertPattern();
+const VOICE_TRIGGER_PHRASES = ['hey sakai', 'hi sakai'] as const;
+const ROUTE_MODIFIER_LABELS: Record<RouteModifier, string> = {
+  jeep_if_possible: 'Jeep if possible',
+  less_walking: 'Less walking',
+};
 
 type ActiveField = 'origin' | 'destination' | null;
 type SearchMode = 'structured' | 'ai';
@@ -135,7 +150,30 @@ const toLiveCoordinate = (location: Location.LocationObject): LiveCoordinate => 
   longitude: location.coords.longitude,
 });
 
+const normalizeVoiceTriggerText = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/gu, ' ');
+
+const extractWakeTriggeredQuery = (value: string): string | null => {
+  const normalized = normalizeVoiceTriggerText(value);
+
+  for (const phrase of VOICE_TRIGGER_PHRASES) {
+    if (!normalized.startsWith(phrase)) {
+      continue;
+    }
+
+    const remainder = normalized.slice(phrase.length).trim();
+    return remainder.length > 0 ? remainder : '';
+  }
+
+  return null;
+};
+
 export default function TripMapScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { session } = useAuth();
   const { preferences: savedPreferences } = usePreferences();
   const { showToast } = useToast();
@@ -143,6 +181,8 @@ export default function TripMapScreen() {
   const routeSearchRequestIdRef = useRef(0);
   const foregroundLocationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const hasTriggeredArrivalAlertRef = useRef(false);
+  const appStateRef = useRef(AppState.currentState);
+  const isListeningRef = useRef(false);
   const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
     origin: createGooglePlacesSessionToken(),
     destination: createGooglePlacesSessionToken(),
@@ -162,6 +202,7 @@ export default function TripMapScreen() {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('Choose a routeable stop or Google place.');
   const [isSearchingRoutes, setIsSearchingRoutes] = useState(false);
+  const [voiceTriggerArmed, setVoiceTriggerArmed] = useState(false);
   const [isStartingNavigation, setIsStartingNavigation] = useState(false);
   const [isNavigationActive, setIsNavigationActive] = useState(false);
   const [activeNavigationRouteId, setActiveNavigationRouteId] = useState<string | null>(null);
@@ -173,6 +214,7 @@ export default function TripMapScreen() {
   const [currentLocation, setCurrentLocation] = useState<LiveCoordinate | null>(null);
   const [hasTriggeredArrivalAlert, setHasTriggeredArrivalAlert] = useState(false);
   const [backgroundMonitoringActive, setBackgroundMonitoringActive] = useState(false);
+  const [hasAttemptedStructuredOrigin, setHasAttemptedStructuredOrigin] = useState(false);
   const {
     isListening,
     transcript,
@@ -209,12 +251,32 @@ export default function TripMapScreen() {
       }),
     [destinationSelection, originSelection, routeResult]
   );
+  const activeModifierLabels = useMemo(
+    () =>
+      routeResult?.normalizedQuery.modifiers.map(
+        (modifier) => ROUTE_MODIFIER_LABELS[modifier] ?? modifier
+      ) ?? [],
+    [routeResult]
+  );
 
   useEffect(() => {
     setPreference(savedPreferences.defaultPreference);
   }, [savedPreferences.defaultPreference]);
 
   useEffect(() => {
+    if (searchMode !== 'structured' || originSelection || hasAttemptedStructuredOrigin) {
+      return;
+    }
+
+    setHasAttemptedStructuredOrigin(true);
+    void resolveCurrentOrigin();
+  }, [hasAttemptedStructuredOrigin, originSelection, searchMode]);
+
+  useEffect(() => {
+    if (voiceTriggerArmed) {
+      return;
+    }
+
     if (transcript.trim().length > 0) {
       setAiQuery(transcript);
       return;
@@ -260,6 +322,10 @@ export default function TripMapScreen() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
 
   useEffect(() => {
     return () => {
@@ -712,8 +778,68 @@ export default function TripMapScreen() {
     return false;
   };
 
-  const runAiRouteQuery = async () => {
-    if (aiQuery.trim().length === 0) {
+  const buildCommunityDraft = (
+    defaultMode: CommunityLaunchDraft['defaultMode']
+  ): CommunityLaunchDraft => ({
+    defaultMode,
+    title:
+      routeResult?.options.length === 0 && routeResult
+        ? `Help me get from ${routeResult.normalizedQuery.origin.label} to ${routeResult.normalizedQuery.destination.label}`
+        : `Trip feedback for ${routeResult?.normalizedQuery.destination.label ?? destinationQuery}`,
+    body:
+      routeResult?.options.length === 0
+        ? 'Sakai could not find a supported route for this trip. How would you commute it?'
+        : statusMessage,
+    originLabel: routeResult?.normalizedQuery.origin.label ?? originSelection?.label ?? originQuery,
+    destinationLabel:
+      routeResult?.normalizedQuery.destination.label ??
+      destinationSelection?.label ??
+      destinationQuery,
+    originPlaceId: routeResult?.normalizedQuery.origin.placeId,
+    destinationPlaceId: routeResult?.normalizedQuery.destination.placeId,
+    routeQueryText: searchMode === 'ai' ? aiQuery.trim() : undefined,
+    preference,
+    passengerType: savedPreferences.passengerType,
+    routeId: selectedRoute?.legs.find((leg) => leg.type === 'ride')?.routeId,
+    sourceContext: {
+      routeCount: routeResult?.options.length ?? 0,
+      routeOptionId: selectedRoute?.id ?? null,
+      searchMode,
+      statusMessage,
+    },
+  });
+
+  const disarmVoiceTrigger = async (nextStatusMessage?: string) => {
+    setVoiceTriggerArmed(false);
+
+    if (nextStatusMessage) {
+      setStatusMessage(nextStatusMessage);
+    }
+
+    if (isListeningRef.current) {
+      await stopListening().catch(() => undefined);
+    }
+  };
+
+  const armVoiceTrigger = async () => {
+    if (searchMode !== 'ai') {
+      return;
+    }
+
+    if (isListeningRef.current) {
+      await stopListening().catch(() => undefined);
+    }
+
+    resetTranscript();
+    setAiQuery('');
+    setVoiceTriggerArmed(true);
+    setStatusMessage('Voice trigger armed. Say "Hey Sakai" and your trip in one sentence.');
+  };
+
+  const runAiRouteQuery = async (queryOverride?: string) => {
+    const effectiveQuery = (queryOverride ?? aiQuery).trim();
+
+    if (effectiveQuery.length === 0) {
       return;
     }
 
@@ -730,7 +856,7 @@ export default function TripMapScreen() {
 
     try {
       const result = await queryRoutesByText({
-        queryText: aiQuery.trim(),
+        queryText: effectiveQuery,
         preference,
         passengerType: savedPreferences.passengerType,
         accessToken: session?.accessToken,
@@ -783,6 +909,10 @@ export default function TripMapScreen() {
       await stopListening();
     }
 
+    if (voiceTriggerArmed) {
+      await disarmVoiceTrigger();
+    }
+
     routeSearchRequestIdRef.current += 1;
     setSearchMode(mode);
     setActiveField(null);
@@ -796,6 +926,70 @@ export default function TripMapScreen() {
         : 'Choose a routeable stop or Google place.'
     );
   };
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      appStateRef.current = nextAppState;
+
+      if (nextAppState !== 'active' && voiceTriggerArmed) {
+        void disarmVoiceTrigger('Voice trigger paused. Re-arm it when Sakai is open again.');
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [voiceTriggerArmed]);
+
+  useEffect(() => {
+    if (!voiceTriggerArmed || !voiceError) {
+      return;
+    }
+
+    void disarmVoiceTrigger('Voice trigger stopped after a speech error. Re-arm it and try again.');
+  }, [disarmVoiceTrigger, voiceError, voiceTriggerArmed]);
+
+  useEffect(() => {
+    if (!voiceTriggerArmed || searchMode !== 'ai' || isSearchingRoutes) {
+      return;
+    }
+
+    if (appStateRef.current !== 'active' || isListening) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      resetTranscript();
+      void startListening();
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [isListening, isSearchingRoutes, resetTranscript, searchMode, startListening, voiceTriggerArmed]);
+
+  useEffect(() => {
+    if (!voiceTriggerArmed || transcript.trim().length === 0) {
+      return;
+    }
+
+    const wakeTriggeredQuery = extractWakeTriggeredQuery(transcript);
+
+    if (wakeTriggeredQuery === null) {
+      return;
+    }
+
+    if (wakeTriggeredQuery.length === 0) {
+      setStatusMessage('Wake phrase heard. Say the trip with the phrase, like "Hey Sakai, cheapest way to Pasay from Bicutan."');
+      return;
+    }
+
+    setAiQuery(wakeTriggeredQuery);
+    void (async () => {
+      await disarmVoiceTrigger('Wake phrase detected. Finding route options...');
+      await runAiRouteQuery(wakeTriggeredQuery);
+    })();
+  }, [disarmVoiceTrigger, runAiRouteQuery, transcript, voiceTriggerArmed]);
 
   const markers = useMemo(
     () =>
@@ -1036,8 +1230,13 @@ export default function TripMapScreen() {
                 <View style={styles.aiActions}>
                   {voiceAvailable ? (
                     <Pressable
-                      style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
+                      style={[
+                        styles.voiceButton,
+                        isListening && styles.voiceButtonActive,
+                        voiceTriggerArmed && styles.voiceButtonDisabled,
+                      ]}
                       onPress={() => void toggleVoiceCapture()}
+                      disabled={voiceTriggerArmed}
                     >
                       <HugeiconsIcon icon={Mic01Icon} size={16} color={COLORS.white} />
                       <Text style={styles.voiceButtonText}>
@@ -1055,7 +1254,36 @@ export default function TripMapScreen() {
                   >
                     <Text style={styles.askButtonText}>Find routes</Text>
                   </Pressable>
+                  {voiceAvailable ? (
+                    <Pressable
+                      style={[
+                        styles.voiceTriggerButton,
+                        voiceTriggerArmed && styles.voiceTriggerButtonActive,
+                      ]}
+                      onPress={() =>
+                        void (voiceTriggerArmed
+                          ? disarmVoiceTrigger('Voice trigger disarmed.')
+                          : armVoiceTrigger())
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.voiceTriggerButtonText,
+                          voiceTriggerArmed && styles.voiceTriggerButtonTextActive,
+                        ]}
+                      >
+                        {voiceTriggerArmed ? 'Disarm voice trigger' : 'Arm voice trigger'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
+                <Text style={styles.voiceTriggerHint}>
+                  Prototype: works only while Sakai stays open. Say "Hey Sakai, cheapest way to
+                  Pasay from Bicutan."
+                </Text>
+                {voiceTriggerArmed && partialTranscript.trim().length > 0 ? (
+                  <Text style={styles.voiceTriggerTranscript}>Heard: {partialTranscript}</Text>
+                ) : null}
                 {voiceError ? <Text style={styles.voiceErrorText}>{voiceError}</Text> : null}
               </View>
             )}
@@ -1290,9 +1518,44 @@ export default function TripMapScreen() {
         <View style={styles.sectionCard}>
           {isSearchingRoutes ? <ActivityIndicator color={COLORS.primary} /> : null}
           <Text style={styles.statusText}>{statusMessage}</Text>
+          {activeModifierLabels.length > 0 ? (
+            <View style={styles.modifierRow}>
+              {activeModifierLabels.map((label) => (
+                <View key={label} style={styles.modifierChip}>
+                  <Text style={styles.modifierChipText}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
           {coordinateFallbackNote ? (
             <View style={styles.fallbackNote}>
               <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>
+            </View>
+          ) : null}
+          {routeResult ? (
+            <View style={styles.communityActionRow}>
+              <Pressable
+                style={styles.communityButton}
+                onPress={() =>
+                  navigation.navigate('CommunityHub', {
+                    draft: buildCommunityDraft('question'),
+                  })
+                }
+              >
+                <Text style={styles.communityButtonText}>Ask the community</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.communityButton, styles.communityButtonSecondary]}
+                onPress={() =>
+                  navigation.navigate('CommunityHub', {
+                    draft: buildCommunityDraft('submission'),
+                  })
+                }
+              >
+                <Text style={[styles.communityButtonText, styles.communityButtonTextSecondary]}>
+                  Submit an update
+                </Text>
+              </Pressable>
             </View>
           ) : null}
         </View>
@@ -1414,10 +1677,41 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   voiceButtonActive: { backgroundColor: COLORS.warning },
+  voiceButtonDisabled: { opacity: 0.45 },
   voiceButtonText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: COLORS.white,
+  },
+  voiceTriggerButton: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  voiceTriggerButtonActive: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(255,255,255,0.96)',
+  },
+  voiceTriggerButtonText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.white,
+  },
+  voiceTriggerButtonTextActive: { color: '#102033' },
+  voiceTriggerHint: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: 'rgba(255,255,255,0.72)',
+    lineHeight: 20,
+  },
+  voiceTriggerTranscript: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: COLORS.white,
+    lineHeight: 20,
   },
   askButton: {
     paddingHorizontal: SPACING.md,
@@ -1492,6 +1786,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2EAF0',
     gap: SPACING.sm,
+  },
+  modifierRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
+  modifierChip: {
+    borderRadius: 999,
+    backgroundColor: '#E9F4FF',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 1,
+  },
+  modifierChipText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.primary,
   },
   sectionHeader: {
     marginHorizontal: SPACING.md,
@@ -1648,6 +1954,29 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     color: '#5D7286',
     lineHeight: 22,
+  },
+  communityActionRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  communityButton: {
+    flex: 1,
+    borderRadius: RADIUS.full,
+    backgroundColor: '#102033',
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+  },
+  communityButtonSecondary: {
+    backgroundColor: '#E7F1FF',
+  },
+  communityButtonText: {
+    color: COLORS.white,
+    fontFamily: FONTS.bold,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+  },
+  communityButtonTextSecondary: {
+    color: COLORS.primary,
   },
   fallbackNote: {
     borderRadius: RADIUS.md,

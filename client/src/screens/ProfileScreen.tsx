@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import type { CompositeScreenProps } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
 import { usePreferences } from '../preferences/PreferencesContext';
 import {
@@ -21,7 +24,7 @@ type ProfileRow = {
 const PROFILE_ROWS: ProfileRow[] = [
   {
     title: 'Route preferences',
-    description: 'Jeepney first, less walking, and cash fare view.',
+    description: 'Saved time, fare, and passenger defaults for each trip search.',
   },
   {
     title: 'Passenger profile',
@@ -38,7 +41,10 @@ const PROFILE_ROWS: ProfileRow[] = [
   },
 ];
 
-type ProfileScreenProps = BottomTabScreenProps<MainTabParamList, 'Profile'>;
+type ProfileScreenProps = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, 'Profile'>,
+  NativeStackScreenProps<RootStackParamList>
+>;
 
 const getMetadataString = (
   metadata: Record<string, unknown> | null,
@@ -84,7 +90,7 @@ const getErrorMessage = (error: unknown): string =>
     ? error.message
     : 'Unable to refresh your profile right now.';
 
-export default function ProfileScreen(_props: ProfileScreenProps) {
+export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const { user, refreshUser, signOut } = useAuth();
   const { preferences, isUpdating, updatePreferences } = usePreferences();
   const { showToast } = useToast();
@@ -190,9 +196,15 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
           <View style={styles.section}>
             <View style={styles.list}>
               {PROFILE_ROWS.map((item, index) => (
-                <View
+                <TouchableOpacity
                   key={item.title}
                   style={[styles.listRow, index !== PROFILE_ROWS.length - 1 && styles.listDivider]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    if (item.title === 'Community activity') {
+                      navigation.navigate('CommunityHub');
+                    }
+                  }}
                 >
                   <View style={styles.rowCopy}>
                     <Text style={styles.rowTitle}>{item.title}</Text>
@@ -206,7 +218,7 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
                     ) : null}
                     <Text style={styles.chevron}>{'>'}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </View>
