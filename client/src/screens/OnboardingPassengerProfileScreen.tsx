@@ -58,10 +58,6 @@ export default function OnboardingPassengerProfileScreen({
       onBack={() => navigation.goBack()}
       footer={
         <>
-          <Text style={preferenceStyles.footerNote}>
-            Saved now, synced after sign in.
-          </Text>
-
           <TouchableOpacity
             style={[preferenceStyles.primaryButton, isContinuing && preferenceStyles.buttonDisabled]}
             onPress={() => {
@@ -73,19 +69,8 @@ export default function OnboardingPassengerProfileScreen({
             {isContinuing ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
-              <Text style={preferenceStyles.primaryButtonText}>Continue to account</Text>
+              <Text style={preferenceStyles.primaryButtonText}>Continue</Text>
             )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={preferenceStyles.secondaryButton}
-            onPress={() => {
-              void handleContinue('Login');
-            }}
-            activeOpacity={0.88}
-            disabled={isContinuing}
-          >
-            <Text style={preferenceStyles.secondaryButtonText}>I already have an account</Text>
           </TouchableOpacity>
         </>
       }

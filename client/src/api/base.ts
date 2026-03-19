@@ -5,6 +5,13 @@ export interface RequestOptions {
   body?: unknown;
 }
 
+const REQUEST_TIMEOUT_MS = 30000;
+const NETWORK_ERROR_STATUS_CODE = 0;
+const REQUEST_TIMEOUT_MESSAGE =
+  'The Sakai server took too long to respond. Please try again.';
+const REQUEST_NETWORK_ERROR_MESSAGE =
+  'Unable to reach the Sakai server. Check your connection and API base URL.';
+
 export class ApiError extends Error {
   readonly statusCode: number;
   readonly details: unknown;
@@ -33,6 +40,55 @@ export const readApiBaseUrl = (): string => {
 };
 
 export const buildApiUrl = (path: string): string => `${readApiBaseUrl()}${path}`;
+
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'AbortError';
+
+const redactSensitiveData = (data: unknown): unknown => {
+  if (!isRecord(data)) {
+    return data;
+  }
+
+  const redacted = { ...data };
+  if ('password' in redacted) {
+    redacted.password = '[REDACTED]';
+  }
+  return redacted;
+};
+
+const performRequest = async (
+  options: RequestOptions,
+  headers: Record<string, string>
+): Promise<Response> => {
+  const url = buildApiUrl(options.path);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  console.log(`[API Request] ${options.method} ${url}`, {
+    body: redactSensitiveData(options.body),
+    headers,
+  });
+
+  try {
+    const response = await fetch(url, {
+      method: options.method,
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (error) {
+    console.error(`[API Network Error] ${options.method} ${url}`, error);
+    throw new ApiError(
+      NETWORK_ERROR_STATUS_CODE,
+      isAbortError(error) ? REQUEST_TIMEOUT_MESSAGE : REQUEST_NETWORK_ERROR_MESSAGE
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 const parseJsonBody = async (response: Response): Promise<unknown> => {
   const responseText = await response.text();
@@ -84,12 +140,10 @@ export const requestData = async <T>(
     headers.Authorization = `Bearer ${options.accessToken}`;
   }
 
-  const response = await fetch(buildApiUrl(options.path), {
-    method: options.method,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  const response = await performRequest(options, headers);
   const responseBody = await parseJsonBody(response);
+
+  console.log(`[API Response] ${response.status} ${options.path}`, responseBody);
 
   if (!response.ok) {
     const details = isRecord(responseBody) ? (responseBody.details ?? null) : null;
@@ -113,11 +167,10 @@ export const requestWithoutData = async (options: RequestOptions): Promise<void>
     headers.Authorization = `Bearer ${options.accessToken}`;
   }
 
-  const response = await fetch(buildApiUrl(options.path), {
-    method: options.method,
-    headers,
-  });
+  const response = await performRequest(options, headers);
   const responseBody = await parseJsonBody(response);
+
+  console.log(`[API Response] ${response.status} ${options.path}`, responseBody);
 
   if (!response.ok) {
     const details = isRecord(responseBody) ? (responseBody.details ?? null) : null;
