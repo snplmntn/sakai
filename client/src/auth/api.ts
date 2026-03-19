@@ -1,8 +1,10 @@
 import {
+  parseGoogleAuthUrlPayload,
   parseAuthPayload,
   parseAuthUser,
   type AuthPayload,
   type AuthUser,
+  type GoogleAuthUrlPayload,
 } from './types';
 
 interface EmailPasswordCredentials {
@@ -178,6 +180,15 @@ export const refreshSession = async (
       body: input,
     },
     parseAuthPayload
+  );
+
+export const getGoogleAuthUrl = async (): Promise<GoogleAuthUrlPayload> =>
+  requestData(
+    {
+      method: 'GET',
+      path: '/api/auth/google/start',
+    },
+    parseGoogleAuthUrlPayload
   );
 
 export const getMe = async (accessToken: string): Promise<AuthUser> =>

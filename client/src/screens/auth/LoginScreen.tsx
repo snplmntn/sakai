@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { ViewIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
+import { GoogleIcon, ViewIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../auth/api';
@@ -12,7 +12,7 @@ import SafeScreen from '../../components/SafeScreen';
 type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation, route }: LoginScreenProps) {
-  const { signIn } = useAuth();
+  const { signIn, authenticateWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
@@ -20,11 +20,15 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(
     route.params?.successMessage ?? null
   );
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeAction, setActiveAction] = useState<'email' | 'google' | null>(null);
 
   useEffect(() => {
     setSuccessMessage(route.params?.successMessage ?? null);
   }, [route.params?.successMessage]);
+
+  const isSubmitting = activeAction !== null;
+  const isEmailSubmitting = activeAction === 'email';
+  const isGoogleSubmitting = activeAction === 'google';
 
   const handleSubmit = async () => {
     if (isSubmitting) {
@@ -36,7 +40,7 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
       return;
     }
 
-    setIsSubmitting(true);
+    setActiveAction('email');
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -49,7 +53,29 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
           : 'Unable to sign in right now. Please try again.'
       );
     } finally {
-      setIsSubmitting(false);
+      setActiveAction(null);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setActiveAction('google');
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      await authenticateWithGoogle('login');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError
+          ? error.message
+          : 'Unable to sign in with Google right now. Please try again.'
+      );
+    } finally {
+      setActiveAction(null);
     }
   };
 
@@ -111,10 +137,28 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
             activeOpacity={0.85}
             disabled={isSubmitting}
           >
-            {isSubmitting ? (
+            {isEmailSubmitting ? (
               <ActivityIndicator color={COLORS.white} />
             ) : (
               <Text style={styles.buttonText}>Sign In</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.googleButton, isSubmitting && styles.buttonDisabled]}
+            onPress={() => {
+              void handleGoogleSignIn();
+            }}
+            activeOpacity={0.85}
+            disabled={isSubmitting}
+          >
+            {isGoogleSubmitting ? (
+              <ActivityIndicator color={COLORS.text} />
+            ) : (
+              <View style={styles.googleButtonContent}>
+                <HugeiconsIcon icon={GoogleIcon} size={20} color={COLORS.text} />
+                <Text style={styles.googleButtonText}>Sign in with Google</Text>
+              </View>
             )}
           </TouchableOpacity>
         </View>
@@ -223,6 +267,25 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.bold,
+  },
+  googleButton: {
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#D6E0E8',
+    paddingVertical: SPACING.md + 2,
+    borderRadius: RADIUS.xl,
+    alignItems: 'center',
+  },
+  googleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  googleButtonText: {
+    marginLeft: SPACING.sm,
+    color: COLORS.text,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.semibold,
   },
   footer: {
     flex: 1,
