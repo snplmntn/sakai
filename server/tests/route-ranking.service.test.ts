@@ -92,6 +92,7 @@ describe("route ranking service", () => {
               fromStop: {
                 id: "stop-1",
                 placeId: null,
+                externalStopCode: null,
                 stopName: "Stop 1",
                 mode: "jeepney",
                 area: "Cubao",
@@ -103,6 +104,7 @@ describe("route ranking service", () => {
               toStop: {
                 id: "stop-2",
                 placeId: null,
+                externalStopCode: null,
                 stopName: "Stop 2",
                 mode: "jeepney",
                 area: "Cubao",

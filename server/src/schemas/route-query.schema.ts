@@ -3,16 +3,20 @@ import { z } from "zod";
 const routeQueryPointSchema = z
   .object({
     placeId: z.string().uuid().optional(),
+    googlePlaceId: z.string().trim().min(1).max(255).optional(),
     label: z.string().trim().min(1).max(160).optional(),
     latitude: z.number().min(-90).max(90).optional(),
     longitude: z.number().min(-180).max(180).optional()
   })
   .strict()
   .superRefine((value, context) => {
-    if (!value.placeId && !value.label) {
+    const hasCoordinates =
+      typeof value.latitude === "number" && typeof value.longitude === "number";
+
+    if (!value.placeId && !value.googlePlaceId && !value.label && !hasCoordinates) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Either placeId or label is required"
+        message: "Either placeId, googlePlaceId, label, or coordinates are required"
       });
     }
 

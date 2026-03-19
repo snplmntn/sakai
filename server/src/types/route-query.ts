@@ -10,6 +10,7 @@ export type RouteQueryValueSource =
 
 export interface RouteQueryPointInput {
   placeId?: string;
+  googlePlaceId?: string;
   label?: string;
   latitude?: number;
   longitude?: number;

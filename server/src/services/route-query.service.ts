@@ -198,6 +198,7 @@ const parseQueryText = async (
 
 const getEffectivePreferenceValues = async (input: {
   userId?: string;
+  accessToken?: string;
   preference?: RoutePreference;
   passengerType?: PassengerType;
   parsedPreference?: RoutePreference | null;
@@ -220,7 +221,10 @@ const getEffectivePreferenceValues = async (input: {
   }
 
   const savedPreference = input.userId
-    ? await userPreferenceModel.getUserPreferenceByUserId(input.userId)
+    ? await userPreferenceModel.getUserPreferenceByUserId(
+        input.userId,
+        input.accessToken
+      )
     : null;
 
   return {
@@ -279,6 +283,51 @@ const buildAccessStopCandidate = (stop: Stop, distanceMeters: number): AccessSto
   durationMinutes: roundMinutes(distanceMeters / WALKING_METERS_PER_MINUTE)
 });
 
+const listNearbyRideAccessStops = async (point: RouteQueryPointInput) => {
+  const coordinates = getCoordinatesFromPoint(point);
+
+  if (!coordinates) {
+    return [];
+  }
+
+  const nearbyStops = await stopModel.findNearestStops({
+    coordinates,
+    limit: 20,
+    modes: RIDE_STOP_MODES
+  });
+
+  return nearbyStops.filter((nearbyStop) => nearbyStop.distanceMeters <= MAX_ACCESS_DISTANCE_METERS);
+};
+
+const resolvePlaceFromNearbyStops = async (input: {
+  point: RouteQueryPointInput;
+  nearbyStops: Awaited<ReturnType<typeof listNearbyRideAccessStops>>;
+}) => {
+  const nearestStopWithPlace = input.nearbyStops.find((nearbyStop) => Boolean(nearbyStop.placeId));
+
+  if (!nearestStopWithPlace?.placeId) {
+    return null;
+  }
+
+  const place = await placeModel.getPlaceById(nearestStopWithPlace.placeId);
+
+  if (!place) {
+    return null;
+  }
+
+  const coordinates = getCoordinatesFromPoint(input.point);
+
+  return {
+    ...place,
+    matchedBy: "coordinates" as const,
+    matchedText:
+      input.point.label ??
+      (coordinates
+        ? `${coordinates.latitude},${coordinates.longitude}`
+        : nearestStopWithPlace.stopName)
+  };
+};
+
 const resolveEndpoint = async (
   field: "origin" | "destination",
   point: RouteQueryPointInput,
@@ -286,10 +335,26 @@ const resolveEndpoint = async (
     queryText?: string;
   }
 ): Promise<EndpointResolution> => {
-  const resolution = await placeModel.resolvePlaceReference({
+  let resolution = await placeModel.resolvePlaceReference({
     placeId: point.placeId,
+    googlePlaceId: point.googlePlaceId,
     query: point.label
   });
+  const nearbyStops = await listNearbyRideAccessStops(point);
+
+  if (resolution.status === "unresolved" && nearbyStops.length > 0) {
+    const nearbyPlace = await resolvePlaceFromNearbyStops({
+      point,
+      nearbyStops
+    });
+
+    if (nearbyPlace) {
+      resolution = {
+        status: "resolved",
+        place: nearbyPlace
+      };
+    }
+  }
 
   if (resolution.status === "unresolved") {
     if (options?.queryText) {
@@ -325,26 +390,12 @@ const resolveEndpoint = async (
     accessStopMap.set(stop.id, buildAccessStopCandidate(stop, 0));
   }
 
-  const coordinates = getCoordinatesFromPoint(point);
+  for (const nearbyStop of nearbyStops) {
+    const candidate = buildAccessStopCandidate(nearbyStop, nearbyStop.distanceMeters);
+    const existingCandidate = accessStopMap.get(nearbyStop.id);
 
-  if (coordinates) {
-    const nearbyStops = await stopModel.findNearestStops({
-      coordinates,
-      limit: 20,
-      modes: RIDE_STOP_MODES
-    });
-
-    for (const nearbyStop of nearbyStops) {
-      if (nearbyStop.distanceMeters > MAX_ACCESS_DISTANCE_METERS) {
-        continue;
-      }
-
-      const candidate = buildAccessStopCandidate(nearbyStop, nearbyStop.distanceMeters);
-      const existingCandidate = accessStopMap.get(nearbyStop.id);
-
-      if (!existingCandidate || candidate.distanceMeters < existingCandidate.distanceMeters) {
-        accessStopMap.set(nearbyStop.id, candidate);
-      }
+    if (!existingCandidate || candidate.distanceMeters < existingCandidate.distanceMeters) {
+      accessStopMap.set(nearbyStop.id, candidate);
     }
   }
 
@@ -580,6 +631,7 @@ const mapWithConcurrency = async <TValue, TResult>(
 export const queryRoutes = async (input: {
   request: RouteQueryRequest;
   userId?: string;
+  accessToken?: string;
 }): Promise<RouteQueryResult> => {
   const parsedContext = await parseQueryText(input.request);
 
@@ -592,6 +644,7 @@ export const queryRoutes = async (input: {
   const [effectiveValues, originResolution, destinationResolution] = await Promise.all([
     getEffectivePreferenceValues({
       userId: input.userId,
+      accessToken: input.accessToken,
       preference: input.request.preference,
       passengerType: input.request.passengerType,
       parsedPreference: parsedContext.intent?.preference,

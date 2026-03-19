@@ -272,10 +272,10 @@ Sakai needs a pricing engine instead of hardcoded route card text.
 
 ### Initial Pricing Rules for MVP
 - The fare engine should ship with a baseline ruleset sourced from the latest LTFRB fare guides available during product build and then be refreshable without app release.
-- As a concrete MVP baseline, traditional PUJ fares should start from the LTFRB guide showing `Php 13.00` regular minimum for the first 4 km and `Php 10.40` discounted, with `Php 1.80` regular and `Php 1.44` discounted for succeeding kilometers.
+- As a concrete Sakai MVP policy, traditional PUJ fares should use `Php 13.00` for the first 4 km for both regular and discounted passengers, with `Php 1.80` regular and `Php 1.44` discounted for succeeding billed kilometers.
 - As a concrete MVP baseline, modern and electric PUJ fares should be split by vehicle class: non-air-conditioned at `Php 15.00` minimum with `Php 1.80` succeeding-km add-on, and air-conditioned at `Php 15.00` minimum with `Php 2.20` succeeding-km add-on, both with corresponding 20% discount handling.
 - As a concrete MVP baseline, UV Express should use the LTFRB fare guide of `Php 2.40` per km for traditional units and `Php 2.50` per km for modern units, with 20% discount support when applicable.
-- Trains should use station-based fare tables from official operators.
+- Trains should use station-based fare tables from official operators when available, with clearly labeled Sakai-owned estimated tables only as a hackathon fallback.
 - Walking should always be free.
 - Car segments should be presented as estimated cost only and may use a simple per-kilometer configuration plus optional toll and parking inputs.
 

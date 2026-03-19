@@ -5,6 +5,11 @@ import { useAuth } from '../auth/AuthContext';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
+import { usePreferences } from '../preferences/PreferencesContext';
+import {
+  PASSENGER_TYPE_OPTIONS,
+  ROUTE_PREFERENCE_OPTIONS,
+} from '../preferences/types';
 import { useToast } from '../toast/ToastContext';
 
 const PROFILE_STATS = [
@@ -13,12 +18,10 @@ const PROFILE_STATS = [
   { value: '06', label: 'Reports shared' },
 ];
 
-const PREFERENCES = ['Jeepney first', 'Less walking', 'Cash fare view'];
-
 const ACCOUNT_SECTIONS = [
   {
     title: 'Commute style',
-    description: 'Prioritizes local transit routes with clearer transfer timing.',
+    description: 'Your saved route ranking and fare profile travel with your account.',
   },
   {
     title: 'Saved places',
@@ -78,6 +81,7 @@ const getErrorMessage = (error: unknown): string =>
 
 export default function ProfileScreen(_props: ProfileScreenProps) {
   const { user, refreshUser, signOut } = useAuth();
+  const { preferences, isUpdating, updatePreferences } = usePreferences();
   const { showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -129,6 +133,24 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
       });
     } finally {
       setIsSigningOut(false);
+    }
+  };
+
+  const handlePreferenceUpdate = async (input: {
+    defaultPreference: typeof preferences.defaultPreference;
+    passengerType: typeof preferences.passengerType;
+  }) => {
+    try {
+      await updatePreferences(input);
+      showToast({
+        tone: 'success',
+        message: 'Commute preferences updated.',
+      });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        message: getErrorMessage(error),
+      });
     }
   };
 
@@ -186,13 +208,71 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
             <Text style={styles.sectionSubtitle}>
               These settings shape how Sakai ranks route suggestions for you.
             </Text>
+            <Text style={styles.preferenceLabel}>Route preference</Text>
             <View style={styles.preferenceRow}>
-              {PREFERENCES.map((item) => (
-                <View key={item} style={styles.preferenceChip}>
-                  <Text style={styles.preferenceText}>{item}</Text>
-                </View>
+              {ROUTE_PREFERENCE_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.preferenceChip,
+                    preferences.defaultPreference === option.value &&
+                      styles.preferenceChipActive,
+                  ]}
+                  activeOpacity={0.85}
+                  disabled={isUpdating}
+                  onPress={() => {
+                    void handlePreferenceUpdate({
+                      defaultPreference: option.value,
+                      passengerType: preferences.passengerType,
+                    });
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.preferenceText,
+                      preferences.defaultPreference === option.value &&
+                        styles.preferenceTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
               ))}
             </View>
+            <Text style={styles.preferenceLabel}>Passenger type</Text>
+            <View style={styles.preferenceRow}>
+              {PASSENGER_TYPE_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.preferenceChip,
+                    preferences.passengerType === option.value &&
+                      styles.preferenceChipActive,
+                  ]}
+                  activeOpacity={0.85}
+                  disabled={isUpdating}
+                  onPress={() => {
+                    void handlePreferenceUpdate({
+                      defaultPreference: preferences.defaultPreference,
+                      passengerType: option.value,
+                    });
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.preferenceText,
+                      preferences.passengerType === option.value &&
+                        styles.preferenceTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.preferenceHint}>
+              Jeepney fares use this passenger type when discounted pricing is available.
+            </Text>
           </View>
 
           <View style={styles.sectionCard}>
@@ -373,6 +453,14 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: SPACING.sm,
   },
+  preferenceLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#5D7286',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: SPACING.sm,
+  },
   preferenceChip: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm + 2,
@@ -381,10 +469,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2EAF0',
   },
+  preferenceChipActive: {
+    backgroundColor: '#102033',
+    borderColor: '#102033',
+  },
   preferenceText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: '#415466',
+  },
+  preferenceTextActive: {
+    color: COLORS.white,
+  },
+  preferenceHint: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: '#5D7286',
+    lineHeight: 20,
+    marginTop: SPACING.md,
   },
   detailList: {
     marginTop: SPACING.sm,
