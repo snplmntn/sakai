@@ -105,7 +105,8 @@ a {
   max-width: none;
   border-radius: 2rem;
   border: 1px solid var(--card-border);
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--card-surface) 92%, transparent);
+  box-shadow: 0 18px 48px rgba(16, 32, 51, 0.08);
   padding: 2.25rem 2.35rem 2.25rem;
 }
 
@@ -161,7 +162,7 @@ a {
   padding: 0.72rem 0.95rem;
   border-radius: 999px;
   border: 1px solid var(--card-border);
-  background: rgba(0, 122, 255, 0.06);
+  background: color-mix(in srgb, var(--accent) 10%, var(--card-surface));
 }
 
 .guide-meta-chip strong {
@@ -177,7 +178,7 @@ a {
 }
 
 .guide-meta-chip-note {
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--card-surface) 88%, transparent);
 }
 
 .guide-hero-text {
@@ -285,7 +286,8 @@ a {
 }
 
 .guide-toolbar {
-  background: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--card-surface) 90%, transparent);
+  box-shadow: 0 14px 38px rgba(16, 32, 51, 0.08);
 }
 
 .guide-search {
@@ -295,8 +297,8 @@ a {
   border: 1px solid var(--card-border);
   border-radius: 1rem;
   padding: 0.85rem 1rem;
-  background: #ffffff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--card-surface) 96%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
 }
 
 .guide-search input {
@@ -416,7 +418,8 @@ a {
   padding: 1rem;
   border-radius: 1.25rem;
   border: 1px solid var(--card-border);
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--card-surface) 88%, transparent);
+  box-shadow: 0 12px 30px rgba(16, 32, 51, 0.08);
 }
 
 .guide-prose ol > li {
@@ -491,8 +494,45 @@ a {
   object-fit: cover;
 }
 
+.dark .guide-hero-copy {
+  background: color-mix(in srgb, var(--hero-surface) 72%, var(--card-surface));
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.32);
+}
+
+.dark .guide-toolbar {
+  background: color-mix(in srgb, var(--hero-surface) 62%, var(--card-surface));
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.28);
+}
+
+.dark .guide-search {
+  background: color-mix(in srgb, var(--hero-surface) 40%, var(--card-surface));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.dark .guide-meta-chip {
+  background: color-mix(in srgb, var(--accent) 14%, var(--hero-surface));
+}
+
+.dark .guide-meta-chip-note {
+  background: color-mix(in srgb, var(--hero-surface) 82%, transparent);
+}
+
 .dark .guide-prose li {
-  background: rgba(16, 32, 51, 0.55);
+  background: color-mix(in srgb, var(--hero-surface) 74%, var(--card-surface));
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
+}
+
+.dark .guide-card {
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+}
+
+.dark .guide-card-image-wrap {
+  background: color-mix(in srgb, var(--accent) 12%, var(--hero-surface));
+}
+
+.dark .guide-step-image {
+  background: color-mix(in srgb, var(--accent) 12%, var(--hero-surface));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
 }
 
 @media (min-width: 768px) {
