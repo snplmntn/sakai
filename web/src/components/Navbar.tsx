@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { MapPin } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import Image from "next/image";
+import Link from "next/link";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -44,6 +44,17 @@ export default function Navbar() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2">
+          <Link
+            href="/guides"
+            className="text-sm font-medium px-4 py-2 rounded-full transition-opacity hover:opacity-80"
+            style={{
+              color: "var(--text-primary)",
+              border: "1px solid var(--card-border)",
+              background: "rgba(255,255,255,0.5)",
+            }}
+          >
+            Guides
+          </Link>
           <ThemeToggle />
           <a
             href="#download"
