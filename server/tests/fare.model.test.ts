@@ -87,7 +87,7 @@ describe("fare model", () => {
                   vehicle_class: "traditional",
                   minimum_distance_km: 4,
                   minimum_fare_regular: 13,
-                  minimum_fare_discounted: 10.4,
+                  minimum_fare_discounted: 13,
                   succeeding_distance_km: 1,
                   succeeding_fare_regular: 1.8,
                   succeeding_fare_discounted: 1.44,
@@ -123,6 +123,7 @@ describe("fare model", () => {
       {
         id: "stop-a",
         placeId: null,
+        externalStopCode: null,
         stopName: "Araneta Center-Cubao",
         mode: "lrt2",
         area: "Cubao",
@@ -134,6 +135,7 @@ describe("fare model", () => {
       {
         id: "stop-b",
         placeId: null,
+        externalStopCode: null,
         stopName: "V. Mapa",
         mode: "lrt2",
         area: "Sta. Mesa",
@@ -194,6 +196,7 @@ describe("fare model", () => {
       {
         id: "stop-a",
         placeId: null,
+        externalStopCode: null,
         stopName: "Cubao Terminal",
         mode: "jeepney",
         area: "Cubao",

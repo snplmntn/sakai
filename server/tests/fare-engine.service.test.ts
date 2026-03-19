@@ -41,7 +41,7 @@ describe("fare engine service", () => {
           vehicleClass: "traditional",
           minimumDistanceKm: 4,
           minimumFareRegular: 13,
-          minimumFareDiscounted: 10.4,
+          minimumFareDiscounted: 13,
           succeedingDistanceKm: 1,
           succeedingFareRegular: 1.8,
           succeedingFareDiscounted: 1.44,
@@ -69,6 +69,63 @@ describe("fare engine service", () => {
     expect(result.totalFare).toBe(16.6);
     expect(result.fareConfidence).toBe("official");
     expect(result.rideLegs[0]?.fare.amount).toBe(16.6);
+  });
+
+  it("prices discounted traditional jeepney rides with the shared base fare", async () => {
+    mockedFareModel.getActiveFareCatalog.mockResolvedValue({
+      ruleVersions: [
+        {
+          id: "rule-jeepney",
+          mode: "jeepney",
+          versionName: "LTFRB 2026",
+          sourceName: "LTFRB",
+          sourceUrl: "https://ltfrb.gov.ph",
+          effectivityDate: "2026-01-01",
+          verifiedAt: "2026-03-01T00:00:00.000Z",
+          isActive: true,
+          trustLevel: "official",
+          createdAt: "2026-03-01T00:00:00.000Z"
+        }
+      ],
+      fareProducts: [
+        {
+          id: "product-1",
+          fareRuleVersionId: "rule-jeepney",
+          productCode: "puj_traditional",
+          mode: "jeepney",
+          pricingStrategy: "minimum_plus_succeeding",
+          vehicleClass: "traditional",
+          minimumDistanceKm: 4,
+          minimumFareRegular: 13,
+          minimumFareDiscounted: 13,
+          succeedingDistanceKm: 1,
+          succeedingFareRegular: 1.8,
+          succeedingFareDiscounted: 1.44,
+          notes: null,
+          createdAt: "2026-03-01T00:00:00.000Z"
+        }
+      ],
+      trainStationFares: []
+    });
+
+    const result = await priceRideLegs(
+      [
+        {
+          id: "ride-1",
+          mode: "jeepney",
+          distanceKm: 5.2,
+          fareProductCode: "puj_traditional",
+          fromStopId: "stop-1",
+          toStopId: "stop-2"
+        }
+      ],
+      "student"
+    );
+
+    expect(result.totalFare).toBe(15.88);
+    expect(result.fareConfidence).toBe("official");
+    expect(result.rideLegs[0]?.fare.amount).toBe(15.88);
+    expect(result.rideLegs[0]?.fare.isDiscountApplied).toBe(true);
   });
 
   it("falls back to regular fare when discounted fare is unavailable", async () => {
@@ -178,6 +235,56 @@ describe("fare engine service", () => {
     expect(result.rideLegs[0]?.fare.isDiscountApplied).toBe(true);
   });
 
+  it("marks formula-seeded train fares as estimated when the active train ruleset is estimated", async () => {
+    mockedFareModel.getActiveFareCatalog.mockResolvedValue({
+      ruleVersions: [
+        {
+          id: "rule-lrt1",
+          mode: "lrt1",
+          versionName: "Sakai LRT-1 Estimated Station-Step Baseline 2026",
+          sourceName: "Sakai estimated station-count baseline",
+          sourceUrl: "https://lrmc.ph",
+          effectivityDate: "2026-03-20",
+          verifiedAt: "2026-03-20T00:00:00.000Z",
+          isActive: true,
+          trustLevel: "estimated",
+          createdAt: "2026-03-20T00:00:00.000Z"
+        }
+      ],
+      fareProducts: [],
+      trainStationFares: [
+        {
+          id: "train-fare-1",
+          fareRuleVersionId: "rule-lrt1",
+          originStopId: "baclaran",
+          destinationStopId: "edsa",
+          regularFare: 20,
+          discountedFare: 10,
+          createdAt: "2026-03-20T00:00:00.000Z"
+        }
+      ]
+    });
+
+    const result = await priceRideLegs(
+      [
+        {
+          id: "ride-1",
+          mode: "lrt1",
+          distanceKm: 0,
+          fareProductCode: null,
+          fromStopId: "baclaran",
+          toStopId: "edsa"
+        }
+      ],
+      "senior"
+    );
+
+    expect(result.totalFare).toBe(10);
+    expect(result.fareConfidence).toBe("estimated");
+    expect(result.rideLegs[0]?.fare.pricingType).toBe("estimated");
+    expect(result.rideLegs[0]?.fare.isDiscountApplied).toBe(true);
+  });
+
   it("adds stale fare assumptions when the active ruleset is old", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-19T00:00:00.000Z"));
@@ -206,7 +313,7 @@ describe("fare engine service", () => {
           vehicleClass: "traditional",
           minimumDistanceKm: 4,
           minimumFareRegular: 13,
-          minimumFareDiscounted: 10.4,
+          minimumFareDiscounted: 13,
           succeedingDistanceKm: 1,
           succeedingFareRegular: 1.8,
           succeedingFareDiscounted: 1.44,

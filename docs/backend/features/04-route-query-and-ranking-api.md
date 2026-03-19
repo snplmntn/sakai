@@ -92,7 +92,7 @@ Success response:
         "recommendationLabel": "Cheapest option",
         "highlights": ["Fewest transfers"],
         "totalDurationMinutes": 27,
-        "totalFare": 13.28,
+        "totalFare": 15.88,
         "fareConfidence": "official",
         "fareAssumptions": [],
         "transferCount": 0,

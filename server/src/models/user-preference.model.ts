@@ -1,4 +1,7 @@
-import { getSupabaseAdminClient } from "../config/supabase.js";
+import {
+  createSupabaseUserClient,
+  getSupabaseAdminClient
+} from "../config/supabase.js";
 import { HttpError } from "../types/http-error.js";
 import type { Database } from "../types/database.js";
 
@@ -31,9 +34,12 @@ const mapUserPreference = (row: UserPreferenceRow): UserPreference => ({
 });
 
 export const getUserPreferenceByUserId = async (
-  userId: string
+  userId: string,
+  accessToken?: string
 ): Promise<UserPreference | null> => {
-  const client = getSupabaseAdminClient();
+  const client = accessToken
+    ? createSupabaseUserClient(accessToken)
+    : getSupabaseAdminClient();
   const { data, error } = await client
     .from("user_preferences")
     .select("*")
@@ -52,9 +58,12 @@ export const getUserPreferenceByUserId = async (
 };
 
 export const upsertUserPreference = async (
-  payload: UpsertUserPreferenceInput
+  payload: UpsertUserPreferenceInput,
+  accessToken?: string
 ): Promise<UserPreference> => {
-  const client = getSupabaseAdminClient();
+  const client = accessToken
+    ? createSupabaseUserClient(accessToken)
+    : getSupabaseAdminClient();
   const record: UserPreferenceInsert = {
     user_id: payload.userId,
     default_preference: payload.defaultPreference,

@@ -16,6 +16,8 @@ vi.mock("../src/models/auth.model.js", () => ({
   getCurrentUser: vi.fn(),
   getGoogleSignInUrl: vi.fn(),
   exchangeGoogleAuthCode: vi.fn(),
+  verifySignedAuthState: vi.fn(),
+  getDefaultAppRedirectUri: vi.fn(),
   buildAuthSuccessRedirectUrl: vi.fn(),
   buildAuthErrorRedirectUrl: vi.fn()
 }));
@@ -30,6 +32,10 @@ vi.mock("../src/models/user-preference.model.js", () => ({
   upsertUserPreference: vi.fn()
 }));
 
+vi.mock("../src/models/place.model.js", () => ({
+  searchPlaces: vi.fn()
+}));
+
 vi.mock("../src/services/route-query.service.js", () => ({
   queryRoutes: vi.fn()
 }));
@@ -42,12 +48,14 @@ import app from "../src/app.js";
 import * as areaUpdateModel from "../src/models/area-update.model.js";
 import * as authModel from "../src/models/auth.model.js";
 import * as mmdaAlertService from "../src/services/mmda-alert.service.js";
+import * as placeModel from "../src/models/place.model.js";
 import * as routeQueryService from "../src/services/route-query.service.js";
 import * as userPreferenceModel from "../src/models/user-preference.model.js";
 
 const mockedAreaUpdateModel = vi.mocked(areaUpdateModel);
 const mockedAuthModel = vi.mocked(authModel);
 const mockedMmdaAlertService = vi.mocked(mmdaAlertService);
+const mockedPlaceModel = vi.mocked(placeModel);
 const mockedRouteQueryService = vi.mocked(routeQueryService);
 const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
 const appHandler = app as unknown as {
@@ -152,6 +160,27 @@ describe("app routes", () => {
         url: "https://supabase.example.com/auth/v1/authorize?provider=google"
       }
     });
+    expect(mockedAuthModel.getGoogleSignInUrl).toHaveBeenCalledWith({
+      callbackUrl: "http://localhost/api/auth/google/callback",
+      appRedirectUri: undefined
+    });
+  });
+
+  it("passes the app redirect uri through google start", async () => {
+    mockedAuthModel.getGoogleSignInUrl.mockResolvedValue({
+      url: "https://supabase.example.com/auth/v1/authorize?provider=google"
+    });
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/google/start?appRedirectUri=sakai%3A%2F%2Fauth%2Fcallback"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockedAuthModel.getGoogleSignInUrl).toHaveBeenCalledWith({
+      callbackUrl: "http://localhost/api/auth/google/callback",
+      appRedirectUri: "sakai://auth/callback"
+    });
   });
 
   it("requires a bearer token for the me endpoint", async () => {
@@ -188,6 +217,13 @@ describe("app routes", () => {
     mockedAuthModel.buildAuthSuccessRedirectUrl.mockReturnValue(
       "sakai://auth/callback#status=success"
     );
+    mockedAuthModel.getDefaultAppRedirectUri.mockReturnValue("sakai://auth/callback");
+    mockedAuthModel.verifySignedAuthState.mockReturnValue({
+      codeVerifier: "code-verifier-123456789012345678901234567890123",
+      appRedirectUri: "sakai://auth/callback",
+      iat: 1_800_000_000,
+      exp: 1_800_000_600
+    } as never);
 
     const response = await invokeApp({
       method: "GET",
@@ -196,12 +232,17 @@ describe("app routes", () => {
 
     expect(response.statusCode).toBe(302);
     expect(response._getRedirectUrl()).toBe("sakai://auth/callback#status=success");
+    expect(mockedAuthModel.buildAuthSuccessRedirectUrl).toHaveBeenCalledWith(
+      expect.any(Object),
+      "sakai://auth/callback"
+    );
   });
 
   it("redirects invalid google callbacks to the app error uri", async () => {
     mockedAuthModel.buildAuthErrorRedirectUrl.mockReturnValue(
       "sakai://auth/callback#status=error"
     );
+    mockedAuthModel.getDefaultAppRedirectUri.mockReturnValue("sakai://auth/callback");
 
     const response = await invokeApp({
       method: "GET",
@@ -242,6 +283,34 @@ describe("app routes", () => {
     expect(mockedAreaUpdateModel.listAreaUpdates).toHaveBeenCalledWith({
       area: undefined,
       limit: 10
+    });
+  });
+
+  it("returns place suggestions from the mounted route", async () => {
+    mockedPlaceModel.searchPlaces.mockResolvedValue([
+      {
+        id: "place-1",
+        canonicalName: "Pasay",
+        city: "Pasay",
+        kind: "terminal",
+        latitude: 14.537745,
+        longitude: 121.001557,
+        googlePlaceId: null,
+        createdAt: "2026-03-19T10:05:00.000Z",
+        matchedBy: "alias",
+        matchedText: "Pasay Rotonda"
+      }
+    ]);
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/places/search?q=pasay&limit=5"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData().data).toHaveLength(1);
+    expect(mockedPlaceModel.searchPlaces).toHaveBeenCalledWith("pasay", {
+      limit: 5
     });
   });
 
@@ -289,7 +358,10 @@ describe("app routes", () => {
         updatedAt: null
       }
     });
-    expect(mockedUserPreferenceModel.getUserPreferenceByUserId).toHaveBeenCalledWith("user-1");
+    expect(mockedUserPreferenceModel.getUserPreferenceByUserId).toHaveBeenCalledWith(
+      "user-1",
+      "access-token"
+    );
   });
 
   it("requires a bearer token for preferences", async () => {
@@ -386,11 +458,14 @@ describe("app routes", () => {
         updatedAt: "2026-03-19T10:05:00.000Z"
       }
     });
-    expect(mockedUserPreferenceModel.upsertUserPreference).toHaveBeenCalledWith({
-      userId: "user-1",
-      defaultPreference: "cheapest",
-      passengerType: "student"
-    });
+    expect(mockedUserPreferenceModel.upsertUserPreference).toHaveBeenCalledWith(
+      {
+        userId: "user-1",
+        defaultPreference: "cheapest",
+        passengerType: "student"
+      },
+      "access-token"
+    );
   });
 
   it("validates route query payloads", async () => {
@@ -414,7 +489,7 @@ describe("app routes", () => {
       details: {
         fieldErrors: {
           origin: [
-            "Either placeId or label is required",
+            "Either placeId, googlePlaceId, label, or coordinates are required",
             "Latitude and longitude must be provided together"
           ]
         },
@@ -491,7 +566,8 @@ describe("app routes", () => {
           label: "PUP Sta. Mesa"
         }
       },
-      userId: undefined
+      userId: undefined,
+      accessToken: undefined
     });
   });
 
@@ -529,7 +605,8 @@ describe("app routes", () => {
       request: {
         queryText: "cheapest way to PUP Sta. Mesa from Cubao"
       },
-      userId: undefined
+      userId: undefined,
+      accessToken: undefined
     });
   });
 

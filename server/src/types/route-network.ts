@@ -36,7 +36,12 @@ export interface PlaceAlias {
   normalizedAlias: string;
 }
 
-export type PlaceMatchSource = "placeId" | "alias" | "canonicalName";
+export type PlaceMatchSource =
+  | "placeId"
+  | "googlePlaceId"
+  | "alias"
+  | "canonicalName"
+  | "coordinates";
 
 export interface PlaceMatch extends Place {
   matchedBy: PlaceMatchSource;
@@ -59,6 +64,7 @@ export type PlaceResolutionResult =
 export interface Stop {
   id: string;
   placeId: string | null;
+  externalStopCode: string | null;
   stopName: string;
   mode: StopMode;
   area: string;
@@ -103,6 +109,7 @@ export interface RouteLeg {
 export interface RouteVariant {
   id: string;
   routeId: string;
+  code: string;
   displayName: string;
   directionLabel: string;
   originPlaceId: string | null;
@@ -144,6 +151,7 @@ export const mapPlaceAlias = (row: PlaceAliasRow): PlaceAlias => ({
 export const mapStop = (row: StopRow): Stop => ({
   id: row.id,
   placeId: row.place_id,
+  externalStopCode: row.external_stop_code,
   stopName: row.stop_name,
   mode: row.mode,
   area: row.area,
@@ -179,6 +187,7 @@ export const mapTransferPoint = (row: TransferPointRow): TransferPoint => ({
 export const mapRouteVariantBase = (row: RouteVariantRow) => ({
   id: row.id,
   routeId: row.route_id,
+  code: row.code,
   displayName: row.display_name,
   directionLabel: row.direction_label,
   originPlaceId: row.origin_place_id,

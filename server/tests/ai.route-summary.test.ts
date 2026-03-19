@@ -51,6 +51,7 @@ const routeOption: RouteQueryOption = {
       fromStop: {
         id: "stop-1",
         placeId: null,
+        externalStopCode: null,
         stopName: "Cubao Terminal",
         mode: "jeepney",
         area: "Cubao",
@@ -62,6 +63,7 @@ const routeOption: RouteQueryOption = {
       toStop: {
         id: "stop-2",
         placeId: null,
+        externalStopCode: null,
         stopName: "PUP Main Gate",
         mode: "jeepney",
         area: "Sta. Mesa",
