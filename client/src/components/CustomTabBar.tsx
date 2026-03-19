@@ -9,7 +9,7 @@ import {
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Home01Icon, UserIcon, Mic01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
-import { COLORS } from '../constants/theme';
+import { COLORS, RADIUS, FONTS } from '../constants/theme';
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const [micExpanded, setMicExpanded] = useState(false);
@@ -54,9 +54,8 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
             }
           };
 
-          const iconColor = isFocused ? COLORS.primary : '#999';
+          const iconColor = isFocused ? COLORS.primary : '#B0B8C1';
 
-          // Insert spacer before Profile (index 1) for the FAB
           return (
             <React.Fragment key={route.key}>
               {index === 1 && <View style={styles.fabSpacer} />}
@@ -93,12 +92,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     paddingBottom: Platform.OS === 'ios' ? 24 : 8,
     paddingTop: 12,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
     elevation: 10,
   },
   tab: {
@@ -110,7 +109,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 11,
     marginTop: 4,
-    fontWeight: '500',
+    fontFamily: FONTS.medium,
   },
   fabSpacer: {
     width: 72,
@@ -125,16 +124,16 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.black,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORS.primary,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
   },
   fabActive: {
-    backgroundColor: '#333',
+    backgroundColor: COLORS.primary,
   },
 });
