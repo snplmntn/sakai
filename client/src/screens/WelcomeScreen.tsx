@@ -11,7 +11,7 @@ export default function WelcomeScreen({ navigation }: { navigation: NavigationPr
       <Text style={styles.title}>Welcome to SakayApp</Text>
       <TouchableOpacity 
         style={styles.button}
-        onPress={() => navigation.navigate('Auth')}>
+        onPress={() => navigation.navigate('Login')}>
         <Text style={styles.buttonText}>Get Started</Text>
       </TouchableOpacity>
     </View>

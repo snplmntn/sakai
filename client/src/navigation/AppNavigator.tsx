@@ -1,12 +1,14 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import WelcomeScreen from '../screens/WelcomeScreen';
-import AuthScreen from '../screens/auth/AuthScreen';
-import DashboardScreen from '../screens/DashboardScreen';
+import LoginScreen from '../screens/auth/LoginScreen';
+import SignupScreen from '../screens/auth/SignupScreen';
+import MainTabNavigator from './MainTabNavigator';
 
 export type RootStackParamList = {
   Welcome: undefined;
-  Auth: undefined;
-  Dashboard: undefined;
+  Login: undefined;
+  Signup: undefined;
+  MainTabs: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -20,14 +22,19 @@ export default function AppNavigator() {
         options={{ headerShown: false }}
       />
       <Stack.Screen
-        name="Auth"
-        component={AuthScreen}
-        options={{ title: 'Authentication' }}
+        name="Login"
+        component={LoginScreen}
+        options={{ title: 'Login' }}
       />
       <Stack.Screen
-        name="Dashboard"
-        component={DashboardScreen}
-        options={{ headerBackVisible: false, title: 'Dashboard' }}
+        name="Signup"
+        component={SignupScreen}
+        options={{ title: 'Sign Up' }}
+      />
+      <Stack.Screen
+        name="MainTabs"
+        component={MainTabNavigator}
+        options={{ headerShown: false }}
       />
     </Stack.Navigator>
   );

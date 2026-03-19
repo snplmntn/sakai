@@ -4,19 +4,17 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Auth'>;
+type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
-export default function AuthScreen({ navigation }: { navigation: NavigationProp }) {
-  const [isLogin, setIsLogin] = useState(true);
-
+export default function LoginScreen({ navigation }: { navigation: NavigationProp }) {
   const handleSubmit = () => {
     // Mock authentication logic
-    navigation.replace('Dashboard');
+    navigation.replace('MainTabs');
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{isLogin ? 'Login' : 'Sign Up'}</Text>
+      <Text style={styles.title}>Login</Text>
 
       <TextInput
         style={styles.input}
@@ -31,22 +29,14 @@ export default function AuthScreen({ navigation }: { navigation: NavigationProp 
         secureTextEntry
         placeholderTextColor={COLORS.subText}
       />
-      {!isLogin && (
-        <TextInput
-          style={styles.input}
-          placeholder="Confirm Password"
-          secureTextEntry
-          placeholderTextColor={COLORS.subText}
-        />
-      )}
 
       <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-        <Text style={styles.buttonText}>{isLogin ? 'Login' : 'Sign Up'}</Text>
+        <Text style={styles.buttonText}>Login</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.toggleButton}>
+      <TouchableOpacity onPress={() => navigation.navigate('Signup')} style={styles.toggleButton}>
         <Text style={styles.toggleText}>
-          {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Login'}
+          Don't have an account? Sign up
         </Text>
       </TouchableOpacity>
     </View>

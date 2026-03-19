@@ -1,26 +1,11 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { StyleSheet, Text, View } from 'react-native';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Dashboard'>;
-
-export default function DashboardScreen({ navigation }: { navigation: NavigationProp }) {
-  const handleLogout = () => {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Welcome' }],
-    });
-  };
-
+export default function RoutesScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Dashboard</Text>
-      <Text style={styles.subtitle}>You have successfully logged in!</Text>
-      
-      <TouchableOpacity style={styles.button} onPress={handleLogout}>
-        <Text style={styles.buttonText}>Log Out</Text>
-      </TouchableOpacity>
+      <Text style={styles.title}>Routes</Text>
+      <Text style={styles.subtitle}>View your routes here.</Text>
     </View>
   );
 }
@@ -44,7 +29,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xxl 
   },
   button: { 
-    backgroundColor: COLORS.danger, 
+    backgroundColor: COLORS.primary, 
     paddingHorizontal: SPACING.lg, 
     paddingVertical: SPACING.md, 
     borderRadius: SPACING.sm 
