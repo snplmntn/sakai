@@ -61,6 +61,18 @@ tests/
 - `GET /api/me/preferences` (auth required)
 - `PUT /api/me/preferences` (auth required)
 
+## Internal Route Network Foundation
+
+The backend now includes normalized route-network tables and internal read models for:
+- places and aliases
+- stops
+- routes and route variants
+- ordered route legs
+- transfer points
+
+These are import-ready foundations for the separate jeepney seed pipeline and future route-query work. Feature 02 does not add public `/api/routes/*` endpoints yet, and it does not ship temporary route seed content.
+The separate seed pipeline should write directly into these normalized tables instead of a staging area.
+
 ### Google OAuth Callback Behavior
 
 - `GET /api/auth/google/callback` exchanges the Supabase auth code on the backend

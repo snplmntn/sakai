@@ -170,33 +170,25 @@ describe("place model", () => {
   });
 
   it("falls back to canonical name lookup when no alias matches", async () => {
-    const placesSelect = vi
-      .fn()
-      .mockReturnValueOnce({
-        in: vi.fn().mockResolvedValue({
-          data: [],
+    const placesSelect = vi.fn().mockReturnValue({
+      ilike: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "place-1",
+              canonical_name: "PUP Sta. Mesa",
+              city: "Manila",
+              kind: "campus",
+              latitude: 14.5987,
+              longitude: 121.0109,
+              google_place_id: null,
+              created_at: "2026-03-19T10:05:00.000Z"
+            }
+          ],
           error: null
         })
       })
-      .mockReturnValueOnce({
-        ilike: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue({
-            data: [
-              {
-                id: "place-1",
-                canonical_name: "PUP Sta. Mesa",
-                city: "Manila",
-                kind: "campus",
-                latitude: 14.5987,
-                longitude: 121.0109,
-                google_place_id: null,
-                created_at: "2026-03-19T10:05:00.000Z"
-              }
-            ],
-            error: null
-          })
-        })
-      });
+    });
     const aliasesSelect = vi.fn().mockReturnValue({
       eq: vi.fn().mockResolvedValue({
         data: [],
@@ -245,22 +237,14 @@ describe("place model", () => {
   });
 
   it("returns unresolved when the place cannot be matched", async () => {
-    const placesSelect = vi
-      .fn()
-      .mockReturnValueOnce({
-        in: vi.fn().mockResolvedValue({
+    const placesSelect = vi.fn().mockReturnValue({
+      ilike: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({
           data: [],
           error: null
         })
       })
-      .mockReturnValueOnce({
-        ilike: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue({
-            data: [],
-            error: null
-          })
-        })
-      });
+    });
     const aliasesSelect = vi.fn().mockReturnValue({
       eq: vi.fn().mockResolvedValue({
         data: [],
