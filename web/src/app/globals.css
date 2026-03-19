@@ -114,12 +114,12 @@ a {
 }
 
 .guide-hero-title {
-  font-size: clamp(2.35rem, 4.8vw, 4.4rem);
-  line-height: 0.98;
+  font-size: clamp(2.2rem, 4.1vw, 3.75rem);
+  line-height: 1;
   max-width: none;
   margin-top: 0.9rem;
   width: 100%;
-  text-wrap: wrap;
+  text-wrap: balance;
 }
 
 .guide-hero-text,
@@ -225,6 +225,20 @@ a {
   transform: translateY(-1px);
   box-shadow: 0 14px 30px rgba(16, 32, 51, 0.07);
   border-color: rgba(0, 122, 255, 0.2);
+}
+
+.guide-card-image-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 1rem;
+  margin-bottom: 1rem;
+  background: rgba(0, 122, 255, 0.08);
+}
+
+.guide-card-image {
+  object-fit: cover;
 }
 
 .guide-card-title {

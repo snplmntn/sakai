@@ -10,17 +10,48 @@ const GUIDE_SOURCE_PATH = path.resolve(
 );
 
 const VEHICLE_CONFIG = [
-  { label: "Walking", vehicleType: "walking", slug: "walking-guide" },
-  { label: "Jeepney", vehicleType: "jeepney", slug: "jeepney-guide" },
-  { label: "MRT/LRT", vehicleType: "train", slug: "mrt-lrt-guide" },
-  { label: "Bus", vehicleType: "bus", slug: "bus-guide" },
-  { label: "Tricycle", vehicleType: "tricycle", slug: "tricycle-guide" },
-  { label: "FX", vehicleType: "fx", slug: "fx-guide" },
-  { label: "Taxi", vehicleType: "taxi", slug: "taxi-guide" },
+  {
+    label: "Walking",
+    vehicleType: "walking",
+    slug: "walking-guide",
+    imageSrc: "/walking.jpg",
+  },
+  {
+    label: "Jeepney",
+    vehicleType: "jeepney",
+    slug: "jeepney-guide",
+    imageSrc: "/jeepney.jpg",
+  },
+  {
+    label: "MRT/LRT",
+    vehicleType: "train",
+    slug: "mrt-lrt-guide",
+    imageSrc: "/mrt-lrt.jpg",
+  },
+  {
+    label: "Bus",
+    vehicleType: "bus",
+    slug: "bus-guide",
+    imageSrc: "/bus.jpg",
+  },
+  {
+    label: "Tricycle",
+    vehicleType: "tricycle",
+    slug: "tricycle-guide",
+    imageSrc: "/tricycle.jpg",
+  },
+  { label: "FX", vehicleType: "fx", slug: "fx-guide", imageSrc: "/fx.jpg" },
+  {
+    label: "Taxi",
+    vehicleType: "taxi",
+    slug: "taxi-guide",
+    imageSrc: "/taxi.jpg",
+  },
   {
     label: "Comet E-Jeep",
     vehicleType: "e-jeep",
     slug: "comet-e-jeep-guide",
+    imageSrc: "/ejeep.jpg",
   },
 ] as const;
 
@@ -31,6 +62,7 @@ export interface ParsedGuideSource {
   title: string;
   label: string;
   vehicleType: string;
+  imageSrc: string;
   summary: string;
   markdown: string;
   searchText: string;
@@ -230,6 +262,7 @@ export function getParsedGuideSource(): ParsedGuideSource[] {
         title,
         label: config.label,
         vehicleType: config.vehicleType,
+        imageSrc: config.imageSrc,
         summary,
         markdown,
         searchText,
