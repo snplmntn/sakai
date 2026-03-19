@@ -38,6 +38,7 @@ const VEHICLE_CONFIG = [
     slug: "bus-guide",
     imageSrc: "/bus.jpg",
     stepImageDir: "/bus",
+    stepImageFiles: ["1.jpg", "2.jpg", "3.jpg", "4.jpg", "5.jpg", "6.jpg"],
     sectionHeading: "Bus",
   },
   {
@@ -178,6 +179,12 @@ function getGuideTitle(config: VehicleConfig, markdown: string) {
 }
 
 function getStepImages(config: VehicleConfig) {
+  if ("stepImageFiles" in config && config.stepImageFiles) {
+    return config.stepImageFiles.map(
+      (fileName) => `${config.stepImageDir}/${fileName}`,
+    );
+  }
+
   const stepImages: string[] = [];
   const publicDir = path.resolve(process.cwd(), "public");
   const stepImageDir = config.stepImageDir.replace(/^\//, "");
