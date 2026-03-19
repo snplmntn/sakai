@@ -1,6 +1,7 @@
-export type RoutePreference = 'fastest' | 'cheapest' | 'balanced';
+import { isRecord } from '../api/base';
+import type { PassengerType, RoutePreference } from '../routes/types';
 
-export type PassengerType = 'regular' | 'student' | 'senior' | 'pwd';
+export type { PassengerType, RoutePreference } from '../routes/types';
 
 export interface PreferenceDraft {
   defaultPreference: RoutePreference;
@@ -8,18 +9,86 @@ export interface PreferenceDraft {
 }
 
 export interface UserPreferences extends PreferenceDraft {
-  userId: string;
+  userId: string | null;
   isPersisted: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+export interface StoredPreferences extends PreferenceDraft {
+  syncStatus: 'pending' | 'synced';
+}
 
-const readString = (value: unknown, fieldName: string): string => {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`Expected ${fieldName} to be a non-empty string`);
+export const DEFAULT_ROUTE_PREFERENCE: RoutePreference = 'balanced';
+export const DEFAULT_PASSENGER_TYPE: PassengerType = 'regular';
+
+export const createDefaultUserPreferences = (): UserPreferences => ({
+  userId: null,
+  defaultPreference: DEFAULT_ROUTE_PREFERENCE,
+  passengerType: DEFAULT_PASSENGER_TYPE,
+  isPersisted: false,
+  createdAt: null,
+  updatedAt: null,
+});
+
+export const ROUTE_PREFERENCE_OPTIONS: Array<{
+  value: RoutePreference;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'balanced',
+    label: 'Balanced',
+    description: 'Keep fare and travel time in balance.',
+  },
+  {
+    value: 'cheapest',
+    label: 'Cheapest',
+    description: 'Prefer lower total fare when route options differ.',
+  },
+  {
+    value: 'fastest',
+    label: 'Fastest',
+    description: 'Prioritize shorter travel time and transfers.',
+  },
+];
+
+export const PASSENGER_TYPE_OPTIONS: Array<{
+  value: PassengerType;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'regular',
+    label: 'Regular',
+    description: 'Use standard fare pricing.',
+  },
+  {
+    value: 'student',
+    label: 'Student',
+    description: 'Apply student jeepney discounts when supported.',
+  },
+  {
+    value: 'senior',
+    label: 'Senior',
+    description: 'Apply senior fare discounts when supported.',
+  },
+  {
+    value: 'pwd',
+    label: 'PWD',
+    description: 'Apply PWD fare discounts when supported.',
+  },
+];
+
+const isRoutePreference = (value: unknown): value is RoutePreference =>
+  value === 'balanced' || value === 'cheapest' || value === 'fastest';
+
+const isPassengerType = (value: unknown): value is PassengerType =>
+  value === 'regular' || value === 'student' || value === 'senior' || value === 'pwd';
+
+const readBoolean = (value: unknown, fieldName: string): boolean => {
+  if (typeof value !== 'boolean') {
+    throw new Error(`Expected ${fieldName} to be a boolean`);
   }
 
   return value;
@@ -30,14 +99,12 @@ const readNullableString = (value: unknown, fieldName: string): string | null =>
     return null;
   }
 
-  return readString(value, fieldName);
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Expected ${fieldName} to be a non-empty string`);
+  }
+
+  return value;
 };
-
-const isRoutePreference = (value: unknown): value is RoutePreference =>
-  value === 'fastest' || value === 'cheapest' || value === 'balanced';
-
-const isPassengerType = (value: unknown): value is PassengerType =>
-  value === 'regular' || value === 'student' || value === 'senior' || value === 'pwd';
 
 export const parsePreferenceDraft = (value: unknown): PreferenceDraft => {
   if (!isRecord(value)) {
@@ -67,9 +134,40 @@ export const parseUserPreferences = (value: unknown): UserPreferences => {
 
   return {
     ...draft,
-    userId: readString(value.userId, 'userId'),
-    isPersisted: value.isPersisted === true,
+    userId: readNullableString(value.userId ?? null, 'userId'),
+    isPersisted: readBoolean(value.isPersisted, 'isPersisted'),
     createdAt: readNullableString(value.createdAt ?? null, 'createdAt'),
     updatedAt: readNullableString(value.updatedAt ?? null, 'updatedAt'),
   };
 };
+
+export const parseStoredPreferences = (value: unknown): StoredPreferences => {
+  if (!isRecord(value)) {
+    throw new Error('Expected stored preferences to be an object');
+  }
+
+  const draft = parsePreferenceDraft(value);
+
+  if (value.syncStatus !== 'pending' && value.syncStatus !== 'synced') {
+    throw new Error('Expected stored syncStatus to be pending or synced');
+  }
+
+  return {
+    ...draft,
+    syncStatus: value.syncStatus,
+  };
+};
+
+export const toStoredPreferences = (
+  value: PreferenceDraft,
+  syncStatus: StoredPreferences['syncStatus']
+): StoredPreferences => ({
+  ...value,
+  syncStatus,
+});
+
+export const toUserPreferencesFromStored = (value: StoredPreferences): UserPreferences => ({
+  ...createDefaultUserPreferences(),
+  ...value,
+  isPersisted: value.syncStatus === 'synced',
+});

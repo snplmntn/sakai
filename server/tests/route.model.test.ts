@@ -23,6 +23,7 @@ describe("route model", () => {
         {
           id: "variant-1",
           route_id: "route-1",
+          code: "JEEP-CUBAO-PUP:EASTBOUND",
           display_name: "Cubao to PUP",
           direction_label: "Eastbound",
           origin_place_id: "place-1",
@@ -103,6 +104,7 @@ describe("route model", () => {
         {
           id: "variant-1",
           route_id: "route-1",
+          code: "JEEP-CUBAO-PUP:EASTBOUND",
           display_name: "Cubao to PUP",
           direction_label: "Eastbound",
           origin_place_id: "place-1",
@@ -166,7 +168,7 @@ describe("route model", () => {
       ],
       error: null
     });
-    const stopsIn = vi.fn().mockResolvedValue({
+    const stopsEq = vi.fn().mockResolvedValue({
       data: [
         {
           id: "stop-1",
@@ -235,7 +237,9 @@ describe("route model", () => {
         if (table === "stops") {
           return {
             select: vi.fn().mockReturnValue({
-              in: stopsIn
+              in: vi.fn().mockReturnValue({
+                eq: stopsEq
+              })
             })
           };
         }
@@ -254,5 +258,62 @@ describe("route model", () => {
     expect(variants[0].legs.map((leg) => leg.sequence)).toEqual([1, 2]);
     expect(variants[0].legs[0].fromStop.stopName).toBe("Cubao Terminal");
     expect(variants[0].route.code).toBe("JEEP-CUBAO-PUP");
+  });
+
+  it("throws when an active variant points to a missing active route", async () => {
+    const routeVariantsIn = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: "variant-1",
+          route_id: "route-missing",
+          code: "BROKEN-VARIANT:EASTBOUND",
+          display_name: "Broken Variant",
+          direction_label: "Eastbound",
+          origin_place_id: "place-1",
+          destination_place_id: "place-2",
+          is_active: true,
+          created_at: "2026-03-19T10:05:00.000Z"
+        }
+      ],
+      error: null
+    });
+    const routeVariantsEq = vi.fn().mockReturnValue({
+      in: routeVariantsIn
+    });
+    const routesEq = vi.fn().mockResolvedValue({
+      data: [],
+      error: null
+    });
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === "route_variants") {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: routeVariantsEq
+            })
+          };
+        }
+
+        if (table === "routes") {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({
+                eq: routesEq
+              })
+            })
+          };
+        }
+
+        throw new Error(`Unexpected table: ${table}`);
+      })
+    };
+
+    mockedGetSupabaseAdminClient.mockReturnValue(client as never);
+
+    await expect(
+      listActiveRouteVariants({
+        variantIds: ["variant-1"]
+      })
+    ).rejects.toThrowError("Active route variant references missing active route route-missing");
   });
 });

@@ -3,7 +3,11 @@ import { Router } from "express";
 import * as authController from "../controllers/auth.controller.js";
 import { authenticateRequest } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
-import { emailPasswordAuthSchema, refreshSessionSchema } from "../schemas/auth.schema.js";
+import {
+  emailPasswordAuthSchema,
+  googleStartQuerySchema,
+  refreshSessionSchema
+} from "../schemas/auth.schema.js";
 
 const router = Router();
 
@@ -12,7 +16,11 @@ router.post("/sign-in", validate(emailPasswordAuthSchema), authController.signIn
 router.post("/refresh", validate(refreshSessionSchema), authController.refreshSession);
 router.post("/sign-out", authenticateRequest, authController.signOut);
 router.get("/me", authenticateRequest, authController.getMe);
-router.get("/google/start", authController.startGoogleSignIn);
+router.get(
+  "/google/start",
+  validate(googleStartQuerySchema, "query"),
+  authController.startGoogleSignIn
+);
 router.get("/google/callback", authController.handleGoogleCallback);
 
 export default router;

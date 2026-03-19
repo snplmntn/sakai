@@ -13,10 +13,11 @@ type PlaceAliasRow = Database["public"]["Tables"]["place_aliases"]["Row"];
 
 export interface ResolvePlaceReferenceOptions {
   placeId?: string;
+  googlePlaceId?: string;
   query?: string;
 }
 
-const normalizePlaceSearchText = (value: string) =>
+export const normalizePlaceSearchText = (value: string) =>
   value
     .trim()
     .toLowerCase()
@@ -42,6 +43,18 @@ const mapPlaceMatch = (
   matchedText
 });
 
+const dedupePlaceMatches = (matches: PlaceMatch[]) => {
+  const matchMap = new Map<string, PlaceMatch>();
+
+  for (const match of matches) {
+    if (!matchMap.has(match.id)) {
+      matchMap.set(match.id, match);
+    }
+  }
+
+  return sortPlaceMatches([...matchMap.values()]);
+};
+
 export const getPlaceById = async (placeId: string): Promise<Place | null> => {
   const client = getSupabaseAdminClient();
   const { data, error } = await client
@@ -52,6 +65,27 @@ export const getPlaceById = async (placeId: string): Promise<Place | null> => {
 
   if (error) {
     throw new HttpError(500, `Failed to fetch place: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return mapPlace(data as PlaceRow);
+};
+
+export const getPlaceByGooglePlaceId = async (
+  googlePlaceId: string
+): Promise<Place | null> => {
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("places")
+    .select("*")
+    .eq("google_place_id", googlePlaceId)
+    .maybeSingle();
+
+  if (error) {
+    throw new HttpError(500, `Failed to fetch place by google place id: ${error.message}`);
   }
 
   if (!data) {
@@ -119,6 +153,86 @@ const listPlaceMatchesByCanonicalName = async (
   return sortPlaceMatches(exactMatches);
 };
 
+const listSearchMatchesByNormalizedAlias = async (
+  normalizedQuery: string,
+  limit: number
+): Promise<PlaceMatch[]> => {
+  const client = getSupabaseAdminClient();
+  const { data: aliasData, error: aliasError } = await client
+    .from("place_aliases")
+    .select("*")
+    .ilike("normalized_alias", `${normalizedQuery}%`)
+    .limit(limit);
+
+  if (aliasError) {
+    throw new HttpError(500, `Failed to search place aliases: ${aliasError.message}`);
+  }
+
+  const aliasRows = (aliasData ?? []) as PlaceAliasRow[];
+
+  if (aliasRows.length === 0) {
+    return [];
+  }
+
+  const uniquePlaceIds = [...new Set(aliasRows.map((row) => row.place_id))];
+  const { data: placeData, error: placeError } = await client
+    .from("places")
+    .select("*")
+    .in("id", uniquePlaceIds);
+
+  if (placeError) {
+    throw new HttpError(500, `Failed to fetch places for search aliases: ${placeError.message}`);
+  }
+
+  const aliasByPlaceId = new Map(aliasRows.map((row) => [row.place_id, row.alias]));
+  const placeRows = (placeData ?? []) as PlaceRow[];
+
+  return dedupePlaceMatches(
+    placeRows.map((row) => mapPlaceMatch(row, "alias", aliasByPlaceId.get(row.id) ?? row.canonical_name))
+  );
+};
+
+const listSearchMatchesByCanonicalName = async (
+  normalizedQuery: string,
+  limit: number
+): Promise<PlaceMatch[]> => {
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("places")
+    .select("*")
+    .ilike("canonical_name", buildCanonicalNameSearchPattern(normalizedQuery))
+    .limit(limit);
+
+  if (error) {
+    throw new HttpError(500, `Failed to search places by canonical name: ${error.message}`);
+  }
+
+  return dedupePlaceMatches(
+    ((data ?? []) as PlaceRow[]).map((row) => mapPlaceMatch(row, "canonicalName", row.canonical_name))
+  );
+};
+
+export const searchPlaces = async (
+  query: string,
+  options: {
+    limit?: number;
+  } = {}
+): Promise<PlaceMatch[]> => {
+  const normalizedQuery = normalizePlaceSearchText(query);
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(options.limit ?? 8, 20));
+  const [aliasMatches, canonicalMatches] = await Promise.all([
+    listSearchMatchesByNormalizedAlias(normalizedQuery, limit),
+    listSearchMatchesByCanonicalName(normalizedQuery, limit)
+  ]);
+
+  return dedupePlaceMatches([...aliasMatches, ...canonicalMatches]).slice(0, limit);
+};
+
 export const resolvePlaceReference = async (
   options: ResolvePlaceReferenceOptions
 ): Promise<PlaceResolutionResult> => {
@@ -139,6 +253,21 @@ export const resolvePlaceReference = async (
         matchedText: place.id
       }
     };
+  }
+
+  if (options.googlePlaceId) {
+    const place = await getPlaceByGooglePlaceId(options.googlePlaceId);
+
+    if (place) {
+      return {
+        status: "resolved",
+        place: {
+          ...place,
+          matchedBy: "googlePlaceId",
+          matchedText: options.googlePlaceId
+        }
+      };
+    }
   }
 
   const normalizedQuery = options.query ? normalizePlaceSearchText(options.query) : "";

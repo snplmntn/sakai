@@ -15,6 +15,7 @@ const AUTH_STATE_TTL_SECONDS = 10 * 60;
 
 interface SignedAuthStatePayload {
   codeVerifier: string;
+  appRedirectUri: string;
   iat: number;
   exp: number;
 }
@@ -51,6 +52,11 @@ export interface AuthPayload {
 
 export interface GoogleAuthUrlPayload {
   url: string;
+}
+
+export interface GetGoogleSignInUrlOptions extends SignedAuthStateOptions {
+  callbackUrl?: string;
+  appRedirectUri?: string;
 }
 
 export interface ExchangeGoogleAuthCodeOptions {
@@ -166,12 +172,14 @@ const getInvalidAuthStateError = (message = "Invalid OAuth state") =>
 
 export const createSignedAuthState = (
   codeVerifier: string,
+  appRedirectUri: string,
   options: SignedAuthStateOptions = {}
 ): string => {
   const issuedAt = getUnixTimestamp(options.now);
   const expiresAt = issuedAt + (options.ttlSeconds ?? AUTH_STATE_TTL_SECONDS);
   const payload: SignedAuthStatePayload = {
     codeVerifier,
+    appRedirectUri,
     iat: issuedAt,
     exp: expiresAt
   };
@@ -222,6 +230,9 @@ export const verifySignedAuthState = (
     !("codeVerifier" in payload) ||
     typeof payload.codeVerifier !== "string" ||
     payload.codeVerifier.length < 43 ||
+    !("appRedirectUri" in payload) ||
+    typeof payload.appRedirectUri !== "string" ||
+    payload.appRedirectUri.trim().length === 0 ||
     !("exp" in payload) ||
     typeof payload.exp !== "number" ||
     !("iat" in payload) ||
@@ -368,15 +379,25 @@ export const getCurrentUser = async (accessToken: string): Promise<AuthUser> => 
 };
 
 export const getGoogleSignInUrl = async (
-  options: SignedAuthStateOptions = {}
+  options: GetGoogleSignInUrlOptions = {}
 ): Promise<GoogleAuthUrlPayload> => {
   const env = getEnv();
   const codeVerifier = createPkceCodeVerifier();
-  const state = createSignedAuthState(codeVerifier, options);
+  const callbackUrl = options.callbackUrl ?? env.AUTH_GOOGLE_REDIRECT_URI;
+
+  if (!callbackUrl) {
+    throw new HttpError(500, "Missing Google OAuth callback URL configuration");
+  }
+
+  const state = createSignedAuthState(
+    codeVerifier,
+    options.appRedirectUri ?? env.AUTH_APP_REDIRECT_URI,
+    options
+  );
   const url = new URL(buildSupabaseUrl("/auth/v1/authorize"));
 
   url.searchParams.set("provider", "google");
-  url.searchParams.set("redirect_to", env.AUTH_GOOGLE_REDIRECT_URI);
+  url.searchParams.set("redirect_to", callbackUrl);
   url.searchParams.set("code_challenge", createPkceCodeChallenge(codeVerifier));
   url.searchParams.set("code_challenge_method", "s256");
   url.searchParams.set("state", state);
@@ -438,15 +459,23 @@ export const exchangeGoogleAuthCode = async (
   };
 };
 
-const buildAppRedirectUrl = (params: Record<string, string>) => {
-  const redirectUrl = new URL(getEnv().AUTH_APP_REDIRECT_URI);
+export const getDefaultAppRedirectUri = (): string => getEnv().AUTH_APP_REDIRECT_URI;
+
+const buildAppRedirectUrl = (
+  params: Record<string, string>,
+  appRedirectUri = getDefaultAppRedirectUri()
+) => {
+  const redirectUrl = new URL(appRedirectUri);
 
   redirectUrl.hash = new URLSearchParams(params).toString();
 
   return redirectUrl.toString();
 };
 
-export const buildAuthSuccessRedirectUrl = (payload: AuthPayload): string => {
+export const buildAuthSuccessRedirectUrl = (
+  payload: AuthPayload,
+  appRedirectUri?: string
+): string => {
   if (!payload.user || !payload.session) {
     throw new HttpError(500, "Cannot build auth redirect without a user session");
   }
@@ -468,15 +497,16 @@ export const buildAuthSuccessRedirectUrl = (payload: AuthPayload): string => {
     fragmentParams.email = payload.user.email;
   }
 
-  return buildAppRedirectUrl(fragmentParams);
+  return buildAppRedirectUrl(fragmentParams, appRedirectUri);
 };
 
 export const buildAuthErrorRedirectUrl = (
   errorCode: string,
-  message: string
+  message: string,
+  appRedirectUri?: string
 ): string =>
   buildAppRedirectUrl({
     status: "error",
     error: errorCode,
     message
-  });
+  }, appRedirectUri);

@@ -9,6 +9,14 @@ import {
 describe("MMDA alert service", () => {
   beforeEach(() => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon-key";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+    process.env.AUTH_APP_REDIRECT_URI = "sakai://auth/callback";
+    process.env.AUTH_STATE_SIGNING_SECRET = "12345678901234567890123456789012";
+    process.env.AI_PROVIDER = "vertex_express";
+    delete process.env.VERTEX_API_KEY;
+    delete process.env.GEMINI_API_KEY;
   });
 
   afterEach(() => {
@@ -50,6 +58,29 @@ describe("MMDA alert service", () => {
       laneStatus: "One lane occupied",
       trafficStatus: "MMDA enforcers are on site managing traffic",
       scrapedAt: "2026-03-19T10:05:00.000Z"
+    });
+  });
+
+  it("adds fallback severity and expiry when AI is unavailable", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        "MMDA ALERT: Road crash incident at C5 Green meadows before intersection SB involving wing van and AUV as of 5:00 PM. One lane occupied. MMDA enforcers are on site managing traffic. #mmda",
+        {
+          status: 200
+        }
+      );
+
+    const alerts = await refreshMmdaAlerts({
+      sourceUrls: ["https://example.com/success"],
+      fetchImpl,
+      now: new Date("2026-03-19T10:05:00.000Z")
+    });
+
+    expect(alerts[0]).toMatchObject({
+      severity: "medium",
+      corridorTags: ["c5"],
+      normalizedLocation: "c5 green meadows before intersection",
+      displayUntil: "2026-03-19T13:05:00.000Z"
     });
   });
 

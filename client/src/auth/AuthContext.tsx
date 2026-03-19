@@ -212,7 +212,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       scheme: 'sakai',
       path: GOOGLE_AUTH_REDIRECT_PATH,
     });
-    const googleAuthUrlPayload = await getGoogleAuthUrl();
+    const googleAuthUrlPayload = await getGoogleAuthUrl(redirectUri);
     const authResult = await WebBrowser.openAuthSessionAsync(
       googleAuthUrlPayload.url,
       redirectUri
