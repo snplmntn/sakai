@@ -13,6 +13,8 @@ Product reference: `../sakai-prd.md`
 - Prefer pure helpers for ranking, fare, parsing, and severity logic so they are easy to test.
 - Do not mix parsing, persistence, and formatting concerns in one function.
 - Fail loudly on invalid upstream data instead of silently coercing it into partial shapes.
+- If a commit adds or changes backend endpoints, the commit message body must enumerate every affected endpoint and include a short note on what it is or what changed.
+- Endpoint commit notes should use concrete paths such as `POST /api/auth/sign-in: email/password login` rather than generic summaries.
 
 ## Sakai-Specific Guardrails
 - Route generation and fare computation must remain deterministic and traceable to stored data or rules.

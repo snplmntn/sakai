@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   extractMmdaAlertMessages,
@@ -7,6 +7,14 @@ import {
 } from "../src/services/mmda-alert.service.js";
 
 describe("MMDA alert service", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("extracts MMDA alerts from mixed page content", () => {
     const content = `
       <html>
@@ -73,6 +81,35 @@ describe("MMDA alert service", () => {
     expect(alerts[0]).toMatchObject({
       location: "Ortigas Avenue before EDSA intersection",
       direction: "WB"
+    });
+  });
+
+  it("continues refreshing when one source throws a network error", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+
+      if (url.includes("throw")) {
+        throw new Error("network failure");
+      }
+
+      return new Response(
+        "MMDA ALERT: Road crash incident at Roxas Blvd EDSA after flyover SB involving 2 motorcycles as of 5:29 PM. One lane occupied. MMDA enforcers are on site managing traffic. #mmda",
+        {
+          status: 200
+        }
+      );
+    };
+
+    const alerts = await refreshMmdaAlerts({
+      sourceUrls: ["https://example.com/throw", "https://example.com/success"],
+      fetchImpl,
+      now: new Date("2026-03-19T10:05:00.000Z")
+    });
+
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({
+      location: "Roxas Blvd EDSA after flyover",
+      direction: "SB"
     });
   });
 });

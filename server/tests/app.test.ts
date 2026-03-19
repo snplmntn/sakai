@@ -8,12 +8,6 @@ import {
 } from "node-mocks-http";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/models/course.model.js", () => ({
-  listCourses: vi.fn(),
-  getCourseById: vi.fn(),
-  createCourse: vi.fn()
-}));
-
 vi.mock("../src/models/auth.model.js", () => ({
   signUpWithEmailAndPassword: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
@@ -31,6 +25,11 @@ vi.mock("../src/models/area-update.model.js", () => ({
   upsertAreaUpdates: vi.fn()
 }));
 
+vi.mock("../src/models/user-preference.model.js", () => ({
+  getUserPreferenceByUserId: vi.fn(),
+  upsertUserPreference: vi.fn()
+}));
+
 vi.mock("../src/services/mmda-alert.service.js", () => ({
   refreshMmdaAlerts: vi.fn()
 }));
@@ -38,11 +37,13 @@ vi.mock("../src/services/mmda-alert.service.js", () => ({
 import app from "../src/app.js";
 import * as areaUpdateModel from "../src/models/area-update.model.js";
 import * as authModel from "../src/models/auth.model.js";
-import * as courseModel from "../src/models/course.model.js";
+import * as mmdaAlertService from "../src/services/mmda-alert.service.js";
+import * as userPreferenceModel from "../src/models/user-preference.model.js";
 
 const mockedAreaUpdateModel = vi.mocked(areaUpdateModel);
 const mockedAuthModel = vi.mocked(authModel);
-const mockedCourseModel = vi.mocked(courseModel);
+const mockedMmdaAlertService = vi.mocked(mmdaAlertService);
+const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
 const appHandler = app as unknown as {
   handle: (
     request: ReturnType<typeof createRequest>,
@@ -55,11 +56,13 @@ const invokeApp = async (options: {
   method: RequestMethod;
   url: string;
   body?: Body;
+  headers?: Record<string, string>;
 }) => {
   const request = createRequest({
     method: options.method,
     url: options.url,
-    body: options.body
+    body: options.body,
+    headers: options.headers
   });
   const response = createResponse({
     eventEmitter: EventEmitter
@@ -109,55 +112,6 @@ describe("app routes", () => {
     expect(response.statusCode).toBe(404);
     expect(response._getJSONData().success).toBe(false);
     expect(response._getJSONData().message).toContain("Route GET /api/missing not found");
-  });
-
-  it("rejects invalid create-course payloads", async () => {
-    const response = await invokeApp({
-      method: "POST",
-      url: "/api/courses",
-      body: {
-        code: "",
-        title: ""
-      }
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response._getJSONData().success).toBe(false);
-    expect(response._getJSONData().message).toBe("Validation failed");
-  });
-
-  it("returns course data from the controller", async () => {
-    mockedCourseModel.createCourse.mockResolvedValue({
-      id: "cdb32fa6-bd17-4ad3-ae28-c0bcf8376c42",
-      code: "CS101",
-      title: "Intro to Sakai",
-      description: "Starter course",
-      createdAt: "2026-03-19T00:00:00.000Z"
-    });
-
-    const response = await invokeApp({
-      method: "POST",
-      url: "/api/courses",
-      body: {
-        code: "CS101",
-        title: "Intro to Sakai",
-        description: "Starter course"
-      }
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(mockedCourseModel.createCourse).toHaveBeenCalledWith({
-      code: "CS101",
-      title: "Intro to Sakai",
-      description: "Starter course"
-    });
-    expect(response._getJSONData().data).toEqual({
-      id: "cdb32fa6-bd17-4ad3-ae28-c0bcf8376c42",
-      code: "CS101",
-      title: "Intro to Sakai",
-      description: "Starter course",
-      createdAt: "2026-03-19T00:00:00.000Z"
-    });
   });
 
   it("rejects invalid auth sign-up payloads", async () => {
@@ -282,6 +236,154 @@ describe("app routes", () => {
     expect(mockedAreaUpdateModel.listAreaUpdates).toHaveBeenCalledWith({
       area: undefined,
       limit: 10
+    });
+  });
+
+  it("requires a bearer token for area update refresh", async () => {
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/area-updates/refresh"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response._getJSONData()).toEqual({
+      success: false,
+      message: "Missing authorization header",
+      details: null
+    });
+    expect(mockedMmdaAlertService.refreshMmdaAlerts).not.toHaveBeenCalled();
+  });
+
+  it("returns default preferences when no persisted row exists", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+    mockedUserPreferenceModel.getUserPreferenceByUserId.mockResolvedValue(null);
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/me/preferences",
+      headers: {
+        authorization: "Bearer access-token"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: {
+        userId: "user-1",
+        defaultPreference: "balanced",
+        passengerType: "regular",
+        isPersisted: false,
+        createdAt: null,
+        updatedAt: null
+      }
+    });
+    expect(mockedUserPreferenceModel.getUserPreferenceByUserId).toHaveBeenCalledWith("user-1");
+  });
+
+  it("requires a bearer token for preferences", async () => {
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/me/preferences"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response._getJSONData()).toEqual({
+      success: false,
+      message: "Missing authorization header",
+      details: null
+    });
+  });
+
+  it("rejects malformed bearer tokens for preferences", async () => {
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/me/preferences",
+      headers: {
+        authorization: "Token access-token"
+      }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response._getJSONData()).toEqual({
+      success: false,
+      message: "Authorization header must use Bearer token format",
+      details: null
+    });
+  });
+
+  it("rejects invalid preference payloads", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+
+    const response = await invokeApp({
+      method: "PUT",
+      url: "/api/me/preferences",
+      headers: {
+        authorization: "Bearer access-token"
+      },
+      body: {
+        defaultPreference: "slowest",
+        passengerType: "student"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response._getJSONData().message).toBe("Validation failed");
+  });
+
+  it("updates persisted preferences", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+    mockedUserPreferenceModel.upsertUserPreference.mockResolvedValue({
+      userId: "user-1",
+      defaultPreference: "cheapest",
+      passengerType: "student",
+      createdAt: "2026-03-19T10:05:00.000Z",
+      updatedAt: "2026-03-19T10:05:00.000Z"
+    });
+
+    const response = await invokeApp({
+      method: "PUT",
+      url: "/api/me/preferences",
+      headers: {
+        authorization: "Bearer access-token"
+      },
+      body: {
+        defaultPreference: "cheapest",
+        passengerType: "student"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: {
+        userId: "user-1",
+        defaultPreference: "cheapest",
+        passengerType: "student",
+        isPersisted: true,
+        createdAt: "2026-03-19T10:05:00.000Z",
+        updatedAt: "2026-03-19T10:05:00.000Z"
+      }
+    });
+    expect(mockedUserPreferenceModel.upsertUserPreference).toHaveBeenCalledWith({
+      userId: "user-1",
+      defaultPreference: "cheapest",
+      passengerType: "student"
     });
   });
 });
