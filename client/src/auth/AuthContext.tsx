@@ -23,6 +23,14 @@ import {
   writeStoredAuthState,
 } from './storage';
 import {
+  clearStoredPreferenceDraft,
+  readStoredPreferenceDraft,
+} from '../preferences/storage';
+import {
+  getMyPreferences,
+  upsertMyPreferences,
+} from '../preferences/api';
+import {
   hasAuthenticatedSession,
   type AuthPayload,
   type GoogleAuthOrigin,
@@ -37,6 +45,7 @@ interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
   session: AuthSession | null;
+  unauthenticatedRoute: 'Welcome' | 'Login';
   signIn: (email: string, password: string) => Promise<AuthPayload>;
   signUp: (email: string, password: string) => Promise<AuthPayload>;
   authenticateWithGoogle: (origin: GoogleAuthOrigin) => Promise<void>;
@@ -89,14 +98,48 @@ const assertAuthenticatedPayload = (value: AuthPayload): StoredAuthState => {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [authState, setAuthState] = useState<AuthState>(HYDRATING_STATE);
+  const [unauthenticatedRoute, setUnauthenticatedRoute] = useState<'Welcome' | 'Login'>(
+    'Welcome'
+  );
+
+  const syncStoredPreferenceDraft = async (accessToken: string): Promise<void> => {
+    const storedDraft = await readStoredPreferenceDraft();
+
+    if (!storedDraft) {
+      return;
+    }
+
+    const currentPreferences = await getMyPreferences(accessToken);
+
+    if (currentPreferences.isPersisted) {
+      await clearStoredPreferenceDraft();
+      return;
+    }
+
+    await upsertMyPreferences(accessToken, storedDraft);
+    await clearStoredPreferenceDraft();
+  };
 
   const persistAuthenticatedState = async (value: StoredAuthState): Promise<void> => {
     await writeStoredAuthState(value);
+
+    try {
+      await syncStoredPreferenceDraft(value.session.accessToken);
+    } catch (error) {
+      console.warn('Failed to sync onboarding preferences after authentication', {
+        reason: error instanceof Error ? error.message : 'unknown error',
+      });
+    }
+
+    setUnauthenticatedRoute('Welcome');
     setAuthState(toAuthenticatedState(value));
   };
 
-  const clearAuthState = async (): Promise<void> => {
+  const clearAuthState = async (
+    route: 'Welcome' | 'Login' = 'Welcome'
+  ): Promise<void> => {
     await clearStoredAuthState();
+    setUnauthenticatedRoute(route);
     setAuthState(UNAUTHENTICATED_STATE);
   };
 
@@ -158,7 +201,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       password,
     });
 
-    await clearAuthState();
+    await clearAuthState('Welcome');
 
     return payload;
   };
@@ -211,7 +254,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await signOutRequest(accessToken);
       }
     } finally {
-      await clearAuthState();
+      await clearAuthState('Login');
     }
   };
 
@@ -262,6 +305,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     status: authState.status,
     user: authState.user,
     session: authState.session,
+    unauthenticatedRoute,
     signIn,
     signUp,
     authenticateWithGoogle,
