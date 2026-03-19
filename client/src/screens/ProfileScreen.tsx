@@ -13,7 +13,7 @@ type ProfileRow = {
   badge?: string;
 };
 
-const ACCOUNT_ROWS: ProfileRow[] = [
+const PROFILE_ROWS: ProfileRow[] = [
   {
     title: 'Route preferences',
     description: 'Jeepney first, less walking, and cash fare view.',
@@ -30,17 +30,6 @@ const ACCOUNT_ROWS: ProfileRow[] = [
     title: 'Community activity',
     description: 'Reports and route improvements you shared with other riders.',
     badge: 'New',
-  },
-];
-
-const GENERAL_ROWS: ProfileRow[] = [
-  {
-    title: 'Help center',
-    description: 'Support, commuting tips, and account guidance.',
-  },
-  {
-    title: 'App settings',
-    description: 'Privacy, notifications, and default app behavior.',
   },
 ];
 
@@ -164,7 +153,6 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
             <View style={styles.identityBlock}>
               <Text style={styles.name}>{displayName}</Text>
               <Text style={styles.email}>{emailAddress}</Text>
-              <Text style={styles.memberText}>Authenticated rider</Text>
             </View>
           </View>
 
@@ -176,12 +164,11 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
           ) : null}
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>My Account</Text>
             <View style={styles.list}>
-              {ACCOUNT_ROWS.map((item, index) => (
+              {PROFILE_ROWS.map((item, index) => (
                 <View
                   key={item.title}
-                  style={[styles.listRow, index !== ACCOUNT_ROWS.length - 1 && styles.listDivider]}
+                  style={[styles.listRow, index !== PROFILE_ROWS.length - 1 && styles.listDivider]}
                 >
                   <View style={styles.rowCopy}>
                     <Text style={styles.rowTitle}>{item.title}</Text>
@@ -195,24 +182,6 @@ export default function ProfileScreen(_props: ProfileScreenProps) {
                     ) : null}
                     <Text style={styles.chevron}>{'>'}</Text>
                   </View>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>General</Text>
-            <View style={styles.list}>
-              {GENERAL_ROWS.map((item, index) => (
-                <View
-                  key={item.title}
-                  style={[styles.listRow, index !== GENERAL_ROWS.length - 1 && styles.listDivider]}
-                >
-                  <View style={styles.rowCopy}>
-                    <Text style={styles.rowTitle}>{item.title}</Text>
-                    <Text style={styles.rowDescription}>{item.description}</Text>
-                  </View>
-                  <Text style={styles.chevron}>{'>'}</Text>
                 </View>
               ))}
             </View>
@@ -281,11 +250,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     color: COLORS.subText,
     marginBottom: SPACING.xs,
-  },
-  memberText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.primary,
   },
   statusRow: {
     flexDirection: 'row',

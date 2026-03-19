@@ -120,7 +120,19 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
       <View style={[styles.slide, { width }]}>
         <View style={[styles.fullScreenPanel, { minHeight: height - 120 }]}>
           <View style={styles.topActionRow}>
-            <View style={styles.topActionSpacer} />
+            {isLastStep ? (
+              <TouchableOpacity
+                style={styles.topNavButton}
+                onPress={handleBack}
+                activeOpacity={0.88}
+              >
+                <View style={styles.backIconWrap}>
+                  <HugeiconsIcon icon={ArrowRight01Icon} size={18} color={COLORS.white} />
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.topActionSpacer} />
+            )}
             {!isLastStep ? (
               <TouchableOpacity onPress={handleGetStarted} activeOpacity={0.8}>
                 <Text style={styles.skipText}>Skip</Text>
@@ -152,18 +164,17 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
             ) : (
               <View style={styles.inlineControls}>
                 <TouchableOpacity
+                  style={[
+                    styles.navButton,
+                    currentIndex === 0 && styles.navButtonHidden,
+                  ]}
                   onPress={handleBack}
-                  activeOpacity={0.8}
+                  activeOpacity={0.88}
                   disabled={currentIndex === 0}
                 >
-                  <Text
-                    style={[
-                      styles.backText,
-                      currentIndex === 0 && styles.backTextHidden,
-                    ]}
-                  >
-                    Back
-                  </Text>
+                  <View style={styles.backIconWrap}>
+                    <HugeiconsIcon icon={ArrowRight01Icon} size={20} color={COLORS.white} />
+                  </View>
                 </TouchableOpacity>
 
                 <View style={styles.dotsRow}>
@@ -179,7 +190,7 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
                 </View>
 
                 <TouchableOpacity
-                  style={styles.nextButton}
+                  style={styles.navButton}
                   onPress={handleNext}
                   activeOpacity={0.88}
                 >
@@ -198,7 +209,7 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
     <SafeScreen
       backgroundColor={COLORS.gradientStart}
       topInsetBackgroundColor={COLORS.gradientStart}
-      useGradient={true}
+      useGradient={false}
     >
       <View style={styles.screen}>
         <LinearGradient
@@ -289,6 +300,19 @@ const styles = StyleSheet.create({
   },
   topActionSpacer: {
     width: 52,
+  },
+  topNavButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: COLORS.midnight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.midnight,
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
   topSection: {
     flex: 1,
@@ -441,14 +465,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  backText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.subText,
-    textTransform: 'uppercase',
+  navButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: COLORS.midnight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.midnight,
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
-  backTextHidden: {
+  navButtonHidden: {
     opacity: 0,
+  },
+  backIconWrap: {
+    transform: [{ rotate: '180deg' }],
   },
   skipText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -473,19 +507,6 @@ const styles = StyleSheet.create({
     width: 9,
     height: 28,
     backgroundColor: COLORS.black,
-  },
-  nextButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    backgroundColor: COLORS.midnight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: COLORS.midnight,
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
   },
   primaryButton: {
     flexDirection: 'row',
