@@ -4,6 +4,7 @@ import ThemeToggle from "./ThemeToggle";
 const links = [
   { label: "Features", href: "#features" },
   { label: "How It Works", href: "#how-it-works" },
+  { label: "Guides", href: "/guides" },
   { label: "Download", href: "#download" },
 ];
 
