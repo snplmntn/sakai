@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { GoogleIcon, ViewIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
+import { ViewIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../auth/api';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../../constants/theme';
 import SafeScreen from '../../components/SafeScreen';
+import GoogleMark from '../../components/GoogleMark';
 
 type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -80,96 +81,110 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
   };
 
   return (
-    <SafeScreen backgroundColor={COLORS.surface} useGradient={true}>
-      <View style={styles.content}>
-        {/* Upper section with branding */}
-        <View style={styles.brandSection}>
-          <Text style={styles.logo}>Sakai</Text>
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to continue your commute</Text>
-        </View>
+    <SafeScreen backgroundColor={COLORS.surface} topInsetBackgroundColor={COLORS.surface}>
+      <View style={styles.screen}>
+        <View style={styles.card}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Welcome back</Text>
+            <Text style={styles.subtitle}>Login to your account</Text>
+          </View>
 
-        {/* Form */}
-        <View style={styles.form}>
-          {successMessage ? <Text style={styles.successText}>{successMessage}</Text> : null}
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          {successMessage ? (
+            <View style={[styles.notice, styles.successNotice]}>
+              <Text style={[styles.noticeText, styles.successNoticeText]}>{successMessage}</Text>
+            </View>
+          ) : null}
 
-          <TextInput
-            style={styles.input}
-            placeholder="Email address"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoCorrect={false}
-            placeholderTextColor={COLORS.subText}
-            value={email}
-            onChangeText={setEmail}
-            editable={!isSubmitting}
-          />
-          <View style={styles.passwordField}>
+          {errorMessage ? (
+            <View style={[styles.notice, styles.errorNotice]}>
+              <Text style={[styles.noticeText, styles.errorNoticeText]}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.form}>
             <TextInput
-              style={styles.passwordInput}
-              placeholder="Password"
-              secureTextEntry={!isPasswordVisible}
+              style={styles.input}
+              placeholder="Username or email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={false}
               placeholderTextColor={COLORS.subText}
-              value={password}
-              onChangeText={setPassword}
+              value={email}
+              onChangeText={setEmail}
               editable={!isSubmitting}
             />
+
+            <View style={styles.passwordField}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Password"
+                secureTextEntry={!isPasswordVisible}
+                placeholderTextColor={COLORS.subText}
+                value={password}
+                onChangeText={setPassword}
+                editable={!isSubmitting}
+              />
+              <TouchableOpacity
+                onPress={() => setIsPasswordVisible((currentValue) => !currentValue)}
+                style={styles.eyeButton}
+                activeOpacity={0.85}
+                disabled={isSubmitting}
+              >
+                <HugeiconsIcon
+                  icon={isPasswordVisible ? ViewOffIcon : ViewIcon}
+                  size={18}
+                  color={COLORS.subText}
+                />
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              onPress={() => setIsPasswordVisible((currentValue) => !currentValue)}
-              style={styles.eyeButton}
-              activeOpacity={0.85}
+              style={[styles.primaryButton, isSubmitting && styles.buttonDisabled]}
+              onPress={() => {
+                void handleSubmit();
+              }}
+              activeOpacity={0.88}
               disabled={isSubmitting}
             >
-              <HugeiconsIcon
-                icon={isPasswordVisible ? ViewOffIcon : ViewIcon}
-                size={20}
-                color={COLORS.subText}
-              />
+              {isEmailSubmitting ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Sign In</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.googleButton, isSubmitting && styles.buttonDisabled]}
+              onPress={() => {
+                void handleGoogleSignIn();
+              }}
+              activeOpacity={0.88}
+              disabled={isSubmitting}
+            >
+              {isGoogleSubmitting ? (
+                <ActivityIndicator color={COLORS.text} />
+              ) : (
+                <View style={styles.googleButtonContent}>
+                  <GoogleMark size={18} />
+                  <Text style={styles.googleButtonText}>Sign in with Google</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={[styles.button, isSubmitting && styles.buttonDisabled]}
-            onPress={() => {
-              void handleSubmit();
-            }}
-            activeOpacity={0.85}
-            disabled={isSubmitting}
-          >
-            {isEmailSubmitting ? (
-              <ActivityIndicator color={COLORS.white} />
-            ) : (
-              <Text style={styles.buttonText}>Sign In</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.googleButton, isSubmitting && styles.buttonDisabled]}
-            onPress={() => {
-              void handleGoogleSignIn();
-            }}
-            activeOpacity={0.85}
-            disabled={isSubmitting}
-          >
-            {isGoogleSubmitting ? (
-              <ActivityIndicator color={COLORS.text} />
-            ) : (
-              <View style={styles.googleButtonContent}>
-                <HugeiconsIcon icon={GoogleIcon} size={20} color={COLORS.text} />
-                <Text style={styles.googleButtonText}>Sign in with Google</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
-            <Text style={styles.toggleText}>
-              Don't have an account? <Text style={styles.toggleLink}>Sign up</Text>
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.footer}>
+            <TouchableOpacity onPress={() => navigation.navigate('Signup')} activeOpacity={0.85}>
+              <Text style={styles.footerText}>
+                Don&apos;t have an account? <Text style={styles.footerLink}>Sign up</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </SafeScreen>
@@ -177,105 +192,138 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  content: {
+  screen: {
     flex: 1,
     paddingHorizontal: SPACING.lg,
-  },
-  brandSection: {
-    flex: 1,
-    justifyContent: 'flex-end',
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.xl,
   },
-  logo: {
-    fontSize: TYPOGRAPHY.fontSizes.hero,
-    fontFamily: FONTS.bold,
-    color: COLORS.primary,
-    marginBottom: SPACING.lg,
+  card: {
+    flex: 1,
+    paddingHorizontal: 0,
+    paddingTop: SPACING.xl + SPACING.md,
+    paddingBottom: SPACING.sm,
+    justifyContent: 'space-between',
+  },
+  header: {
+    alignItems: 'flex-start',
+    marginBottom: SPACING.xl,
   },
   title: {
-    fontSize: TYPOGRAPHY.fontSizes.hero,
+    fontSize: TYPOGRAPHY.fontSizes.xlarge,
     fontFamily: FONTS.bold,
     color: COLORS.text,
-    marginBottom: SPACING.xs,
+    marginBottom: 2,
   },
   subtitle: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
     color: COLORS.subText,
   },
-  form: {
-    paddingBottom: SPACING.lg,
-  },
-  successText: {
+  notice: {
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
     marginBottom: SPACING.md,
+  },
+  successNotice: {
+    backgroundColor: '#EEF8F0',
+  },
+  errorNotice: {
+    backgroundColor: '#FFF1F0',
+  },
+  noticeText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  successNoticeText: {
     color: COLORS.success,
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.medium,
   },
-  errorText: {
-    marginBottom: SPACING.md,
+  errorNoticeText: {
     color: COLORS.danger,
-    fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.medium,
+  },
+  form: {
+    flex: 1,
   },
   input: {
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md + 2,
-    marginBottom: SPACING.md,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1.2,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
     color: COLORS.text,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.white,
   },
   passwordField: {
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1.2,
+    borderColor: COLORS.border,
+    paddingLeft: SPACING.md,
+    paddingRight: SPACING.xs,
+    marginBottom: SPACING.xl,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg,
-    marginBottom: SPACING.md,
-    paddingLeft: SPACING.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
   },
   passwordInput: {
     flex: 1,
-    paddingVertical: SPACING.md + 2,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
     color: COLORS.text,
   },
   eyeButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-  },
-  button: {
-    backgroundColor: COLORS.black,
-    paddingVertical: SPACING.md + 2,
-    borderRadius: RADIUS.xl,
+    width: 42,
+    height: 42,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  buttonDisabled: {
-    opacity: 0.7,
+  primaryButton: {
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.lg,
   },
-  buttonText: {
+  primaryButtonText: {
     color: COLORS.white,
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
+    fontFamily: FONTS.semibold,
+  },
+  buttonDisabled: {
+    opacity: 0.72,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    marginHorizontal: SPACING.md,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: COLORS.subText,
+    textTransform: 'lowercase',
   },
   googleButton: {
-    marginTop: SPACING.sm,
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: '#D6E0E8',
-    paddingVertical: SPACING.md + 2,
-    borderRadius: RADIUS.xl,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1.2,
+    borderColor: COLORS.border,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
   },
   googleButtonContent: {
     flexDirection: 'row',
@@ -285,20 +333,19 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.sm,
     color: COLORS.text,
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.semibold,
+    fontFamily: FONTS.medium,
   },
   footer: {
-    flex: 1,
-    justifyContent: 'center',
+    paddingTop: SPACING.lg,
     alignItems: 'center',
   },
-  toggleText: {
-    color: COLORS.subText,
+  footerText: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
+    color: COLORS.subText,
   },
-  toggleLink: {
-    color: COLORS.primary,
+  footerLink: {
+    color: COLORS.text,
     fontFamily: FONTS.semibold,
   },
 });
