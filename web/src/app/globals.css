@@ -390,6 +390,20 @@ a {
   margin-top: 0.65rem;
 }
 
+.guide-step-text {
+  line-height: 1.75;
+}
+
+.guide-step-image {
+  display: block;
+  width: 100%;
+  max-width: 30rem;
+  margin-top: 0.85rem;
+  border-radius: 1rem;
+  border: 1px solid var(--card-border);
+  background: rgba(0, 122, 255, 0.06);
+}
+
 @media (min-width: 768px) {
   .guide-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
