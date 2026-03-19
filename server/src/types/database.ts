@@ -1,17 +1,169 @@
 type RoutePreference = "fastest" | "cheapest" | "balanced";
 type PassengerType = "regular" | "student" | "senior" | "pwd";
 type PlaceKind = "landmark" | "station" | "area" | "campus" | "mall" | "terminal";
-type RideMode = "jeepney" | "uv" | "mrt3" | "lrt1" | "lrt2";
+type RideMode = "jeepney" | "uv" | "mrt3" | "lrt1" | "lrt2" | "car";
 type StopMode = RideMode | "walk_anchor";
 type RouteTrustLevel = "trusted_seed" | "community_reviewed" | "demo_fallback";
 type FareRuleMode = RideMode | "car";
 type FareRuleVersionTrustLevel = "official" | "estimated" | "demo_fallback";
 type FareProductMode = "jeepney" | "uv" | "car";
 type FarePricingStrategy = "minimum_plus_succeeding" | "per_km";
+type SubmissionType = "missing_route" | "route_correction" | "fare_update" | "route_note";
+type SubmissionStatus = "pending" | "reviewed" | "approved" | "rejected";
 
 export interface Database {
   public: {
     Tables: {
+      community_submissions: {
+        Row: {
+          id: string;
+          user_id: string;
+          submission_type: SubmissionType;
+          status: SubmissionStatus;
+          title: string;
+          payload: Record<string, any>;
+          source_context: Record<string, any> | null;
+          review_notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          submission_type: SubmissionType;
+          status?: SubmissionStatus;
+          title: string;
+          payload: Record<string, any>;
+          source_context?: Record<string, any> | null;
+          review_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          submission_type?: SubmissionType;
+          status?: SubmissionStatus;
+          title?: string;
+          payload?: Record<string, any>;
+          source_context?: Record<string, any> | null;
+          review_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "community_submissions_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      community_questions: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          body: string;
+          origin_label: string;
+          destination_label: string;
+          origin_place_id: string | null;
+          destination_place_id: string | null;
+          route_query_text: string | null;
+          preference: RoutePreference | null;
+          passenger_type: PassengerType | null;
+          source_context: Record<string, unknown> | null;
+          reply_count: number;
+          last_answered_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          body: string;
+          origin_label: string;
+          destination_label: string;
+          origin_place_id?: string | null;
+          destination_place_id?: string | null;
+          route_query_text?: string | null;
+          preference?: RoutePreference | null;
+          passenger_type?: PassengerType | null;
+          source_context?: Record<string, unknown> | null;
+          reply_count?: number;
+          last_answered_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          body?: string;
+          origin_label?: string;
+          destination_label?: string;
+          origin_place_id?: string | null;
+          destination_place_id?: string | null;
+          route_query_text?: string | null;
+          preference?: RoutePreference | null;
+          passenger_type?: PassengerType | null;
+          source_context?: Record<string, unknown> | null;
+          reply_count?: number;
+          last_answered_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "community_questions_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      community_question_answers: {
+        Row: {
+          id: string;
+          question_id: string;
+          user_id: string;
+          body: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          question_id: string;
+          user_id: string;
+          body: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          question_id?: string;
+          user_id?: string;
+          body?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "community_question_answers_question_id_fkey";
+            columns: ["question_id"];
+            referencedRelation: "community_questions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "community_question_answers_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       user_preferences: {
         Row: {
           user_id: string;
@@ -515,7 +667,14 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      increment_community_question_reply_count: {
+        Args: {
+          question_id_input: string;
+        };
+        Returns: undefined;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
