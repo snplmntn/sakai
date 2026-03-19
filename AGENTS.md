@@ -26,3 +26,8 @@ Use the PRD whenever feature scope, behavior, naming, or tradeoffs are unclear. 
 - Check the PRD before adding or changing product behavior.
 - When making a product-facing change, reference the relevant PRD section in your reasoning or implementation notes when useful.
 - Prefer clear, maintainable code over clever abstractions.
+
+## Commit Message Rules
+- When a change adds or updates any API endpoint, the commit message body must list each affected endpoint.
+- For each listed endpoint, include a brief context line describing what it does or what changed.
+- Do not use a vague commit body like `update auth routes`; spell out the endpoint paths and their purpose.
