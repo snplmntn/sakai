@@ -1,18 +1,21 @@
-import type { PassengerType, RoutePreference } from '../routes/types';
 import { isRecord } from '../api/base';
+import type { PassengerType, RoutePreference } from '../routes/types';
 
-export interface UserPreferences {
-  userId: string | null;
+export type { PassengerType, RoutePreference } from '../routes/types';
+
+export interface PreferenceDraft {
   defaultPreference: RoutePreference;
   passengerType: PassengerType;
+}
+
+export interface UserPreferences extends PreferenceDraft {
+  userId: string | null;
   isPersisted: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 }
 
-export interface StoredPreferences {
-  defaultPreference: RoutePreference;
-  passengerType: PassengerType;
+export interface StoredPreferences extends PreferenceDraft {
   syncStatus: 'pending' | 'synced';
 }
 
@@ -83,9 +86,6 @@ const isRoutePreference = (value: unknown): value is RoutePreference =>
 const isPassengerType = (value: unknown): value is PassengerType =>
   value === 'regular' || value === 'student' || value === 'senior' || value === 'pwd';
 
-const readNullableString = (value: unknown): string | null =>
-  typeof value === 'string' && value.trim().length > 0 ? value : null;
-
 const readBoolean = (value: unknown, fieldName: string): boolean => {
   if (typeof value !== 'boolean') {
     throw new Error(`Expected ${fieldName} to be a boolean`);
@@ -94,9 +94,21 @@ const readBoolean = (value: unknown, fieldName: string): boolean => {
   return value;
 };
 
-export const parseUserPreferences = (value: unknown): UserPreferences => {
+const readNullableString = (value: unknown, fieldName: string): string | null => {
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Expected ${fieldName} to be a non-empty string`);
+  }
+
+  return value;
+};
+
+export const parsePreferenceDraft = (value: unknown): PreferenceDraft => {
   if (!isRecord(value)) {
-    throw new Error('Expected user preferences to be an object');
+    throw new Error('Expected preference draft to be an object');
   }
 
   if (!isRoutePreference(value.defaultPreference)) {
@@ -108,12 +120,24 @@ export const parseUserPreferences = (value: unknown): UserPreferences => {
   }
 
   return {
-    userId: readNullableString(value.userId),
     defaultPreference: value.defaultPreference,
     passengerType: value.passengerType,
+  };
+};
+
+export const parseUserPreferences = (value: unknown): UserPreferences => {
+  if (!isRecord(value)) {
+    throw new Error('Expected user preferences to be an object');
+  }
+
+  const draft = parsePreferenceDraft(value);
+
+  return {
+    ...draft,
+    userId: readNullableString(value.userId ?? null, 'userId'),
     isPersisted: readBoolean(value.isPersisted, 'isPersisted'),
-    createdAt: readNullableString(value.createdAt),
-    updatedAt: readNullableString(value.updatedAt),
+    createdAt: readNullableString(value.createdAt ?? null, 'createdAt'),
+    updatedAt: readNullableString(value.updatedAt ?? null, 'updatedAt'),
   };
 };
 
@@ -122,37 +146,28 @@ export const parseStoredPreferences = (value: unknown): StoredPreferences => {
     throw new Error('Expected stored preferences to be an object');
   }
 
-  if (!isRoutePreference(value.defaultPreference)) {
-    throw new Error('Expected stored defaultPreference to be valid');
-  }
-
-  if (!isPassengerType(value.passengerType)) {
-    throw new Error('Expected stored passengerType to be valid');
-  }
+  const draft = parsePreferenceDraft(value);
 
   if (value.syncStatus !== 'pending' && value.syncStatus !== 'synced') {
     throw new Error('Expected stored syncStatus to be pending or synced');
   }
 
   return {
-    defaultPreference: value.defaultPreference,
-    passengerType: value.passengerType,
+    ...draft,
     syncStatus: value.syncStatus,
   };
 };
 
 export const toStoredPreferences = (
-  value: Pick<UserPreferences, 'defaultPreference' | 'passengerType'>,
+  value: PreferenceDraft,
   syncStatus: StoredPreferences['syncStatus']
 ): StoredPreferences => ({
-  defaultPreference: value.defaultPreference,
-  passengerType: value.passengerType,
+  ...value,
   syncStatus,
 });
 
 export const toUserPreferencesFromStored = (value: StoredPreferences): UserPreferences => ({
   ...createDefaultUserPreferences(),
-  defaultPreference: value.defaultPreference,
-  passengerType: value.passengerType,
+  ...value,
   isPersisted: value.syncStatus === 'synced',
 });
