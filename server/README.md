@@ -17,20 +17,29 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
    - `AI_PROVIDER=vertex_express` with `VERTEX_API_KEY`
    - `AI_PROVIDER=gemini_developer` with `GEMINI_API_KEY`
    - optional shared model envs: `GEMINI_MODEL_PRIMARY` and `GEMINI_MODEL_LIGHT`
+   Optional MMDA refresh envs:
+   - `MMDA_REFRESH_ENABLED=true` to run background refreshes automatically
+   - `MMDA_REFRESH_INTERVAL_MINUTES=15` for the refresh cadence; lower values are allowed, but anything below `1` minute is clamped up
+   - `MMDA_BROWSER_FALLBACK_ENABLED=true` to allow Playwright fallback when fetch returns Cloudflare, bot checks, or empty content
+   - `MMDA_BROWSER_EXECUTABLE_PATH` if Chromium is installed in a non-standard location on your server
+   - `MMDA_BROWSER_TIMEOUT_MS=20000` for browser navigation timeout
 3. Run `npm install`
-4. In Supabase Auth, enable the Email provider
-5. In Supabase Auth, enable the Google provider and add your Google OAuth client credentials
-6. Add your backend Google callback URL to the Supabase allowed redirect URLs.
+4. Install Chromium for Playwright with `npx playwright install chromium`, or point `MMDA_BROWSER_EXECUTABLE_PATH` at an existing Chromium binary
+5. In Supabase Auth, enable the Email provider
+6. In Supabase Auth, enable the Google provider and add your Google OAuth client credentials
+7. Add your backend Google callback URL to the Supabase allowed redirect URLs.
    For local dev that is usually `http://localhost:3000/api/auth/google/callback`.
    For a deployed backend it should be your deployed API origin plus `/api/auth/google/callback`.
-7. Set `AUTH_APP_REDIRECT_URI` to the app callback that should receive auth results after the backend exchanges the Google code.
+8. Set `AUTH_APP_REDIRECT_URI` to the app callback that should receive auth results after the backend exchanges the Google code.
    For the current Expo app this should be `sakai://auth/callback`.
-8. Apply `supabase/schema.sql` to your Supabase database
+9. Apply `supabase/schema.sql` to your Supabase database
    The schema is designed to upgrade the legacy one-table `public.routes(stop_id, stop_name, latitude, longitude)` import automatically, so you can run this directly on both fresh and older projects.
-9. Apply `supabase/seeds/fare-baseline.sql` for the feature 03 fare baseline
+   If MMDA refresh still fails with `permission denied for table area_updates`, run:
+   `supabase/fix-mmda-permissions.sql`.
+10. Apply `supabase/seeds/fare-baseline.sql` for the feature 03 fare baseline
    This seeds fare versions, fare products, local LRT-1 and LRT-2 station places and stops, and deterministic train-fare lookups. LRT-1 is seeded as a full estimated station-step baseline, while LRT-2 currently seeds the exact Recto/Legarda/Pureza slice covered by the provided demo formula.
-10. Apply `supabase/seeds/alabang-pasay-route.sql` to import the current Alabang-to-Pasay jeepney line into the normalized route graph
-11. Run `npm run dev`
+11. Apply `supabase/seeds/alabang-pasay-route.sql` to import the current Alabang-to-Pasay jeepney line into the normalized route graph
+12. Run `npm run dev`
 
 ### Importing A Route CSV
 
@@ -156,6 +165,11 @@ The backend now supports optional Vertex/Gemini-powered route intent parsing, MM
 - If the selected AI provider is unavailable and the request already has explicit origin and destination fields, route query continues deterministically.
 - Route summaries fall back to a deterministic template when AI is disabled or unavailable.
 - MMDA refresh uses AI to classify `severity`, build a short `summary`, normalize `corridorTags`, and compute `displayUntil`.
+- The server now also runs MMDA refresh automatically on startup and then on a repeating interval when `MMDA_REFRESH_ENABLED=true`.
+- Automatic MMDA refresh is enabled by default in `development` and `production`, and disabled by default in `test`.
+- The default automatic MMDA cadence is every `15` minutes. You can lower it if you want fresher alerts, but keep in mind that more frequent scraping means more source requests and more AI calls.
+- MMDA source fetching now tries plain `fetch` first and falls back to Playwright Chromium when a page looks blocked by Cloudflare, bot checks, or JS-only rendering.
+- If MMDA refresh fails, the backend keeps serving the last stored alerts that have not yet expired.
 
 ### Google OAuth Callback Behavior
 

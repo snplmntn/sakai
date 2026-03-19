@@ -38,6 +38,28 @@ Use the PRD whenever feature scope, behavior, naming, or tradeoffs are unclear. 
 - Prefer clear, maintainable code over clever abstractions.
 
 ## Commit Message Rules
+- Use commit message subject in Conventional format: `type(scope): message`.
+- Keep `type` to established scopes such as `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `build`, `ci`, `perf`, etc.
 - When a change adds or updates any API endpoint, the commit message body must list each affected endpoint.
+- Include a clear summary section in every commit body with "What changed", "Why", and "How to verify".
 - For each listed endpoint, include a brief context line describing what it does or what changed.
 - Do not use a vague commit body like `update auth routes`; spell out the endpoint paths and their purpose.
+- Enable local commit-message enforcement with:
+  - `git config core.hooksPath .githooks`
+  - `.githooks/commit-msg` validates subject format and required body sections.
+- Required body sections for hook validation:
+  - `What changed:`
+  - `Why:`
+  - `Endpoints:`
+  - `Validation:`
+- Example body:
+  - What changed:
+  - `feat(commute): improve route search resolution`
+- Why:
+  - Added merged Google/Sakai search fallback with stable request scoping
+- Endpoints:
+  - `GET /api/places/search` — search autocomplete from Sakai and Google Maps
+  - `POST /api/routes/query` — route query now resolves Google place IDs before nearest-stop fallback
+- Validation:
+  - `npm run typecheck`
+  - `npm test`

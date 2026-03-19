@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 
 import * as areaUpdateModel from "../models/area-update.model.js";
 import { HttpError } from "../types/http-error.js";
-import { refreshMmdaAlerts } from "../services/mmda-alert.service.js";
+import { syncMmdaAlerts } from "../services/mmda-alert.service.js";
 
 export const listAreaUpdates: RequestHandler = async (req, res) => {
   const limit = Number(req.query.limit);
@@ -22,7 +22,7 @@ export const refreshAreaUpdates: RequestHandler = async (req, res) => {
   const sourceUrls = Array.isArray(req.body?.sourceUrls)
     ? req.body.sourceUrls
     : undefined;
-  const scrapedAlerts = await refreshMmdaAlerts({
+  const { scrapedAlerts, savedAlerts } = await syncMmdaAlerts({
     sourceUrls
   });
 
@@ -32,11 +32,8 @@ export const refreshAreaUpdates: RequestHandler = async (req, res) => {
       "No MMDA alerts were found from the configured sources"
     );
   }
-
-  const updates = await areaUpdateModel.upsertAreaUpdates(scrapedAlerts);
-
   res.status(200).json({
     success: true,
-    data: updates
+    data: savedAlerts
   });
 };

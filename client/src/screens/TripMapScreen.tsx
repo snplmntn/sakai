@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  Vibration,
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
@@ -19,6 +20,23 @@ import MapSetupNotice from '../components/MapSetupNotice';
 import SafeScreen from '../components/SafeScreen';
 import { hasGoogleMapsApiKey, hasGooglePlacesApiKey } from '../config/env';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import {
+  clearActiveNavigationSession,
+  readActiveNavigationSession,
+  writeActiveNavigationSession,
+} from '../navigation-alert/storage';
+import { NEAR_DESTINATION_LOCATION_TASK } from '../navigation-alert/task';
+import type {
+  AlarmMode,
+  AlertRadiusMeters,
+  NavigationTarget,
+} from '../navigation-alert/types';
+import {
+  ALERT_RADIUS_OPTIONS,
+  calculateDistanceMeters,
+  formatDistanceAway,
+  resolveNavigationTarget,
+} from '../navigation-alert/utils';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { usePreferences } from '../preferences/PreferencesContext';
 import { reverseGeocodeCurrentLocation } from '../places/api';
@@ -37,6 +55,11 @@ import {
   formatDuration,
   formatFare,
 } from '../routes/view-models';
+import {
+  getNotificationAlertPattern,
+  requestArrivalNotificationPermission,
+  scheduleArrivalNotification,
+} from '../navigation-alert/notification-service';
 import { useToast } from '../toast/ToastContext';
 
 const DEFAULT_REGION: Region = {
@@ -52,9 +75,19 @@ const PREFERENCES: Array<{ label: string; value: RoutePreference }> = [
   { label: 'Cheapest', value: 'cheapest' },
   { label: 'Fastest', value: 'fastest' },
 ];
+const ALARM_MODES: Array<{ label: string; value: AlarmMode }> = [
+  { label: 'Sound', value: 'sound' },
+  { label: 'Vibrate', value: 'vibration' },
+  { label: 'Both', value: 'both' },
+];
+const ALERT_VIBRATION_PATTERN = getNotificationAlertPattern();
 
 type ActiveField = 'origin' | 'destination' | null;
 type SearchMode = 'structured' | 'ai';
+type LiveCoordinate = {
+  latitude: number;
+  longitude: number;
+};
 
 const mapDisambiguationMatches = (value: unknown): SakaiPlaceSuggestion[] => {
   if (!Array.isArray(value)) {
@@ -97,12 +130,19 @@ const mapDisambiguationMatches = (value: unknown): SakaiPlaceSuggestion[] => {
   });
 };
 
+const toLiveCoordinate = (location: Location.LocationObject): LiveCoordinate => ({
+  latitude: location.coords.latitude,
+  longitude: location.coords.longitude,
+});
+
 export default function TripMapScreen() {
   const { session } = useAuth();
   const { preferences: savedPreferences } = usePreferences();
   const { showToast } = useToast();
   const mapRef = useRef<MapView | null>(null);
   const routeSearchRequestIdRef = useRef(0);
+  const foregroundLocationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const hasTriggeredArrivalAlertRef = useRef(false);
   const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
     origin: createGooglePlacesSessionToken(),
     destination: createGooglePlacesSessionToken(),
@@ -122,6 +162,17 @@ export default function TripMapScreen() {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('Choose a routeable stop or Google place.');
   const [isSearchingRoutes, setIsSearchingRoutes] = useState(false);
+  const [isStartingNavigation, setIsStartingNavigation] = useState(false);
+  const [isNavigationActive, setIsNavigationActive] = useState(false);
+  const [activeNavigationRouteId, setActiveNavigationRouteId] = useState<string | null>(null);
+  const [nearDestinationEnabled, setNearDestinationEnabled] = useState(true);
+  const [alarmMode, setAlarmMode] = useState<AlarmMode>('both');
+  const [alertRadiusMeters, setAlertRadiusMeters] = useState<AlertRadiusMeters>(300);
+  const [distanceToTargetMeters, setDistanceToTargetMeters] = useState<number | null>(null);
+  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<LiveCoordinate | null>(null);
+  const [hasTriggeredArrivalAlert, setHasTriggeredArrivalAlert] = useState(false);
+  const [backgroundMonitoringActive, setBackgroundMonitoringActive] = useState(false);
   const {
     isListening,
     transcript,
@@ -136,6 +187,19 @@ export default function TripMapScreen() {
   const activeQuery = activeField === 'origin' ? originQuery : destinationQuery;
   const isGoogleMapsConfigured = hasGoogleMapsApiKey();
   const canUseGooglePlaces = hasGooglePlacesApiKey();
+  const selectedRoute = useMemo<RouteQueryOption | null>(
+    () =>
+      routeResult?.options.find((option) => option.id === selectedRouteId) ??
+      routeResult?.options[0] ??
+      null,
+    [routeResult, selectedRouteId]
+  );
+  const navigationRoute = useMemo<RouteQueryOption | null>(
+    () =>
+      routeResult?.options.find((option) => option.id === activeNavigationRouteId) ??
+      selectedRoute,
+    [activeNavigationRouteId, routeResult, selectedRoute]
+  );
   const coordinateFallbackNote = useMemo(
     () =>
       buildCoordinateFallbackNote({
@@ -160,6 +224,49 @@ export default function TripMapScreen() {
       setAiQuery(partialTranscript);
     }
   }, [partialTranscript, transcript]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void (async () => {
+      const storedSession = await readActiveNavigationSession();
+      const hasBackgroundUpdates = await Location.hasStartedLocationUpdatesAsync(
+        NEAR_DESTINATION_LOCATION_TASK
+      );
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (storedSession && hasBackgroundUpdates) {
+        setIsNavigationActive(true);
+        setActiveNavigationRouteId(storedSession.routeId);
+        setSelectedRouteId((currentValue) => currentValue ?? storedSession.routeId);
+        setNavigationTarget(storedSession.destination);
+        setAlarmMode(storedSession.alarmMode);
+        setAlertRadiusMeters(storedSession.alertRadiusMeters);
+        setNearDestinationEnabled(storedSession.nearDestinationEnabled);
+        setBackgroundMonitoringActive(true);
+      } else if (storedSession) {
+        await clearActiveNavigationSession();
+      } else if (hasBackgroundUpdates) {
+        await Location.stopLocationUpdatesAsync(NEAR_DESTINATION_LOCATION_TASK).catch((error: unknown) => {
+          console.warn('Unable to stop orphaned background location updates', error);
+        });
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      foregroundLocationSubscriptionRef.current?.remove();
+      foregroundLocationSubscriptionRef.current = null;
+    };
+  }, []);
 
   const resetGoogleSessionToken = (field: 'origin' | 'destination') => {
     googleSessionTokensRef.current[field] = createGooglePlacesSessionToken();
@@ -199,6 +306,250 @@ export default function TripMapScreen() {
             : 'Choose your origin manually if location lookup is unavailable.',
       });
       return null;
+    }
+  };
+
+  const stopBackgroundMonitoring = async (): Promise<void> => {
+    try {
+      const hasStartedUpdates = await Location.hasStartedLocationUpdatesAsync(
+        NEAR_DESTINATION_LOCATION_TASK
+      );
+
+      if (hasStartedUpdates) {
+        await Location.stopLocationUpdatesAsync(NEAR_DESTINATION_LOCATION_TASK);
+      }
+    } catch (error) {
+      console.warn('Unable to stop background navigation monitoring', error);
+    }
+
+    setBackgroundMonitoringActive(false);
+  };
+
+  const stopNavigation = async (options?: {
+    preserveTriggeredState?: boolean;
+    toastMessage?: string;
+  }): Promise<void> => {
+    foregroundLocationSubscriptionRef.current?.remove();
+    foregroundLocationSubscriptionRef.current = null;
+
+    await stopBackgroundMonitoring();
+    await clearActiveNavigationSession();
+
+    setIsNavigationActive(false);
+    setActiveNavigationRouteId(null);
+    setNavigationTarget(null);
+    setCurrentLocation(null);
+    setDistanceToTargetMeters(null);
+
+    if (!options?.preserveTriggeredState) {
+      hasTriggeredArrivalAlertRef.current = false;
+      setHasTriggeredArrivalAlert(false);
+    }
+
+    if (options?.toastMessage) {
+      showToast({
+        tone: 'info',
+        title: 'Navigation stopped',
+        message: options.toastMessage,
+      });
+    }
+  };
+
+  const triggerArrivalAlert = async (target: NavigationTarget): Promise<void> => {
+    if (hasTriggeredArrivalAlertRef.current) {
+      return;
+    }
+
+    hasTriggeredArrivalAlertRef.current = true;
+    setHasTriggeredArrivalAlert(true);
+
+    if (alarmMode !== 'sound') {
+      Vibration.vibrate(ALERT_VIBRATION_PATTERN);
+    }
+
+    showToast({
+      tone: 'success',
+      title: 'Near your stop',
+      message: `You are within ${alertRadiusMeters} meters of ${target.label}.`,
+      durationMs: 5000,
+    });
+
+    const hasNotification = await scheduleArrivalNotification({
+      routeId: activeNavigationRouteId,
+      targetLabel: target.label,
+      alertRadiusMeters,
+      alarmMode,
+    });
+
+    if (!hasNotification) {
+      console.info('Navigation alert delivered with vibration/toast only.');
+    }
+
+    await stopNavigation({ preserveTriggeredState: true });
+  };
+
+  const handleLiveLocationUpdate = async (
+    location: LiveCoordinate,
+    target: NavigationTarget,
+    shouldTriggerAlert: boolean
+  ): Promise<void> => {
+    setCurrentLocation(location);
+
+    const distanceMeters = calculateDistanceMeters(location, target);
+    setDistanceToTargetMeters(distanceMeters);
+
+    if (
+      shouldTriggerAlert &&
+      distanceMeters <= alertRadiusMeters &&
+      !hasTriggeredArrivalAlertRef.current
+    ) {
+      await triggerArrivalAlert(target);
+    }
+  };
+
+  const startNavigation = async (): Promise<void> => {
+    if (!selectedRoute) {
+      showToast({
+        tone: 'info',
+        title: 'Pick a route first',
+        message: 'Select a route card before starting navigation mode.',
+      });
+      return;
+    }
+
+    const target = resolveNavigationTarget({
+      destination: destinationSelection,
+      option: selectedRoute,
+    });
+
+    if (!target) {
+      showToast({
+        tone: 'info',
+        title: 'Destination unavailable',
+        message: 'Sakai needs destination coordinates or a final stop to arm the arrival alert.',
+      });
+      return;
+    }
+
+    setIsStartingNavigation(true);
+
+    try {
+      const foregroundPermission = await Location.requestForegroundPermissionsAsync();
+
+      if (foregroundPermission.status !== 'granted') {
+        showToast({
+          tone: 'info',
+          title: 'Location required',
+          message: 'Allow location access to monitor when you are near your stop.',
+        });
+        return;
+      }
+
+      const canNotify = await requestArrivalNotificationPermission();
+
+      if (!canNotify) {
+        showToast({
+          tone: 'info',
+          title: 'Notifications limited',
+          message:
+            'Sakai can still alert while the app is open, but notification permission is unavailable in this environment.',
+        });
+      }
+
+      foregroundLocationSubscriptionRef.current?.remove();
+      foregroundLocationSubscriptionRef.current = null;
+      setIsNavigationActive(true);
+      hasTriggeredArrivalAlertRef.current = false;
+      setHasTriggeredArrivalAlert(false);
+      setActiveNavigationRouteId(selectedRoute.id);
+      setSelectedRouteId(selectedRoute.id);
+      setNavigationTarget(target);
+      setDistanceToTargetMeters(null);
+      setCurrentLocation(null);
+
+      const initialLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const initialCoordinate = toLiveCoordinate(initialLocation);
+      const initialDistanceMeters = calculateDistanceMeters(initialCoordinate, target);
+
+      setCurrentLocation(initialCoordinate);
+      setDistanceToTargetMeters(initialDistanceMeters);
+
+      if (nearDestinationEnabled && initialDistanceMeters <= alertRadiusMeters) {
+        await triggerArrivalAlert(target);
+        return;
+      }
+
+      foregroundLocationSubscriptionRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 12000,
+          distanceInterval: 40,
+        },
+        (location) => {
+          void handleLiveLocationUpdate(
+            toLiveCoordinate(location),
+            target,
+            nearDestinationEnabled
+          );
+        }
+      );
+
+      if (nearDestinationEnabled) {
+        const backgroundPermission = await Location.requestBackgroundPermissionsAsync();
+        const backgroundGranted = backgroundPermission.status === 'granted';
+
+        if (backgroundGranted && canNotify) {
+          await writeActiveNavigationSession({
+            routeId: selectedRoute.id,
+            routeLabel: selectedRoute.recommendationLabel,
+            destination: target,
+            alertRadiusMeters,
+            alarmMode,
+            nearDestinationEnabled,
+            startedAt: new Date().toISOString(),
+          });
+
+          await Location.startLocationUpdatesAsync(NEAR_DESTINATION_LOCATION_TASK, {
+            accuracy: Location.Accuracy.Balanced,
+            distanceInterval: 50,
+            deferredUpdatesDistance: 50,
+            deferredUpdatesInterval: 15000,
+            pausesUpdatesAutomatically: false,
+            foregroundService: {
+              notificationTitle: 'Sakai navigation alert active',
+              notificationBody: `Watching for arrival near ${target.label}.`,
+            },
+          });
+
+          setBackgroundMonitoringActive(true);
+        } else {
+          await clearActiveNavigationSession();
+          setBackgroundMonitoringActive(false);
+          showToast({
+            tone: 'info',
+            title: 'Foreground-only monitoring',
+            message:
+              'Background arrival alarms need background location and notification permission.',
+          });
+        }
+      } else {
+        await clearActiveNavigationSession();
+        setBackgroundMonitoringActive(false);
+      }
+    } catch (error) {
+      await stopNavigation();
+      showToast({
+        tone: 'error',
+        title: 'Navigation unavailable',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to start near-destination monitoring right now.',
+      });
+    } finally {
+      setIsStartingNavigation(false);
     }
   };
 
@@ -259,6 +610,7 @@ export default function TripMapScreen() {
           origin: originSelection,
           destination: destinationSelection,
           preference,
+          passengerType: savedPreferences.passengerType,
           accessToken: session?.accessToken,
         });
 
@@ -301,7 +653,35 @@ export default function TripMapScreen() {
         }
       }
     })();
-  }, [destinationSelection, originSelection, preference, searchMode, session?.accessToken]);
+  }, [
+    destinationSelection,
+    originSelection,
+    preference,
+    savedPreferences.passengerType,
+    searchMode,
+    session?.accessToken,
+  ]);
+
+  useEffect(() => {
+    if (isNavigationActive && routeResult === null) {
+      void stopNavigation({ toastMessage: 'Your trip changed, so the active alert was cleared.' });
+    }
+  }, [isNavigationActive, routeResult]);
+
+  useEffect(() => {
+    if (!isNavigationActive || !activeNavigationRouteId) {
+      return;
+    }
+
+    if (!routeResult?.options.some((option) => option.id === activeNavigationRouteId)) {
+      void stopNavigation({ toastMessage: 'The active route is no longer available.' });
+      return;
+    }
+
+    if (selectedRouteId !== activeNavigationRouteId) {
+      setSelectedRouteId(activeNavigationRouteId);
+    }
+  }, [activeNavigationRouteId, isNavigationActive, routeResult, selectedRouteId]);
 
   const handleRouteQueryError = (error: unknown) => {
     if (
@@ -335,6 +715,12 @@ export default function TripMapScreen() {
   const runAiRouteQuery = async () => {
     if (aiQuery.trim().length === 0) {
       return;
+    }
+
+    if (isNavigationActive) {
+      await stopNavigation({
+        toastMessage: 'The active trip was cleared before starting a new search.',
+      });
     }
 
     const requestId = routeSearchRequestIdRef.current + 1;
@@ -387,6 +773,12 @@ export default function TripMapScreen() {
       return;
     }
 
+    if (isNavigationActive) {
+      await stopNavigation({
+        toastMessage: 'The active trip was cleared before switching search mode.',
+      });
+    }
+
     if (isListening) {
       await stopListening();
     }
@@ -404,14 +796,6 @@ export default function TripMapScreen() {
         : 'Choose a routeable stop or Google place.'
     );
   };
-
-  const selectedRoute = useMemo<RouteQueryOption | null>(
-    () =>
-      routeResult?.options.find((option) => option.id === selectedRouteId) ??
-      routeResult?.options[0] ??
-      null,
-    [routeResult, selectedRouteId]
-  );
 
   const markers = useMemo(
     () =>
@@ -453,11 +837,23 @@ export default function TripMapScreen() {
       });
 
       if (field === 'origin') {
+        if (isNavigationActive) {
+          await stopNavigation({
+            toastMessage: 'The active trip was cleared because the origin changed.',
+          });
+        }
+
         setOriginSelection(selected);
         setOriginQuery(selected.label);
       } else if (field === 'destination') {
         if (!originSelection) {
           await resolveCurrentOrigin();
+        }
+
+        if (isNavigationActive) {
+          await stopNavigation({
+            toastMessage: 'The active trip was cleared because the destination changed.',
+          });
         }
 
         setDestinationSelection(selected);
@@ -535,6 +931,11 @@ export default function TripMapScreen() {
                   value={originQuery}
                   onChangeText={(value) => {
                     routeSearchRequestIdRef.current += 1;
+                    if (isNavigationActive) {
+                      void stopNavigation({
+                        toastMessage: 'The active trip was cleared because the origin changed.',
+                      });
+                    }
                     setOriginQuery(value);
                     setOriginSelection(null);
                     setRouteResult(null);
@@ -553,6 +954,11 @@ export default function TripMapScreen() {
                   value={destinationQuery}
                   onChangeText={(value) => {
                     routeSearchRequestIdRef.current += 1;
+                    if (isNavigationActive) {
+                      void stopNavigation({
+                        toastMessage: 'The active trip was cleared because the destination changed.',
+                      });
+                    }
                     setDestinationQuery(value);
                     setDestinationSelection(null);
                     setRouteResult(null);
@@ -573,6 +979,11 @@ export default function TripMapScreen() {
                       style={styles.exampleChip}
                       onPress={() => {
                         routeSearchRequestIdRef.current += 1;
+                        if (isNavigationActive) {
+                          void stopNavigation({
+                            toastMessage: 'The active trip was cleared because the destination changed.',
+                          });
+                        }
                         setDestinationQuery(example);
                         setDestinationSelection(null);
                         setRouteResult(null);
@@ -599,7 +1010,7 @@ export default function TripMapScreen() {
                           <Text style={styles.suggestionTitle}>{suggestion.label}</Text>
                           <Text style={styles.suggestionMeta}>
                             {suggestion.source === 'sakai'
-                              ? `${suggestion.city} � Sakai`
+                              ? `${suggestion.city} · Sakai`
                               : suggestion.secondaryText || 'Google Maps'}
                           </Text>
                         </View>
@@ -674,6 +1085,162 @@ export default function TripMapScreen() {
         </View>
 
         <View style={styles.sectionCard}>
+          <View style={styles.navigationHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Navigation alarm</Text>
+              <Text style={styles.sectionMeta}>
+                {isNavigationActive ? 'Active trip' : 'Selected route'}
+              </Text>
+            </View>
+            {isNavigationActive ? (
+              <View style={styles.navigationLiveBadge}>
+                <Text style={styles.navigationLiveBadgeText}>Live</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.statusText}>
+            {isNavigationActive
+              ? hasTriggeredArrivalAlert
+                ? 'Arrival alert already triggered for this trip.'
+                : `Monitoring ${navigationTarget?.label ?? 'your stop'}${
+                    backgroundMonitoringActive
+                      ? ' in foreground and background.'
+                      : ' while the app stays open.'
+                  }`
+              : selectedRoute
+                ? 'Pick your alarm mode, set the radius, then start navigation on the selected route.'
+                : 'Select a route first to arm the near-destination alert.'}
+          </Text>
+          {navigationRoute ? (
+            <View style={styles.navigationSummaryCard}>
+              <Text style={styles.navigationSummaryTitle}>
+                {navigationRoute.recommendationLabel}
+              </Text>
+              <Text style={styles.navigationSummaryText}>{navigationRoute.summary}</Text>
+              <Text style={styles.navigationSummaryMeta}>
+                {formatDuration(navigationRoute.totalDurationMinutes)} ·{' '}
+                {formatFare(navigationRoute.totalFare)}
+              </Text>
+            </View>
+          ) : null}
+          <View style={styles.navigationControlBlock}>
+            <View style={styles.row}>
+              <Text style={styles.navigationLabel}>Near-destination alert</Text>
+              <Pressable
+                style={[
+                  styles.toggleChip,
+                  nearDestinationEnabled && styles.toggleChipActive,
+                ]}
+                disabled={isNavigationActive}
+                onPress={() => setNearDestinationEnabled((currentValue) => !currentValue)}
+              >
+                <Text
+                  style={[
+                    styles.toggleChipText,
+                    nearDestinationEnabled && styles.toggleChipTextActive,
+                  ]}
+                >
+                  {nearDestinationEnabled ? 'Enabled' : 'Disabled'}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={styles.navigationHint}>
+              Silent mode and Do Not Disturb can still mute sound. Vibration is best-effort.
+            </Text>
+          </View>
+          <View style={styles.navigationControlBlock}>
+            <Text style={styles.navigationLabel}>Alarm mode</Text>
+            <View style={styles.navigationChipRow}>
+              {ALARM_MODES.map((item) => (
+                <Pressable
+                  key={item.value}
+                  style={[
+                    styles.navigationChip,
+                    alarmMode === item.value && styles.navigationChipActive,
+                  ]}
+                  disabled={isNavigationActive}
+                  onPress={() => setAlarmMode(item.value)}
+                >
+                  <Text
+                    style={[
+                      styles.navigationChipText,
+                      alarmMode === item.value && styles.navigationChipTextActive,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <View style={styles.navigationControlBlock}>
+            <Text style={styles.navigationLabel}>Alert radius</Text>
+            <View style={styles.navigationChipRow}>
+              {ALERT_RADIUS_OPTIONS.map((item) => (
+                <Pressable
+                  key={item.value}
+                  style={[
+                    styles.navigationChip,
+                    alertRadiusMeters === item.value && styles.navigationChipActive,
+                  ]}
+                  disabled={isNavigationActive}
+                  onPress={() => setAlertRadiusMeters(item.value)}
+                >
+                  <Text
+                    style={[
+                      styles.navigationChipText,
+                      alertRadiusMeters === item.value && styles.navigationChipTextActive,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          {isNavigationActive ? (
+            <View style={styles.navigationStatsCard}>
+              <Text style={styles.navigationStatsTitle}>Live status</Text>
+              <Text style={styles.navigationStatsText}>
+                {navigationTarget
+                  ? formatDistanceAway(distanceToTargetMeters)
+                  : 'No destination target yet.'}
+              </Text>
+              <Text style={styles.navigationStatsMeta}>
+                {backgroundMonitoringActive
+                  ? 'Background alerts are armed.'
+                  : 'Keep Sakai open for continuous arrival checks.'}
+              </Text>
+            </View>
+          ) : null}
+          <Pressable
+            style={[
+              styles.navigationButton,
+              isNavigationActive ? styles.navigationButtonStop : styles.navigationButtonStart,
+              ((!selectedRoute && !isNavigationActive) || isStartingNavigation) &&
+                styles.navigationButtonDisabled,
+            ]}
+            disabled={(!selectedRoute && !isNavigationActive) || isStartingNavigation}
+            onPress={() => {
+              if (isNavigationActive) {
+                void stopNavigation();
+                return;
+              }
+
+              void startNavigation();
+            }}
+          >
+            {isStartingNavigation ? (
+              <ActivityIndicator color={COLORS.white} />
+            ) : (
+              <Text style={styles.navigationButtonText}>
+                {isNavigationActive ? 'Stop navigation' : 'Start navigation'}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+
+        <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Map canvas</Text>
             <Text style={styles.sectionMeta}>Google Maps</Text>
@@ -702,6 +1269,14 @@ export default function TripMapScreen() {
                   description={marker.subtitle}
                 />
               ))}
+              {currentLocation ? (
+                <Marker
+                  coordinate={currentLocation}
+                  pinColor={COLORS.success}
+                  title="You"
+                  description="Current location during navigation"
+                />
+              ) : null}
             </MapView>
           ) : (
             <MapSetupNotice />
@@ -729,7 +1304,18 @@ export default function TripMapScreen() {
               styles.routeCard,
               selectedRoute?.id === option.id && styles.routeCardSelected,
             ]}
-            onPress={() => setSelectedRouteId(option.id)}
+            onPress={() => {
+              if (isNavigationActive && activeNavigationRouteId !== option.id) {
+                showToast({
+                  tone: 'info',
+                  title: 'Navigation active',
+                  message: 'Stop the current trip before switching to another route.',
+                });
+                return;
+              }
+
+              setSelectedRouteId(option.id);
+            }}
           >
             <View style={styles.routeHeader}>
               <Text style={styles.routeTitle}>{option.recommendationLabel}</Text>
@@ -737,7 +1323,7 @@ export default function TripMapScreen() {
             </View>
             <Text style={styles.routeSummary}>{option.summary}</Text>
             <Text style={styles.routeMeta}>
-              {option.highlights.join(' � ') || 'Route option'}
+              {option.highlights.join(' · ') || 'Route option'}
             </Text>
             {option.relevantIncidents.length > 0 ? (
               <View style={styles.incidentList}>
@@ -923,6 +1509,139 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.medium,
     color: '#5D7286',
   },
+  navigationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  navigationLiveBadge: {
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 1,
+    borderRadius: 999,
+    backgroundColor: '#EAF7EE',
+    borderWidth: 1,
+    borderColor: '#BEE3C8',
+  },
+  navigationLiveBadgeText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.bold,
+    color: COLORS.success,
+  },
+  navigationSummaryCard: {
+    borderRadius: RADIUS.md,
+    backgroundColor: '#F3F8FC',
+    borderWidth: 1,
+    borderColor: '#D7E5EF',
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  navigationSummaryTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+  },
+  navigationSummaryText: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.regular,
+    color: '#415466',
+    lineHeight: 22,
+  },
+  navigationSummaryMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.primary,
+  },
+  navigationControlBlock: { gap: SPACING.sm },
+  navigationLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.bold,
+    color: '#102033',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  navigationHint: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: '#5D7286',
+    lineHeight: 20,
+  },
+  toggleChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 999,
+    backgroundColor: '#F4F8FB',
+    borderWidth: 1,
+    borderColor: '#D7E5EF',
+  },
+  toggleChipActive: {
+    backgroundColor: '#102033',
+    borderColor: '#102033',
+  },
+  toggleChipText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#415466',
+  },
+  toggleChipTextActive: { color: COLORS.white },
+  navigationChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  navigationChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 999,
+    backgroundColor: '#F4F8FB',
+    borderWidth: 1,
+    borderColor: '#D7E5EF',
+  },
+  navigationChipActive: {
+    backgroundColor: '#102033',
+    borderColor: '#102033',
+  },
+  navigationChipText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#415466',
+  },
+  navigationChipTextActive: { color: COLORS.white },
+  navigationStatsCard: {
+    borderRadius: RADIUS.md,
+    backgroundColor: '#FFF6EC',
+    borderWidth: 1,
+    borderColor: '#F5D3AA',
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  navigationStatsTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.bold,
+    color: '#8A5317',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  navigationStatsText: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: '#8A5317',
+  },
+  navigationStatsMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: '#8A5317',
+    lineHeight: 20,
+  },
+  navigationButton: {
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+  },
+  navigationButtonStart: { backgroundColor: COLORS.black },
+  navigationButtonStop: { backgroundColor: COLORS.danger },
+  navigationButtonDisabled: { opacity: 0.55 },
+  navigationButtonText: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.bold,
+    color: COLORS.white,
+  },
   map: { width: '100%', height: 320, borderRadius: RADIUS.md },
   statusText: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
@@ -1003,3 +1722,4 @@ const styles = StyleSheet.create({
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md },
   stat: { fontSize: TYPOGRAPHY.fontSizes.small, fontFamily: FONTS.semibold, color: '#102033' },
 });
+

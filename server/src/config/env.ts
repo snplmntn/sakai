@@ -14,7 +14,12 @@ const envSchema = z.object({
   VERTEX_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL_PRIMARY: z.string().min(1).optional(),
   GEMINI_MODEL_LIGHT: z.string().min(1).optional(),
-  MMDA_SOURCE_URLS: z.string().min(1).optional()
+  MMDA_SOURCE_URLS: z.string().min(1).optional(),
+  MMDA_REFRESH_ENABLED: z.coerce.boolean().optional(),
+  MMDA_REFRESH_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
+  MMDA_BROWSER_FALLBACK_ENABLED: z.coerce.boolean().optional(),
+  MMDA_BROWSER_EXECUTABLE_PATH: z.string().min(1).optional(),
+  MMDA_BROWSER_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000)
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -36,6 +41,12 @@ export const getEnv = (): Env => {
     throw new Error(`Invalid environment configuration: ${issues}`);
   }
 
-  cachedEnv = parsedEnv.data;
+  cachedEnv = {
+    ...parsedEnv.data,
+    MMDA_REFRESH_ENABLED:
+      parsedEnv.data.MMDA_REFRESH_ENABLED ?? parsedEnv.data.NODE_ENV !== "test",
+    MMDA_BROWSER_FALLBACK_ENABLED:
+      parsedEnv.data.MMDA_BROWSER_FALLBACK_ENABLED ?? parsedEnv.data.NODE_ENV !== "test"
+  };
   return cachedEnv;
 };
