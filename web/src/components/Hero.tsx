@@ -2,44 +2,26 @@
 
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ChevronDown } from "lucide-react";
 
 function PhoneMockup() {
   return (
     <div className="relative w-56 mx-auto">
-      {/* Phone frame */}
       <svg
         viewBox="0 0 224 460"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className="w-full drop-shadow-2xl"
       >
-        {/* Body */}
-        <rect
-          x="2"
-          y="2"
-          width="220"
-          height="456"
-          rx="36"
-          fill="#1A2E44"
-          stroke="#2A4A66"
-          strokeWidth="2"
-        />
-        {/* Screen */}
+        <rect x="2" y="2" width="220" height="456" rx="36" fill="#1A2E44" stroke="#2A4A66" strokeWidth="2" />
         <rect x="12" y="14" width="200" height="432" rx="28" fill="#0A1929" />
-        {/* Notch */}
         <rect x="80" y="16" width="64" height="20" rx="10" fill="#1A2E44" />
-        {/* Status bar dots */}
         <circle cx="92" cy="26" r="4" fill="#2A4A66" />
         <circle cx="112" cy="26" r="3" fill="#007AFF" opacity="0.7" />
-        {/* App header */}
         <rect x="20" y="50" width="80" height="10" rx="5" fill="#A0B4C8" opacity="0.4" />
         <rect x="170" y="48" width="30" height="14" rx="7" fill="#007AFF" opacity="0.8" />
-        {/* Search bar */}
         <rect x="20" y="76" width="184" height="36" rx="12" fill="#1A2E44" />
         <circle cx="40" cy="94" r="6" fill="#007AFF" opacity="0.6" />
         <rect x="54" y="90" width="80" height="8" rx="4" fill="#A0B4C8" opacity="0.3" />
-        {/* Route card 1 */}
         <rect x="20" y="128" width="184" height="60" rx="12" fill="#1E3550" />
         <rect x="32" y="140" width="24" height="24" rx="8" fill="#007AFF" opacity="0.2" />
         <circle cx="44" cy="152" r="6" fill="#007AFF" opacity="0.8" />
@@ -47,7 +29,6 @@ function PhoneMockup() {
         <rect x="64" y="156" width="70" height="6" rx="3" fill="#A0B4C8" opacity="0.4" />
         <rect x="156" y="144" width="36" height="14" rx="7" fill="#007AFF" opacity="0.15" />
         <rect x="158" y="148" width="32" height="6" rx="3" fill="#007AFF" opacity="0.8" />
-        {/* Route card 2 */}
         <rect x="20" y="200" width="184" height="60" rx="12" fill="#1E3550" opacity="0.7" />
         <rect x="32" y="212" width="24" height="24" rx="8" fill="#34C759" opacity="0.15" />
         <circle cx="44" cy="224" r="6" fill="#34C759" opacity="0.8" />
@@ -55,7 +36,6 @@ function PhoneMockup() {
         <rect x="64" y="228" width="60" height="6" rx="3" fill="#A0B4C8" opacity="0.35" />
         <rect x="156" y="216" width="36" height="14" rx="7" fill="#34C759" opacity="0.12" />
         <rect x="158" y="220" width="32" height="6" rx="3" fill="#34C759" opacity="0.7" />
-        {/* Map area */}
         <rect x="20" y="276" width="184" height="100" rx="12" fill="#0E2236" />
         <path
           d="M40 340 Q80 300 120 320 Q160 340 184 310"
@@ -67,14 +47,13 @@ function PhoneMockup() {
         />
         <circle cx="40" cy="340" r="5" fill="#007AFF" opacity="0.9" />
         <circle cx="184" cy="310" r="5" fill="#34C759" opacity="0.9" />
-        {/* Bottom nav */}
         <rect x="20" y="392" width="184" height="44" rx="12" fill="#1A2E44" />
         <circle cx="68" cy="414" r="8" fill="#007AFF" opacity="0.8" />
         <circle cx="112" cy="414" r="6" fill="#A0B4C8" opacity="0.3" />
         <circle cx="156" cy="414" r="6" fill="#A0B4C8" opacity="0.3" />
       </svg>
 
-      {/* Floating route card — top right */}
+      {/* Floating route card */}
       <motion.div
         initial={{ opacity: 0, x: 24, y: -8 }}
         animate={{ opacity: 1, x: 0, y: 0 }}
@@ -94,7 +73,7 @@ function PhoneMockup() {
         </p>
       </motion.div>
 
-      {/* Floating alert — bottom left */}
+      {/* Floating alert */}
       <motion.div
         initial={{ opacity: 0, x: -24, y: 8 }}
         animate={{ opacity: 1, x: 0, y: 0 }}
@@ -119,7 +98,11 @@ function PhoneMockup() {
 
 export default function Hero() {
   const ref = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start start", "end start"],
+  });
+
   const y = useTransform(scrollYProgress, [0, 1], [0, 80]);
   const opacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
 
@@ -165,7 +148,7 @@ export default function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.2 }}
             className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight"
-            style={{ color: "#F7FBFE" }}
+            style={{ color: "#F7FBFE", fontFamily: "var(--font-display)" }}
           >
             Where to{" "}
             <span style={{ color: "#007AFF" }}>Sakai</span>
@@ -182,7 +165,6 @@ export default function Hero() {
             Voice-first jeepney and transit planner for Metro Manila. Say where you&apos;re going — Sakai handles the rest.
           </motion.p>
 
-          {/* Store badges */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -228,23 +210,6 @@ export default function Hero() {
           className="flex-shrink-0 w-full max-w-xs lg:max-w-sm"
         >
           <PhoneMockup />
-        </motion.div>
-      </motion.div>
-
-      {/* Scroll indicator */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.5, duration: 0.6 }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1"
-        style={{ color: "#A0B4C8" }}
-      >
-        <span className="text-xs tracking-widest uppercase">Scroll</span>
-        <motion.div
-          animate={{ y: [0, 6, 0] }}
-          transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <ChevronDown size={16} />
         </motion.div>
       </motion.div>
     </section>

@@ -32,36 +32,53 @@ function AnimatedCounter({ value, suffix }: { value: number; suffix: string }) {
 
 export default function Stats() {
   return (
-    <section className="py-16 px-4 sm:px-6">
-      <div className="max-w-4xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
+    <section className="py-20 px-4 sm:px-6">
+      <div className="max-w-5xl mx-auto">
+        <motion.p
+          initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="card-surface rounded-3xl px-6 py-10 grid grid-cols-1 sm:grid-cols-3 gap-8 text-center"
+          transition={{ duration: 0.5 }}
+          className="text-center uppercase tracking-widest text-xs mb-16"
+          style={{ color: "#007AFF", fontFamily: "var(--font-impact)", letterSpacing: "0.18em" }}
         >
+          By The Numbers
+        </motion.p>
+
+        <div className="flex flex-col sm:flex-row items-stretch justify-center">
           {stats.map((stat, idx) => (
             <motion.div
               key={stat.id}
-              initial={{ opacity: 0, y: 16 }}
+              initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: idx * 0.12 }}
-              className="flex flex-col items-center gap-1"
+              className="flex-1 flex flex-col items-center py-8 px-6 sm:px-10"
+              style={{
+                borderRight:
+                  idx < stats.length - 1 ? "1px solid var(--card-border)" : "none",
+              }}
             >
               <p
-                className="text-3xl sm:text-4xl font-bold tracking-tight"
-                style={{ color: "var(--text-primary)" }}
+                style={{
+                  fontFamily: "var(--font-impact)",
+                  fontSize: "clamp(4rem, 10vw, 9rem)",
+                  fontWeight: 700,
+                  color: "var(--text-primary)",
+                  lineHeight: 1,
+                }}
               >
                 <AnimatedCounter value={stat.value} suffix={stat.suffix} />
               </p>
-              <p className="text-sm" style={{ color: "var(--text-sub)" }}>
+              <p
+                className="mt-3 text-sm uppercase tracking-widest text-center"
+                style={{ color: "var(--text-sub)" }}
+              >
                 {stat.label}
               </p>
             </motion.div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
   );

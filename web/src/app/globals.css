@@ -14,6 +14,10 @@
   --navbar-bg: rgba(247, 251, 254, 0.8);
   --navbar-border: rgba(0, 122, 255, 0.1);
   --glow: rgba(0, 122, 255, 0.15);
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'Geist', sans-serif;
+  --font-mono: 'Syne Mono', monospace;
+  --font-impact: 'Space Grotesk', sans-serif;
 }
 
 .dark {
@@ -40,7 +44,7 @@ body {
   background: linear-gradient(160deg, var(--bg-from) 0%, var(--bg-to) 100%);
   background-attachment: fixed;
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-body);
   min-height: 100vh;
 }
 
@@ -76,3 +80,9 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
+
+@keyframes marquee-left  { 0% { transform: translateX(0) }    100% { transform: translateX(-50%) } }
+@keyframes marquee-right { 0% { transform: translateX(-50%) } 100% { transform: translateX(0) } }
+.marquee-track-left  { display: flex; width: max-content; animation: marquee-left  28s linear infinite; }
+.marquee-track-right { display: flex; width: max-content; animation: marquee-right 32s linear infinite; }
+.word-clip { display: inline-block; overflow: hidden; }
