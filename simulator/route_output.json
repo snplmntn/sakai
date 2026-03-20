@@ -1,0 +1,195 @@
+{
+  "mode": "combined",
+  "start_stop_id": "LTFRB_4954",
+  "start_stop_name": "Doroteo Jose LRT",
+  "end_stop_id": "LTFRB_4979",
+  "end_stop_name": "Pureza LRT",
+  "stop_sequence": [
+    {
+      "order": 1,
+      "stop_id": "LTFRB_4954",
+      "stop_name": "Doroteo Jose LRT",
+      "normalized_name": "doroteo jose lrt",
+      "lat": 14.6053,
+      "lon": 120.982,
+      "mode": "lrt",
+      "modes": [
+        "lrt"
+      ],
+      "line": "ROUTE_880747",
+      "lines": [
+        "ROUTE_880747"
+      ]
+    },
+    {
+      "order": 2,
+      "stop_id": "LTFRB_1526",
+      "stop_name": "LRT Doroteo Jose-Recto Station Walkway / Rizal Avenue Intersection, Manila",
+      "normalized_name": "lrt doroteo jose recto station walkway / rizal avenue intersection, manila",
+      "lat": 14.6037,
+      "lon": 120.983,
+      "mode": "jeep",
+      "modes": [
+        "jeep"
+      ],
+      "line": "LTFRB_PUJ1224",
+      "lines": [
+        "LTFRB_PUJ1224",
+        "LTFRB_PUJ1225",
+        "LTFRB_PUJ1270",
+        "LTFRB_PUJ1271",
+        "LTFRB_PUJ1278",
+        "LTFRB_PUJ1279",
+        "LTFRB_PUJ1284",
+        "LTFRB_PUJ1285",
+        "LTFRB_PUJ1288",
+        "LTFRB_PUJ1289",
+        "LTFRB_PUJ1290",
+        "LTFRB_PUJ1291",
+        "LTFRB_PUJ1426",
+        "LTFRB_PUJ1427",
+        "LTFRB_PUJ1464",
+        "LTFRB_PUJ1484",
+        "LTFRB_PUJ1485",
+        "LTFRB_PUJ1488",
+        "LTFRB_PUJ1883",
+        "LTFRB_PUJ1958",
+        "LTFRB_PUJ1959",
+        "LTFRB_PUJ1966",
+        "LTFRB_PUJ1967",
+        "LTFRB_PUJ1968",
+        "LTFRB_PUJ1969",
+        "LTFRB_PUJ1974",
+        "LTFRB_PUJ1975",
+        "LTFRB_PUJ2185",
+        "LTFRB_PUJ2197",
+        "LTFRB_PUJ2198",
+        "LTFRB_PUJ2360",
+        "LTFRB_PUJ2361",
+        "LTFRB_PUJ2362",
+        "LTFRB_PUJ2405",
+        "LTFRB_PUJ2406",
+        "LTFRB_PUJ2480",
+        "LTFRB_PUJ2509",
+        "LTFRB_PUJ2541"
+      ]
+    },
+    {
+      "order": 3,
+      "stop_id": "LTFRB_4977",
+      "stop_name": "Recto LRT",
+      "normalized_name": "recto lrt",
+      "lat": 14.6035078518,
+      "lon": 120.9834301472,
+      "mode": "lrt",
+      "modes": [
+        "lrt"
+      ],
+      "line": "ROUTE_880801",
+      "lines": [
+        "ROUTE_880801"
+      ]
+    },
+    {
+      "order": 4,
+      "stop_id": "LTFRB_4978",
+      "stop_name": "Legarda LRT",
+      "normalized_name": "legarda lrt",
+      "lat": 14.600777309,
+      "lon": 120.9924852848,
+      "mode": "lrt",
+      "modes": [
+        "lrt"
+      ],
+      "line": "ROUTE_880801",
+      "lines": [
+        "ROUTE_880801"
+      ]
+    },
+    {
+      "order": 5,
+      "stop_id": "LTFRB_4979",
+      "stop_name": "Pureza LRT",
+      "normalized_name": "pureza lrt",
+      "lat": 14.6017324837,
+      "lon": 121.005038023,
+      "mode": "lrt",
+      "modes": [
+        "lrt"
+      ],
+      "line": "ROUTE_880801",
+      "lines": [
+        "ROUTE_880801"
+      ]
+    }
+  ],
+  "edge_sequence": [
+    {
+      "source": "LTFRB_4954",
+      "target": "LTFRB_1526",
+      "mode": "transfer",
+      "line": "transfer",
+      "route_short_name": "transfer",
+      "route_long_name": "transfer",
+      "weight": 3,
+      "transfer": true,
+      "distance_meters": 207.92
+    },
+    {
+      "source": "LTFRB_1526",
+      "target": "LTFRB_4977",
+      "mode": "transfer",
+      "line": "transfer",
+      "route_short_name": "transfer",
+      "route_long_name": "transfer",
+      "weight": 1,
+      "transfer": true,
+      "distance_meters": 50.98
+    },
+    {
+      "source": "LTFRB_4977",
+      "target": "LTFRB_4978",
+      "mode": "lrt",
+      "line": "ROUTE_880801",
+      "route_short_name": "LRT 2",
+      "route_long_name": "Recto - Santolan",
+      "weight": 1,
+      "transfer": false,
+      "distance_meters": null
+    },
+    {
+      "source": "LTFRB_4978",
+      "target": "LTFRB_4979",
+      "mode": "lrt",
+      "line": "ROUTE_880801",
+      "route_short_name": "LRT 2",
+      "route_long_name": "Recto - Santolan",
+      "weight": 1,
+      "transfer": false,
+      "distance_meters": null
+    }
+  ],
+  "fare_segments": [
+    {
+      "mode": "lrt",
+      "line": "ROUTE_880801",
+      "route_short_name": "LRT 2",
+      "stops": [
+        "LTFRB_4977",
+        "LTFRB_4978",
+        "LTFRB_4979"
+      ],
+      "fare": 16.0
+    }
+  ],
+  "total_fare": 16.0,
+  "available_modes": [
+    "jeep",
+    "lrt",
+    "mrt"
+  ],
+  "graph_summary": {
+    "nodes": 4857,
+    "edges": 11909
+  }
+}

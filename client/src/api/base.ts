@@ -139,6 +139,16 @@ const redactSensitiveData = (data: unknown): unknown => {
   return redacted;
 };
 
+const redactHeaders = (headers: Record<string, string>): Record<string, string> => {
+  const redactedHeaders = { ...headers };
+
+  if ('Authorization' in redactedHeaders) {
+    redactedHeaders.Authorization = '[REDACTED]';
+  }
+
+  return redactedHeaders;
+};
+
 const performRequest = async (
   options: RequestOptions,
   headers: Record<string, string>
@@ -151,7 +161,7 @@ const performRequest = async (
 
   console.log(`[API Request] ${options.method} ${url}`, {
     body: redactSensitiveData(options.body),
-    headers,
+    headers: redactHeaders(headers),
   });
 
   try {

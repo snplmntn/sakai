@@ -1,7 +1,7 @@
 import {
-  useCallback,
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -112,7 +112,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await writeHasCompletedOnboarding();
     setUnauthenticatedRoute('Login');
   }, []);
-
   const syncStoredPreferenceDraft = useCallback(async (accessToken: string): Promise<void> => {
     const storedDraft = await readStoredPreferenceDraft();
 
@@ -204,9 +203,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [clearAuthState, persistAuthenticatedState]);
 
-  const signIn = async (email: string, password: string): Promise<AuthPayload> => {
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthPayload> => {
     const payload = await signInRequest({
       email: email.trim(),
       password,
@@ -216,9 +215,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await persistAuthenticatedState(nextState);
 
     return payload;
-  };
+  }, [persistAuthenticatedState]);
 
-  const signUp = async (email: string, password: string): Promise<AuthPayload> => {
+  const signUp = useCallback(async (email: string, password: string): Promise<AuthPayload> => {
     const payload = await signUpRequest({
       email: email.trim(),
       password,
@@ -228,9 +227,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await clearAuthState('Login');
 
     return payload;
-  };
+  }, [clearAuthState, markOnboardingComplete]);
 
-  const authenticateWithGoogle = async (origin: GoogleAuthOrigin): Promise<void> => {
+  const authenticateWithGoogle = useCallback(async (origin: GoogleAuthOrigin): Promise<void> => {
     if (googleAuthInFlightRef.current) {
       return;
     }
@@ -274,9 +273,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       googleAuthInFlightRef.current = false;
     }
-  };
+  }, [clearAuthState, persistAuthenticatedState]);
 
-  const signOut = async (): Promise<void> => {
+  const signOut = useCallback(async (): Promise<void> => {
     const accessToken = authState.session?.accessToken;
 
     try {
@@ -286,7 +285,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       await clearAuthState('Login');
     }
-  };
+  }, [authState.session?.accessToken, clearAuthState]);
 
   const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
     const currentSession = authState.session;

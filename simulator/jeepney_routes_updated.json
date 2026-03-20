@@ -1,0 +1,164 @@
+{
+    "stops": [
+        {
+            "id": 1,
+            "name": "Alabang",
+            "lat": 14.423127,
+            "lng": 121.045653
+        },
+        {
+            "id": 2,
+            "name": "Sucat",
+            "lat": 14.453759,
+            "lng": 121.045772
+        },
+        {
+            "id": 3,
+            "name": "Tanyag",
+            "lat": 14.481497,
+            "lng": 121.045374
+        },
+        {
+            "id": 4,
+            "name": "Bicutan",
+            "lat": 14.486595,
+            "lng": 121.045493
+        },
+        {
+            "id": 5,
+            "name": "DOST",
+            "lat": 14.488934,
+            "lng": 121.046981
+        },
+        {
+            "id": 6,
+            "name": "Tenement",
+            "lat": 14.507707,
+            "lng": 121.035057
+        },
+        {
+            "id": 7,
+            "name": "Gate 3",
+            "lat": 14.525036,
+            "lng": 121.026618
+        },
+        {
+            "id": 8,
+            "name": "Magallanes",
+            "lat": 14.540418,
+            "lng": 121.016215
+        },
+        {
+            "id": 9,
+            "name": "Evangelista",
+            "lat": 14.539118,
+            "lng": 121.012297
+        },
+        {
+            "id": 10,
+            "name": "Cabrera",
+            "lat": 14.538206,
+            "lng": 121.004894
+        },
+        {
+            "id": 11,
+            "name": "Tramo",
+            "lat": 14.537959,
+            "lng": 121.003211
+        },
+        {
+            "id": 12,
+            "name": "Pasay",
+            "lat": 14.537745,
+            "lng": 121.001557
+        }
+    ],
+    "routes": [
+        {
+            "id": 1,
+            "name": "Alabang–Pasay",
+            "stops": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+            ]
+        }
+    ],
+    "edges": [
+        {
+            "from": 1,
+            "to": 2,
+            "route": 1,
+            "time": 10
+        },
+        {
+            "from": 2,
+            "to": 3,
+            "route": 1,
+            "time": 9
+        },
+        {
+            "from": 3,
+            "to": 4,
+            "route": 1,
+            "time": 2
+        },
+        {
+            "from": 4,
+            "to": 5,
+            "route": 1,
+            "time": 2
+        },
+        {
+            "from": 5,
+            "to": 6,
+            "route": 1,
+            "time": 7
+        },
+        {
+            "from": 6,
+            "to": 7,
+            "route": 1,
+            "time": 6
+        },
+        {
+            "from": 7,
+            "to": 8,
+            "route": 1,
+            "time": 6
+        },
+        {
+            "from": 8,
+            "to": 9,
+            "route": 1,
+            "time": 2
+        },
+        {
+            "from": 9,
+            "to": 10,
+            "route": 1,
+            "time": 2
+        },
+        {
+            "from": 10,
+            "to": 11,
+            "route": 1,
+            "time": 2
+        },
+        {
+            "from": 11,
+            "to": 12,
+            "route": 1,
+            "time": 2
+        }
+    ]
+}
