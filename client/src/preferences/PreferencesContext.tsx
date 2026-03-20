@@ -28,7 +28,10 @@ interface PreferencesContextValue {
   status: 'loading' | 'ready';
   isUpdating: boolean;
   updatePreferences: (
-    input: Pick<UserPreferences, 'defaultPreference' | 'passengerType' | 'routeModifiers'>
+    input: Pick<
+      UserPreferences,
+      'defaultPreference' | 'passengerType' | 'routeModifiers' | 'voiceLanguage'
+    >
   ) => Promise<UserPreferences>;
   refreshPreferences: () => Promise<void>;
 }
@@ -81,6 +84,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       const effectivePreferences: UserPreferences = {
         ...persistedPreferences,
         routeModifiers: storedPreferences?.routeModifiers ?? [],
+        voiceLanguage: storedPreferences?.voiceLanguage ?? createDefaultUserPreferences().voiceLanguage,
       };
 
       await writeStoredPreferences(
@@ -130,7 +134,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [authStatus, session?.accessToken]);
 
   const updatePreferences = async (
-    input: Pick<UserPreferences, 'defaultPreference' | 'passengerType' | 'routeModifiers'>
+    input: Pick<
+      UserPreferences,
+      'defaultPreference' | 'passengerType' | 'routeModifiers' | 'voiceLanguage'
+    >
   ): Promise<UserPreferences> => {
     if (authStatus !== 'authenticated' || !session?.accessToken) {
       const nextPreferences: UserPreferences = {
@@ -138,6 +145,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         defaultPreference: input.defaultPreference,
         passengerType: input.passengerType,
         routeModifiers: input.routeModifiers,
+        voiceLanguage: input.voiceLanguage,
       };
 
       await writeStoredPreferences(toStoredPreferences(nextPreferences, 'pending'));
@@ -157,6 +165,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       const nextPreferences: UserPreferences = {
         ...savedPreferences,
         routeModifiers: input.routeModifiers,
+        voiceLanguage: input.voiceLanguage,
       };
 
       await writeStoredPreferences(toStoredPreferences(nextPreferences, 'synced'));

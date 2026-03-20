@@ -11,6 +11,7 @@ import { COLORS } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { writeStoredPreferenceDraft } from '../preferences/storage';
 import type { PassengerType } from '../preferences/types';
+import { DEFAULT_VOICE_LANGUAGE } from '../voice/languages';
 import {
   OnboardingPreferencesLayout,
   PASSENGER_TYPE_OPTIONS,
@@ -43,6 +44,7 @@ export default function OnboardingPassengerProfileScreen({
         defaultPreference,
         passengerType,
         routeModifiers: [],
+        voiceLanguage: DEFAULT_VOICE_LANGUAGE,
       });
 
       navigation.navigate(destination);

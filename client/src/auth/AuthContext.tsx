@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -10,7 +11,7 @@ import * as WebBrowser from 'expo-web-browser';
 
 import {
   ApiError,
-  getGoogleAuthUrl,
+  buildGoogleAuthStartUrl,
   getMe,
   refreshSession,
   signIn as signInRequest,
@@ -28,6 +29,7 @@ import {
 } from '../preferences/storage';
 import {
   getMyPreferences,
+  toPersistedPreferenceDraft,
   upsertMyPreferences,
 } from '../preferences/api';
 import {
@@ -101,6 +103,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [unauthenticatedRoute, setUnauthenticatedRoute] = useState<'Welcome' | 'Login'>(
     'Welcome'
   );
+  const googleAuthInFlightRef = useRef(false);
 
   const syncStoredPreferenceDraft = async (accessToken: string): Promise<void> => {
     const storedDraft = await readStoredPreferenceDraft();
@@ -116,7 +119,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return;
     }
 
-    await upsertMyPreferences(accessToken, storedDraft);
+    await upsertMyPreferences(accessToken, toPersistedPreferenceDraft(storedDraft));
     await clearStoredPreferenceDraft();
   };
 
@@ -207,33 +210,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const authenticateWithGoogle = async (origin: GoogleAuthOrigin): Promise<void> => {
+    if (googleAuthInFlightRef.current) {
+      return;
+    }
+
+    googleAuthInFlightRef.current = true;
     const actionLabel = origin === 'signup' ? 'sign up' : 'sign in';
-    const redirectUri = ExpoAuthSession.makeRedirectUri({
-      scheme: 'sakai',
-      path: GOOGLE_AUTH_REDIRECT_PATH,
-    });
-    const googleAuthUrlPayload = await getGoogleAuthUrl(redirectUri);
-    const authResult = await WebBrowser.openAuthSessionAsync(
-      googleAuthUrlPayload.url,
-      redirectUri
-    );
-
-    if (authResult.type !== 'success') {
-      throw new Error(
-        authResult.type === 'cancel'
-          ? `Google ${actionLabel} was cancelled.`
-          : `Google ${actionLabel} did not complete.`
-      );
-    }
-
-    const callbackResult = parseGoogleAuthCallbackResult(authResult.url);
-
-    if (callbackResult.status === 'error') {
-      await clearAuthState();
-      throw new ApiError(401, callbackResult.message);
-    }
-
     try {
+      const redirectUri = ExpoAuthSession.makeRedirectUri({
+        scheme: 'sakai',
+        path: GOOGLE_AUTH_REDIRECT_PATH,
+      });
+      const authResult = await WebBrowser.openAuthSessionAsync(
+        buildGoogleAuthStartUrl(redirectUri),
+        redirectUri
+      );
+
+      if (authResult.type !== 'success') {
+        throw new Error(
+          authResult.type === 'cancel'
+            ? `Google ${actionLabel} was cancelled.`
+            : `Google ${actionLabel} did not complete.`
+        );
+      }
+
+      const callbackResult = parseGoogleAuthCallbackResult(authResult.url);
+
+      if (callbackResult.status === 'error') {
+        await clearAuthState();
+        throw new ApiError(401, callbackResult.message);
+      }
+
       const user = await getMe(callbackResult.session.accessToken);
 
       await persistAuthenticatedState({
@@ -243,6 +250,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error) {
       await clearAuthState();
       throw error;
+    } finally {
+      googleAuthInFlightRef.current = false;
     }
   };
 

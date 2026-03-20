@@ -6,7 +6,17 @@ import {
   type UserPreferences,
 } from './types';
 
-type PersistedPreferenceDraft = Pick<PreferenceDraft, 'defaultPreference' | 'passengerType'>;
+export type PersistedPreferenceDraft = Pick<
+  PreferenceDraft,
+  'defaultPreference' | 'passengerType'
+>;
+
+export const toPersistedPreferenceDraft = (
+  value: Pick<PreferenceDraft, 'defaultPreference' | 'passengerType'>
+): PersistedPreferenceDraft => ({
+  defaultPreference: value.defaultPreference,
+  passengerType: value.passengerType,
+});
 
 const requestPreferences = async (
   accessToken: string,
@@ -18,7 +28,7 @@ const requestPreferences = async (
       method,
       path: '/api/me/preferences',
       accessToken,
-      body,
+      body: body ? toPersistedPreferenceDraft(body) : undefined,
     },
     parseUserPreferences
   );
