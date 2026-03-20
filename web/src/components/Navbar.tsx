@@ -44,19 +44,13 @@ export default function Navbar() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <Link
             href="/guides"
-            className="nav-guides-link text-sm font-medium px-4 py-2 rounded-full transition-opacity hover:opacity-80"
+            className="btn-primary text-sm font-medium px-4 py-2 rounded-full transition-opacity hover:opacity-80"
           >
             Guides
           </Link>
-          <ThemeToggle />
-          <a
-            href="#download"
-            className="btn-primary text-sm font-medium px-4 py-2 rounded-full transition-opacity hover:opacity-80"
-          >
-            Download App
-          </a>
         </div>
       </div>
     </motion.nav>
