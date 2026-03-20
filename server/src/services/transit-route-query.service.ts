@@ -573,6 +573,7 @@ const buildTransitRouteOption = async (input: {
     fareAssumptions: pricedRideLegs.fareAssumptions,
     legs: routeLegs,
     relevantIncidents: [],
+    source: "sakai",
     navigationTarget: buildNavigationTarget({
       normalizedQuery: input.normalizedQuery,
       rideLegs
@@ -719,6 +720,10 @@ export const queryTransitRoutesIfPossible = async (input: {
     return {
       normalizedQuery,
       options: [],
+      googleFallback: {
+        status: "skipped",
+        options: []
+      },
       message: `No supported route found for ${normalizedQuery.origin.label} to ${normalizedQuery.destination.label} in the current coverage`
     };
   }
@@ -752,6 +757,10 @@ export const queryTransitRoutesIfPossible = async (input: {
 
   return {
     normalizedQuery,
-    options: summarizedOptions
+    options: summarizedOptions,
+    googleFallback: {
+      status: "skipped",
+      options: []
+    }
   };
 };

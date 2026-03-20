@@ -582,6 +582,11 @@ describe("app routes", () => {
         modifierSource: "default"
       },
       options: [],
+      googleFallback: {
+        status: "no_results",
+        options: [],
+        message: "Google Maps did not return fallback transit routes."
+      },
       message: "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
     });
 
@@ -625,6 +630,11 @@ describe("app routes", () => {
           modifierSource: "default"
         },
         options: [],
+        googleFallback: {
+          status: "no_results",
+          options: [],
+          message: "Google Maps did not return fallback transit routes."
+        },
         message: "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
       }
     });
@@ -666,7 +676,12 @@ describe("app routes", () => {
         modifiers: [],
         modifierSource: "default"
       },
-      options: []
+      options: [],
+      googleFallback: {
+        status: "no_results",
+        options: [],
+        message: "Google Maps did not return fallback transit routes."
+      }
     });
 
     const response = await invokeApp({

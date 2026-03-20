@@ -52,6 +52,10 @@ vi.mock("../src/ai/route-summary.js", () => ({
   generateRouteSummary: vi.fn()
 }));
 
+vi.mock("../src/services/google-route-fallback.service.js", () => ({
+  queryGoogleFallbackRoutes: vi.fn()
+}));
+
 import { AiUnavailableError } from "../src/ai/client.js";
 import * as intentParser from "../src/ai/intent-parser.js";
 import * as areaUpdateModel from "../src/models/area-update.model.js";
@@ -62,6 +66,7 @@ import * as routeModel from "../src/models/route.model.js";
 import * as stopModel from "../src/models/stop.model.js";
 import * as transferPointModel from "../src/models/transfer-point.model.js";
 import * as userPreferenceModel from "../src/models/user-preference.model.js";
+import * as googleRouteFallbackService from "../src/services/google-route-fallback.service.js";
 import { queryRoutes } from "../src/services/route-query.service.js";
 import { HttpError } from "../src/types/http-error.js";
 
@@ -74,6 +79,7 @@ const mockedRouteSummary = vi.mocked(routeSummary);
 const mockedStopModel = vi.mocked(stopModel);
 const mockedTransferPointModel = vi.mocked(transferPointModel);
 const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
+const mockedGoogleRouteFallbackService = vi.mocked(googleRouteFallbackService);
 
 const createStop = (id: string, stopName: string, mode: "jeepney" | "lrt2", placeId: string | null = null) => ({
   id,
@@ -174,6 +180,11 @@ describe("route query service", () => {
     mockedStopModel.findNearestStops.mockResolvedValue([]);
     mockedTransferPointModel.listTransferPointsByStopIds.mockResolvedValue([]);
     mockedFareModel.getActiveFareCatalog.mockResolvedValue(jeepneyFareCatalog);
+    mockedGoogleRouteFallbackService.queryGoogleFallbackRoutes.mockResolvedValue({
+      status: "no_results",
+      options: [],
+      message: "Google Maps did not return fallback transit routes."
+    });
   });
 
   it("uses saved preferences when request overrides are absent and returns a direct route", async () => {
