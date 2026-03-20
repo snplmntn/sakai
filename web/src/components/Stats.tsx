@@ -33,19 +33,19 @@ function AnimatedCounter({ value, suffix }: { value: number; suffix: string }) {
 export default function Stats() {
   return (
     <section className="py-20 px-4 sm:px-6">
-      <div className="max-w-5xl mx-auto">
+      <div className="mx-auto w-full max-w-none">
         <motion.p
           initial={{ opacity: 0, y: 12 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.5 }}
-          className="text-center uppercase tracking-widest text-xs mb-16"
+          className="text-center uppercase tracking-widest mb-16 text-base sm:text-lg lg:text-xl uppercase "
           style={{ color: "#007AFF", fontFamily: "var(--font-impact)", letterSpacing: "0.18em" }}
         >
           By The Numbers
         </motion.p>
 
-        <div className="flex flex-col sm:flex-row items-stretch justify-center">
+        <div className="grid grid-cols-1 items-stretch justify-center overflow-hidden rounded-[28px] border border-[var(--card-border)] sm:grid-cols-3">
           {stats.map((stat, idx) => (
             <motion.div
               key={stat.id}
@@ -53,26 +53,27 @@ export default function Stats() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: idx * 0.12 }}
-              className="flex-1 flex flex-col items-center py-8 px-6 sm:px-10"
-              style={{
-                borderRight:
-                  idx < stats.length - 1 ? "1px solid var(--card-border)" : "none",
-              }}
+              className={[
+                "flex min-w-0 flex-col items-center px-4 py-6 sm:px-4 sm:py-8",
+                idx < stats.length - 1 ? "border-b border-[var(--card-border)] sm:border-b-0 sm:border-r" : "",
+              ].join(" ")}
             >
               <p
+                className="w-full text-center"
                 style={{
                   fontFamily: "var(--font-impact)",
-                  fontSize: "clamp(4rem, 10vw, 9rem)",
+                  fontSize: "clamp(2.5rem, 12vw, 4.9rem)",
                   fontWeight: 700,
                   color: "var(--text-primary)",
-                  lineHeight: 1,
+                  lineHeight: 0.9,
+                  whiteSpace: "nowrap",
                 }}
               >
                 <AnimatedCounter value={stat.value} suffix={stat.suffix} />
               </p>
               <p
-                className="mt-3 text-sm uppercase tracking-widest text-center"
-                style={{ color: "var(--text-sub)" }}
+                className="mt-2 max-w-[12ch] text-center text-sm uppercase tracking-[0.06em] sm:mt-3 sm:max-w-full sm:text-base sm:tracking-[0.12em]"
+                style={{ color: "var(--text-sub)", textWrap: "balance" }}
               >
                 {stat.label}
               </p>
