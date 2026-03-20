@@ -106,7 +106,6 @@ export const configureArrivalNotifications = async (): Promise<boolean> => {
       await runtime.api.setNotificationChannelAsync(NEAR_DESTINATION_SOUND_CHANNEL, {
         name: 'Near destination sound',
         importance: runtime.api.AndroidImportance.MAX,
-        sound: 'default',
         enableVibrate: false,
         lockscreenVisibility: runtime.api.AndroidNotificationVisibility.PUBLIC,
       });
@@ -121,7 +120,6 @@ export const configureArrivalNotifications = async (): Promise<boolean> => {
       await runtime.api.setNotificationChannelAsync(NEAR_DESTINATION_BOTH_CHANNEL, {
         name: 'Near destination alarm',
         importance: runtime.api.AndroidImportance.MAX,
-        sound: 'default',
         enableVibrate: true,
         vibrationPattern: ALERT_VIBRATION_PATTERN,
         lockscreenVisibility: runtime.api.AndroidNotificationVisibility.PUBLIC,
@@ -177,7 +175,7 @@ export const scheduleArrivalNotification = async (params: {
           type: 'near-destination-alert',
           routeId: params.routeId,
         },
-        sound: params.alarmMode === 'vibration' ? false : 'default',
+        sound: params.alarmMode === 'vibration' ? false : true,
         vibrate:
           params.alarmMode === 'sound' ? undefined : ALERT_VIBRATION_PATTERN,
         priority: runtime.api.AndroidNotificationPriority.MAX,
