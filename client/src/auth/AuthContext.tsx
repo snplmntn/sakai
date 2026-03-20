@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -105,7 +106,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
   const googleAuthInFlightRef = useRef(false);
 
-  const syncStoredPreferenceDraft = async (accessToken: string): Promise<void> => {
+  const syncStoredPreferenceDraft = useCallback(async (accessToken: string): Promise<void> => {
     const storedDraft = await readStoredPreferenceDraft();
 
     if (!storedDraft) {
@@ -121,9 +122,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     await upsertMyPreferences(accessToken, toPersistedPreferenceDraft(storedDraft));
     await clearStoredPreferenceDraft();
-  };
+  }, []);
 
-  const persistAuthenticatedState = async (value: StoredAuthState): Promise<void> => {
+  const persistAuthenticatedState = useCallback(async (value: StoredAuthState): Promise<void> => {
     await writeStoredAuthState(value);
 
     try {
@@ -136,15 +137,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     setUnauthenticatedRoute('Welcome');
     setAuthState(toAuthenticatedState(value));
-  };
+  }, [syncStoredPreferenceDraft]);
 
-  const clearAuthState = async (
+  const clearAuthState = useCallback(async (
     route: 'Welcome' | 'Login' = 'Welcome'
   ): Promise<void> => {
     await clearStoredAuthState();
     setUnauthenticatedRoute(route);
     setAuthState(UNAUTHENTICATED_STATE);
-  };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -184,9 +185,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [clearAuthState, persistAuthenticatedState]);
 
-  const signIn = async (email: string, password: string): Promise<AuthPayload> => {
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthPayload> => {
     const payload = await signInRequest({
       email: email.trim(),
       password,
@@ -196,9 +197,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await persistAuthenticatedState(nextState);
 
     return payload;
-  };
+  }, [persistAuthenticatedState]);
 
-  const signUp = async (email: string, password: string): Promise<AuthPayload> => {
+  const signUp = useCallback(async (email: string, password: string): Promise<AuthPayload> => {
     const payload = await signUpRequest({
       email: email.trim(),
       password,
@@ -207,9 +208,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await clearAuthState('Welcome');
 
     return payload;
-  };
+  }, [clearAuthState]);
 
-  const authenticateWithGoogle = async (origin: GoogleAuthOrigin): Promise<void> => {
+  const authenticateWithGoogle = useCallback(async (origin: GoogleAuthOrigin): Promise<void> => {
     if (googleAuthInFlightRef.current) {
       return;
     }
@@ -253,9 +254,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       googleAuthInFlightRef.current = false;
     }
-  };
+  }, [clearAuthState, persistAuthenticatedState]);
 
-  const signOut = async (): Promise<void> => {
+  const signOut = useCallback(async (): Promise<void> => {
     const accessToken = authState.session?.accessToken;
 
     try {
@@ -265,9 +266,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       await clearAuthState('Login');
     }
-  };
+  }, [authState.session?.accessToken, clearAuthState]);
 
-  const refreshUser = async (): Promise<AuthUser | null> => {
+  const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
     const currentSession = authState.session;
 
     if (!currentSession) {
@@ -308,7 +309,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await clearAuthState();
       return null;
     }
-  };
+  }, [authState.session, clearAuthState, persistAuthenticatedState]);
 
   const contextValue: AuthContextValue = {
     status: authState.status,
