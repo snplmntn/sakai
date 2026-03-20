@@ -83,7 +83,7 @@ export default function HowItWorks() {
           {/* Left: giant step number */}
           <div className="flex-shrink-0 flex flex-col items-center lg:items-start">
             <p
-              className="text-xs uppercase tracking-widest mb-2"
+              className="text-base sm:text-lg lg:text-xl uppercase tracking-[0.28em] mb-3"
               style={{ color: "#007AFF", fontFamily: "var(--font-mono)" }}
             >
               How It Works
