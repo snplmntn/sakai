@@ -30,6 +30,11 @@ import type {
 } from "../types/route-query.js";
 import type { RoutePreference } from "../models/user-preference.model.js";
 import { priceRideLegsWithCatalog, type FareRideLegInput } from "./fare-engine.service.js";
+import {
+  buildPlannerCandidateMetrics,
+  buildRuntimeManualTransferPoints,
+  dominatesPlannerCandidate
+} from "./route-planner-rules.js";
 import { attachRelevantIncidentsToOptions } from "./route-incident.service.js";
 import { rankRouteOptions } from "./route-ranking.service.js";
 import { queryTransitRoutesIfPossible } from "./transit-route-query.service.js";
@@ -419,6 +424,17 @@ const buildCoordinateResolvedPlace = (
 };
 
 const isSyntheticCoordinatePlaceId = (placeId: string) => placeId.startsWith("coords:");
+const isTransitClusterPlaceId = (placeId: string) => placeId.startsWith("cluster:");
+
+const buildPointFromResolvedPlace = (
+  point: RouteQueryPointInput,
+  place: Pick<PlaceMatch, "id" | "canonicalName" | "latitude" | "longitude">
+): RouteQueryPointInput => ({
+  placeId: place.id,
+  label: place.canonicalName,
+  latitude: point.latitude ?? place.latitude,
+  longitude: point.longitude ?? place.longitude
+});
 
 const listNearbyRideAccessStops = async (point: RouteQueryPointInput) => {
   const coordinates = getCoordinatesFromPoint(point);
@@ -500,7 +516,15 @@ const resolveEndpoint = async (
     googlePlaceId: point.googlePlaceId,
     query: point.label
   });
-  const nearbyStops = await listNearbyRideAccessStops(point);
+  let nearbyStops = await listNearbyRideAccessStops(point);
+
+  if (
+    nearbyStops.length === 0 &&
+    resolution.status === "resolved" &&
+    !getCoordinatesFromPoint(point)
+  ) {
+    nearbyStops = await listNearbyRideAccessStops(buildPointFromResolvedPlace(point, resolution.place));
+  }
 
   if (resolution.status === "unresolved" && nearbyStops.length > 0) {
     const nearbyPlace = await resolvePlaceFromNearbyStops({
@@ -556,8 +580,11 @@ const resolveEndpoint = async (
   }
 
   const accessStopMap = new Map<string, AccessStopCandidate>();
+  const shouldLoadPlaceLinkedStops =
+    !isSyntheticCoordinatePlaceId(resolution.place.id) &&
+    !isTransitClusterPlaceId(resolution.place.id);
 
-  if (!isSyntheticCoordinatePlaceId(resolution.place.id)) {
+  if (shouldLoadPlaceLinkedStops) {
     try {
       for (const stop of await stopModel.listStopsByPlaceId(resolution.place.id)) {
         accessStopMap.set(stop.id, buildAccessStopCandidate(stop, 0, "walk"));
@@ -814,9 +841,11 @@ const buildMultimodalCandidateDrafts = (input: {
   transferPoints: TransferPoint[];
   originLabel: string;
   destinationLabel: string;
+  preference: RoutePreference;
+  modifiers: RouteModifier[];
 }): CandidateDraft[] => {
+  const stopById = new Map<string, Stop>();
   const routeSlicesByFromStopId = listRouteSlicesFromStopIds(input.variants);
-  const transferMap = buildTransferMapByFromStopId(input.transferPoints);
   const queue: MultimodalPathState[] = [];
   const destinationCandidates: CandidateDraft[] = [];
   const stopNameById = new Map<string, string>();
@@ -842,6 +871,8 @@ const buildMultimodalCandidateDrafts = (input: {
     for (const leg of variant.legs) {
       stopNameById.set(leg.fromStop.id, leg.fromStop.stopName);
       stopNameById.set(leg.toStop.id, leg.toStop.stopName);
+      stopById.set(leg.fromStop.id, leg.fromStop);
+      stopById.set(leg.toStop.id, leg.toStop);
     }
   }
 
@@ -850,6 +881,7 @@ const buildMultimodalCandidateDrafts = (input: {
 
     if (accessCandidate) {
       stopNameById.set(accessCandidate.stop.id, accessCandidate.stop.stopName);
+      stopById.set(accessCandidate.stop.id, accessCandidate.stop);
     }
   }
 
@@ -858,8 +890,14 @@ const buildMultimodalCandidateDrafts = (input: {
 
     if (accessCandidate) {
       stopNameById.set(accessCandidate.stop.id, accessCandidate.stop.stopName);
+      stopById.set(accessCandidate.stop.id, accessCandidate.stop);
     }
   }
+
+  const transferMap = buildTransferMapByFromStopId([
+    ...input.transferPoints,
+    ...buildRuntimeManualTransferPoints([...stopById.values()])
+  ]);
 
   const pushOriginState = (firstSlice: RouteSlice) => {
     const originAccess = input.originAccessMap.get(firstSlice.fromStop.id);
@@ -1009,16 +1047,28 @@ const buildMultimodalCandidateDrafts = (input: {
     });
   }
 
-  return dedupeCandidateDrafts(destinationCandidates).slice(0, MAX_CANDIDATE_DRAFTS);
+  return dedupeCandidateDrafts(destinationCandidates, {
+    preference: input.preference,
+    modifiers: input.modifiers
+  }).slice(0, MAX_CANDIDATE_DRAFTS);
 };
 
 const buildTransferMapByFromStopId = (transferPoints: TransferPoint[]) => {
   const transferMap = new Map<string, TransferPoint[]>();
+  const seenTransferKeys = new Set<string>();
 
   for (const transferPoint of transferPoints) {
     if (!transferPoint.isAccessible) {
       continue;
     }
+
+    const transferKey = `${transferPoint.fromStopId}:${transferPoint.toStopId}`;
+
+    if (seenTransferKeys.has(transferKey)) {
+      continue;
+    }
+
+    seenTransferKeys.add(transferKey);
 
     const existingTransfers = transferMap.get(transferPoint.fromStopId) ?? [];
 
@@ -1218,16 +1268,72 @@ const buildRouteOption = (
 const buildRouteQueryMessage = (normalizedQuery: RouteQueryNormalizedInput) =>
   `No supported route found for ${normalizedQuery.origin.label} to ${normalizedQuery.destination.label} in the current coverage`;
 
-const dedupeCandidateDrafts = (drafts: CandidateDraft[]) => {
-  const draftMap = new Map<string, CandidateDraft>();
+const dedupeCandidateDrafts = (
+  drafts: CandidateDraft[],
+  input: {
+    preference: RoutePreference;
+    modifiers: RouteModifier[];
+  }
+) => {
+  const draftMap = new Map<string, { draft: CandidateDraft; metrics: ReturnType<typeof buildPlannerCandidateMetrics> }>();
 
   for (const draft of drafts) {
-    if (!draftMap.has(draft.signature)) {
-      draftMap.set(draft.signature, draft);
+    const transferDurationsMinutes = draft.transitionLegs
+      .filter((transitionLeg) => transitionLeg.id.startsWith("transfer:"))
+      .map((transitionLeg) => transitionLeg.durationMinutes);
+    const rideSegments = draft.rideLegs.map((rideLeg, rideIndex) => ({
+      mode: rideLeg.variant.route.primaryMode,
+      durationMinutes: rideLeg.durationMinutes,
+      distanceMeters: rideLeg.distanceKm * 1_000,
+      transferBefore: rideIndex > 0 && draft.transitionLegs.some((transitionLeg) => transitionLeg.id === `transfer:${rideIndex - 1}`),
+      transferAfter: draft.transitionLegs.some((transitionLeg) => transitionLeg.id === `transfer:${rideIndex}`)
+    }));
+    const metrics = buildPlannerCandidateMetrics({
+      preference: input.preference,
+      modifiers: input.modifiers,
+      totalDurationMinutes:
+        draft.rideLegs.reduce((total, rideLeg) => total + rideLeg.durationMinutes, 0) +
+        draft.transitionLegs.reduce((total, transitionLeg) => total + transitionLeg.durationMinutes, 0),
+      rideSegments,
+      transferDurationsMinutes
+    });
+    const existing = draftMap.get(draft.signature);
+
+    if (!existing || metrics.score < existing.metrics.score) {
+      draftMap.set(draft.signature, {
+        draft,
+        metrics
+      });
     }
   }
 
-  return [...draftMap.values()];
+  const prioritized = [...draftMap.values()].sort(
+    (left, right) =>
+      left.metrics.score - right.metrics.score ||
+      left.metrics.transferCount - right.metrics.transferCount ||
+      left.metrics.rideHopCount - right.metrics.rideHopCount ||
+      left.metrics.totalDurationMinutes - right.metrics.totalDurationMinutes ||
+      left.draft.signature.localeCompare(right.draft.signature)
+  );
+  const filtered: typeof prioritized = [];
+
+  for (const candidate of prioritized) {
+    if (filtered.some((existing) => dominatesPlannerCandidate(existing.metrics, candidate.metrics))) {
+      continue;
+    }
+
+    for (let index = filtered.length - 1; index >= 0; index -= 1) {
+      const existing = filtered[index];
+
+      if (existing && dominatesPlannerCandidate(candidate.metrics, existing.metrics)) {
+        filtered.splice(index, 1);
+      }
+    }
+
+    filtered.push(candidate);
+  }
+
+  return filtered.map((entry) => entry.draft);
 };
 
 const mapWithConcurrency = async <TValue, TResult>(
@@ -1321,8 +1427,8 @@ export const queryRoutes = async (input: {
 
   const [transitResult, googleFallback] = await Promise.all([
     queryTransitRoutesIfPossible({
-      origin: parsedContext.origin,
-      destination: parsedContext.destination,
+      origin: buildPointFromResolvedPlace(parsedContext.origin, originResolution.place),
+      destination: buildPointFromResolvedPlace(parsedContext.destination, destinationResolution.place),
       preference: effectiveValues.preference,
       passengerType: effectiveValues.passengerType,
       modifiers: effectiveValues.modifiers
@@ -1391,7 +1497,9 @@ export const queryRoutes = async (input: {
     destinationAccessMap,
     transferPoints,
     originLabel: normalizedQuery.origin.label,
-    destinationLabel: normalizedQuery.destination.label
+    destinationLabel: normalizedQuery.destination.label,
+    preference: normalizedQuery.preference,
+    modifiers: normalizedQuery.modifiers
   });
 
   if (candidateDrafts.length === 0) {

@@ -1,5 +1,13 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
@@ -85,8 +93,19 @@ export default function ProfileScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { status, user, refreshUser, signOut } = useAuth();
   const { showToast } = useToast();
-  const [isRefreshing, setIsRefreshing] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleRefreshError = useCallback(
+    (error: unknown) => {
+      showToast({
+        tone: 'error',
+        message: getErrorMessage(error),
+      });
+    },
+    [showToast]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -96,14 +115,11 @@ export default function ProfileScreen() {
         await refreshUser();
       } catch (error) {
         if (isMounted) {
-          showToast({
-            tone: 'error',
-            message: getErrorMessage(error),
-          });
+          handleRefreshError(error);
         }
       } finally {
         if (isMounted) {
-          setIsRefreshing(false);
+          setIsInitialLoading(false);
         }
       }
     };
@@ -113,7 +129,19 @@ export default function ProfileScreen() {
     return () => {
       isMounted = false;
     };
-  }, [refreshUser, showToast]);
+  }, [handleRefreshError, refreshUser]);
+
+  const handlePullRefresh = useCallback(async () => {
+    setIsPullRefreshing(true);
+
+    try {
+      await refreshUser();
+    } catch (error) {
+      handleRefreshError(error);
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [handleRefreshError, refreshUser]);
 
   const handleLogout = async () => {
     if (isSigningOut) {
@@ -147,7 +175,13 @@ export default function ProfileScreen() {
       topInsetBackgroundColor={COLORS.white}
       statusBarStyle="dark"
     >
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={isPullRefreshing} onRefresh={() => void handlePullRefresh()} />
+        }
+      >
         <View style={styles.body}>
           <View style={styles.hero}>
             <View style={styles.avatar}>
@@ -159,7 +193,7 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {isRefreshing ? (
+          {isInitialLoading ? (
             <View style={styles.statusRow}>
               <ActivityIndicator size="small" color={COLORS.primary} />
               <Text style={styles.statusText}>Syncing your profile</Text>

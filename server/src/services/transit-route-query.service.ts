@@ -19,6 +19,17 @@ import type {
 } from "../types/route-query.js";
 import type { RoutePreference } from "../models/user-preference.model.js";
 import { priceRideLegsWithCatalog, type FareRideLegInput } from "./fare-engine.service.js";
+import {
+  buildFallbackGeometry,
+  fetchORSGeometry,
+  type GeometryCoordinate
+} from "./ors-geometry.service.js";
+import {
+  buildRuntimeManualInterchangeEdges,
+  getStopFamily,
+  getTransitEdgeTraversalWeight,
+  listRuntimeManualInterchangeCounterpartQueries
+} from "./route-planner-rules.js";
 import { attachRelevantIncidentsToOptions } from "./route-incident.service.js";
 import { rankRouteOptions } from "./route-ranking.service.js";
 
@@ -54,6 +65,22 @@ interface TransitCandidate {
   destinationStop: TransitAccessStop;
   rawEdges: transitGraphModel.TransitStopEdge[];
   totalWeight: number;
+}
+
+interface TransitRideLegBlueprint {
+  id: string;
+  mode: RouteQueryRideLeg["mode"];
+  routeCode: string;
+  routeName: string;
+  directionLabel: string;
+  routeLabel: string;
+  corridorTags: string[];
+  distanceKm: number;
+  durationMinutes: number;
+  fromStop: Stop;
+  toStop: Stop;
+  fareProductCode: string | null;
+  pathCoordinates?: GeometryCoordinate[];
 }
 
 const WALKING_METERS_PER_MINUTE = 80;
@@ -130,6 +157,91 @@ const getFareProductCodeForRideMode = (rideMode: RouteQueryRideLeg["mode"]) => {
 const getServiceKey = (edge: transitGraphModel.TransitStopEdge) =>
   `${edge.mode}:${edge.line}:${edge.routeShortName ?? ""}:${edge.routeLongName ?? ""}`;
 
+const buildRawEdgePathCoordinates = (
+  edges: transitGraphModel.TransitStopEdge[],
+  stopMap: Map<string, transitGraphModel.TransitStop>
+) => {
+  const coordinates: GeometryCoordinate[] = [];
+
+  for (const edge of edges) {
+    const fromStop = stopMap.get(edge.sourceStopId);
+    const toStop = stopMap.get(edge.targetStopId);
+
+    if (fromStop && coordinates.length === 0) {
+      coordinates.push({
+        latitude: fromStop.latitude,
+        longitude: fromStop.longitude
+      });
+    }
+
+    if (toStop) {
+      coordinates.push({
+        latitude: toStop.latitude,
+        longitude: toStop.longitude
+      });
+    }
+  }
+
+  return buildFallbackGeometry(coordinates);
+};
+
+const resolveRidePathCoordinates = async (input: {
+  rideMode: RouteQueryRideLeg["mode"];
+  edges: transitGraphModel.TransitStopEdge[];
+  stopMap: Map<string, transitGraphModel.TransitStop>;
+}) => {
+  const fallbackGeometry = buildRawEdgePathCoordinates(input.edges, input.stopMap);
+
+  if (!fallbackGeometry) {
+    return undefined;
+  }
+
+  if (input.rideMode === "jeepney" || input.rideMode === "uv") {
+    return (
+      (await fetchORSGeometry({
+        profile: "driving-car",
+        coordinates: fallbackGeometry
+      })) ?? fallbackGeometry
+    );
+  }
+
+  return fallbackGeometry;
+};
+
+const resolveWalkPathCoordinates = async (input: {
+  edge: transitGraphModel.TransitStopEdge;
+  stopMap: Map<string, transitGraphModel.TransitStop>;
+}) => {
+  const fromStop = input.stopMap.get(input.edge.sourceStopId);
+  const toStop = input.stopMap.get(input.edge.targetStopId);
+
+  if (!fromStop || !toStop) {
+    return undefined;
+  }
+
+  const fallbackGeometry = buildFallbackGeometry([
+    {
+      latitude: fromStop.latitude,
+      longitude: fromStop.longitude
+    },
+    {
+      latitude: toStop.latitude,
+      longitude: toStop.longitude
+    }
+  ]);
+
+  if (!fallbackGeometry) {
+    return undefined;
+  }
+
+  return (
+    (await fetchORSGeometry({
+      profile: "foot-walking",
+      coordinates: fallbackGeometry
+    })) ?? fallbackGeometry
+  );
+};
+
 const toRouteStop = (
   stop: transitGraphModel.TransitStop,
   clusterId: string | null
@@ -152,6 +264,7 @@ const buildWalkLeg = (input: {
   toLabel: string;
   distanceMeters: number;
   durationMinutes: number;
+  pathCoordinates?: GeometryCoordinate[];
 }): RouteQueryWalkLeg => ({
   type: "walk",
   id: input.id,
@@ -159,7 +272,8 @@ const buildWalkLeg = (input: {
   toLabel: input.toLabel,
   distanceMeters: Math.round(input.distanceMeters),
   durationMinutes: input.durationMinutes,
-  fare: createWalkFareBreakdown()
+  fare: createWalkFareBreakdown(),
+  pathCoordinates: input.pathCoordinates
 });
 
 const buildAccessStopsFromCluster = async (clusterId: string, label: string) => {
@@ -199,8 +313,9 @@ const resolveTransitEndpoint = async (
   field: "origin" | "destination",
   point: RouteQueryPointInput
 ): Promise<TransitEndpointResolution | null> => {
+  const clusterPlaceId = point.placeId?.startsWith("cluster:") ? point.placeId : undefined;
   const shouldAttemptTransit =
-    Boolean(point.placeId?.startsWith("cluster:")) ||
+    Boolean(clusterPlaceId) ||
     (typeof point.latitude === "number" && typeof point.longitude === "number");
 
   if (!shouldAttemptTransit) {
@@ -211,7 +326,7 @@ const resolveTransitEndpoint = async (
 
   try {
     clusterResolution = await placeModel.resolvePlaceReference({
-      placeId: point.placeId,
+      placeId: clusterPlaceId,
       googlePlaceId: point.googlePlaceId,
       query: point.label
     });
@@ -399,20 +514,7 @@ const buildTransitRouteOption = async (input: {
   }
 
   const fareRideLegInputs: FareRideLegInput[] = [];
-  const rideLegBlueprints: Array<{
-    id: string;
-    mode: RouteQueryRideLeg["mode"];
-    routeCode: string;
-    routeName: string;
-    directionLabel: string;
-    routeLabel: string;
-    corridorTags: string[];
-    distanceKm: number;
-    durationMinutes: number;
-    fromStop: Stop;
-    toStop: Stop;
-    fareProductCode: string | null;
-  }> = [];
+  const rideLegBlueprints: TransitRideLegBlueprint[] = [];
   const walkLegs: RouteQueryWalkLeg[] = [];
 
   if (input.candidate.accessStop.distanceMeters > 0) {
@@ -442,7 +544,11 @@ const buildTransitRouteOption = async (input: {
           fromLabel: fromStop.stopName,
           toLabel: toStop.stopName,
           distanceMeters: rawLeg.edge.distanceMeters,
-          durationMinutes: roundMinutes(rawLeg.edge.estimatedTimeMinutes)
+          durationMinutes: roundMinutes(rawLeg.edge.estimatedTimeMinutes),
+          pathCoordinates: await resolveWalkPathCoordinates({
+            edge: rawLeg.edge,
+            stopMap
+          })
         })
       );
       continue;
@@ -499,7 +605,12 @@ const buildTransitRouteOption = async (input: {
       durationMinutes,
       fromStop: toRouteStop(fromTransitStop, input.normalizedQuery.origin.placeId),
       toStop: toRouteStop(toTransitStop, input.normalizedQuery.destination.placeId),
-      fareProductCode
+      fareProductCode,
+      pathCoordinates: await resolveRidePathCoordinates({
+        rideMode,
+        edges: rawLeg.edges,
+        stopMap
+      })
     });
   }
 
@@ -545,7 +656,8 @@ const buildTransitRouteOption = async (input: {
       distanceKm: rideLeg.distanceKm,
       durationMinutes: rideLeg.durationMinutes,
       corridorTags: rideLeg.corridorTags,
-      fare
+      fare,
+      pathCoordinates: rideLeg.pathCoordinates
     });
 
     const transferWalk = walkLegs[index + 1];
@@ -611,6 +723,16 @@ export const queryTransitRoutesIfPossible = async (input: {
   const destinationMap = new Map(
     destinationResolution.accessStops.map((accessStop) => [accessStop.stop.stopId, accessStop])
   );
+  const knownTransitStops = new Map<string, transitGraphModel.TransitStop>(
+    [...originResolution.accessStops, ...destinationResolution.accessStops].map((accessStop) => [
+      accessStop.stop.stopId,
+      accessStop.stop
+    ])
+  );
+  const originFamily = getStopFamily(originResolution.accessStops[0]?.stop ?? { mode: "walk_anchor" });
+  const destinationFamily = getStopFamily(
+    destinationResolution.accessStops[0]?.stop ?? { mode: "walk_anchor" }
+  );
   const queue: TransitPathState[] = originResolution.accessStops.map((accessStop) => ({
     currentStopId: accessStop.stop.stopId,
     totalWeight: accessStop.durationMinutes,
@@ -621,15 +743,24 @@ export const queryTransitRoutesIfPossible = async (input: {
     lastServiceKey: null
   }));
   const outgoingEdgeCache = new Map<string, transitGraphModel.TransitStopEdge[]>();
+  const manualInterchangeStopCache = new Map<string, transitGraphModel.TransitStop[]>();
   const candidates: TransitCandidate[] = [];
 
-  for (let index = 0; index < queue.length && queue.length <= MAX_TRANSIT_QUEUE_SIZE; index += 1) {
+  let processedStateCount = 0;
+
+  while (
+    queue.length > 0 &&
+    queue.length <= MAX_TRANSIT_QUEUE_SIZE &&
+    processedStateCount < MAX_TRANSIT_QUEUE_SIZE
+  ) {
     queue.sort((left, right) => left.totalWeight - right.totalWeight);
     const state = queue.shift();
 
     if (!state) {
       break;
     }
+
+    processedStateCount += 1;
 
     const destinationStop = destinationMap.get(state.currentStopId);
 
@@ -685,7 +816,81 @@ export const queryTransitRoutesIfPossible = async (input: {
       continue;
     }
 
-    for (const edge of outgoingEdges) {
+    const missingStopIds = [...new Set(
+      outgoingEdges.flatMap((edge) => [edge.sourceStopId, edge.targetStopId])
+    )].filter((stopId) => !knownTransitStops.has(stopId));
+
+    if (missingStopIds.length > 0) {
+      const hydratedStops = await transitGraphModel.listTransitStopsByIds(missingStopIds).catch((error) => {
+        if (transitGraphModel.isTransitGraphUnavailableError(error)) {
+          warnOnce("transit_route_query_stop_cache_fallback", "Transit stop cache hydration unavailable during planning", {
+            operation: "transit_route_query_stop_cache_fallback",
+            reason: error instanceof Error ? error.message : "unknown error"
+          });
+          return [];
+        }
+
+        throw error;
+      });
+
+      for (const stop of hydratedStops) {
+        knownTransitStops.set(stop.stopId, stop);
+      }
+    }
+
+    const currentTransitStop = knownTransitStops.get(state.currentStopId);
+
+    if (currentTransitStop) {
+      for (const query of listRuntimeManualInterchangeCounterpartQueries(currentTransitStop.stopName)) {
+        let counterpartStops = manualInterchangeStopCache.get(query);
+
+        if (!counterpartStops) {
+          let resolution:
+            | Awaited<ReturnType<typeof placeModel.resolvePlaceReference>>
+            | null = null;
+
+          try {
+            resolution = await placeModel.resolvePlaceReference({
+              query
+            });
+          } catch {
+            resolution = null;
+          }
+
+          if (resolution?.status === "resolved" && resolution.place.id.startsWith("cluster:")) {
+            counterpartStops = await transitGraphModel
+              .listTransitStopsByClusterId(resolution.place.id)
+              .catch(() => []);
+          } else {
+            counterpartStops = [];
+          }
+
+          manualInterchangeStopCache.set(query, counterpartStops);
+        }
+
+        for (const stop of counterpartStops) {
+          knownTransitStops.set(stop.stopId, stop);
+        }
+      }
+    }
+
+    const augmentedOutgoingEdges = [...outgoingEdges];
+
+    for (const manualEdge of buildRuntimeManualInterchangeEdges(state.currentStopId, knownTransitStops)) {
+      if (
+        !augmentedOutgoingEdges.some(
+          (existingEdge) =>
+            existingEdge.sourceStopId === manualEdge.sourceStopId &&
+            existingEdge.targetStopId === manualEdge.targetStopId &&
+            existingEdge.line === manualEdge.line &&
+            existingEdge.mode === manualEdge.mode
+        )
+      ) {
+        augmentedOutgoingEdges.push(manualEdge);
+      }
+    }
+
+    for (const edge of augmentedOutgoingEdges) {
       const nextStopId = edge.targetStopId;
 
       if (state.visitedStopIds.has(nextStopId)) {
@@ -706,7 +911,17 @@ export const queryTransitRoutesIfPossible = async (input: {
 
       queue.push({
         currentStopId: nextStopId,
-        totalWeight: state.totalWeight + edge.weight,
+        totalWeight:
+          state.totalWeight +
+          getTransitEdgeTraversalWeight({
+            edge,
+            sourceStop: knownTransitStops.get(edge.sourceStopId),
+            targetStop: knownTransitStops.get(edge.targetStopId),
+            preference: normalizedQuery.preference,
+            modifiers: normalizedQuery.modifiers,
+            originFamily,
+            destinationFamily
+          }),
         totalDistanceMeters: state.totalDistanceMeters + edge.distanceMeters,
         rideBoardings: nextRideBoardings,
         rawEdges: [...state.rawEdges, edge],
@@ -730,14 +945,26 @@ export const queryTransitRoutesIfPossible = async (input: {
 
   const routeOptions = (
     await Promise.all(
-      candidates.map((candidate) =>
-        buildTransitRouteOption({
-          candidate,
-          normalizedQuery,
-          passengerType: normalizedQuery.passengerType,
-          initialRecommendationLabel: "Alternative option"
-        })
-      )
+      candidates.map(async (candidate) => {
+        try {
+          return await buildTransitRouteOption({
+            candidate,
+            normalizedQuery,
+            passengerType: normalizedQuery.passengerType,
+            initialRecommendationLabel: "Alternative option"
+          });
+        } catch (error) {
+          if (error instanceof HttpError) {
+            console.warn("Dropped transit route candidate during option building", {
+              operation: "transit_route_query_option_drop",
+              reason: error.message
+            });
+            return null;
+          }
+
+          throw error;
+        }
+      })
     )
   ).filter((option): option is RouteQueryOption => option !== null);
 

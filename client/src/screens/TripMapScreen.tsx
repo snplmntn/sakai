@@ -38,7 +38,7 @@ import {
 } from '../places/search';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import { useToast } from '../toast/ToastContext';
-import { useVoiceInput } from '../hooks/useVoiceInput';
+import { getVoiceInputUnavailableMessage, useVoiceInput } from '../hooks/useVoiceInput';
 import { usePreferences } from '../preferences/PreferencesContext';
 import { transcribeSpeechRecording } from '../speech/api';
 import { createFallbackSpeechTranscription } from '../speech/fallback';
@@ -486,7 +486,7 @@ export default function TripMapScreen() {
       showToast({
         tone: 'info',
         title: 'Voice search unavailable',
-        message: 'Voice input is not available in this build.',
+        message: voiceError ?? getVoiceInputUnavailableMessage(),
       });
       return;
     }

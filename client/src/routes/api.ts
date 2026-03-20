@@ -297,7 +297,9 @@ const parseRouteQueryResult = (value: unknown): RouteQueryResult => {
   };
 };
 
-const toPointInput = (place: SelectedPlace): RouteQueryPointInput => ({
+export type RouteQueryClientPointInput = SelectedPlace | RouteQueryPointInput;
+
+const toPointInput = (place: RouteQueryClientPointInput): RouteQueryPointInput => ({
   placeId: place.placeId,
   googlePlaceId: place.googlePlaceId,
   label: place.label,
@@ -306,8 +308,8 @@ const toPointInput = (place: SelectedPlace): RouteQueryPointInput => ({
 });
 
 export const queryRoutes = async (input: {
-  origin: SelectedPlace;
-  destination: SelectedPlace;
+  origin: RouteQueryClientPointInput;
+  destination: RouteQueryClientPointInput;
   preference: RoutePreference;
   passengerType?: 'regular' | 'student' | 'senior' | 'pwd';
   modifiers?: RouteModifier[];

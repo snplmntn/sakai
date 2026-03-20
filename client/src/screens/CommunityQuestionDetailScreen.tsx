@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +22,7 @@ type CommunityQuestionDetailScreenProps = NativeStackScreenProps<
   RootStackParamList,
   'CommunityQuestionDetail'
 >;
+type DetailLoadMode = 'initial' | 'refresh' | 'background';
 
 const formatDate = (value: string): string =>
   new Date(value).toLocaleDateString(undefined, {
@@ -38,32 +40,51 @@ export default function CommunityQuestionDetailScreen({
   const [detail, setDetail] = useState<CommunityQuestionDetail | null>(null);
   const [answerBody, setAnswerBody] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadDetail = async () => {
-    if (!accessToken) {
-      return;
-    }
+  const loadDetail = useCallback(
+    async (mode: DetailLoadMode) => {
+      if (!accessToken) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
 
-    setIsLoading(true);
-    setErrorMessage(null);
+      if (mode === 'initial') {
+        setIsLoading(true);
+      }
 
-    try {
-      const nextDetail = await getCommunityQuestionDetail(accessToken, route.params.questionId);
-      setDetail(nextDetail);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Unable to load this community thread.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      if (mode === 'refresh') {
+        setIsRefreshing(true);
+      }
+
+      setErrorMessage(null);
+
+      try {
+        const nextDetail = await getCommunityQuestionDetail(accessToken, route.params.questionId);
+        setDetail(nextDetail);
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Unable to load this community thread.'
+        );
+      } finally {
+        if (mode === 'initial') {
+          setIsLoading(false);
+        }
+
+        if (mode === 'refresh') {
+          setIsRefreshing(false);
+        }
+      }
+    },
+    [accessToken, route.params.questionId]
+  );
 
   useEffect(() => {
-    void loadDetail();
-  }, [accessToken, route.params.questionId]);
+    void loadDetail('initial');
+  }, [loadDetail]);
 
   const contextChips = useMemo(() => {
     if (!detail) {
@@ -96,7 +117,7 @@ export default function CommunityQuestionDetailScreen({
         body: answerBody.trim(),
       });
       setAnswerBody('');
-      await loadDetail();
+      await loadDetail('background');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to post your answer.');
     } finally {
@@ -107,7 +128,13 @@ export default function CommunityQuestionDetailScreen({
   return (
     <SafeScreen backgroundColor={COLORS.surface} topInsetBackgroundColor={COLORS.surface}>
       <View style={styles.screen}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={() => void loadDetail('refresh')} />
+          }
+        >
           {isLoading ? <ActivityIndicator color={COLORS.primary} /> : null}
           {detail ? (
             <>
