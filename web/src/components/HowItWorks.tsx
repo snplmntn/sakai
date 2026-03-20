@@ -69,21 +69,80 @@ export default function HowItWorks() {
   const stepXs = [step0X, step1X, step2X];
 
   return (
-    <section id="how-it-works" ref={ref} style={{ height: "300vh" }}>
+    <section id="how-it-works" ref={ref} className="bg-[#102033] lg:h-[300vh]">
+      <div className="px-4 py-10 sm:px-6 sm:py-12 lg:hidden">
+        <div className="mx-auto max-w-xl">
+          <p
+            className="mb-8 text-center text-sm uppercase tracking-[0.22em]"
+            style={{ color: "#007AFF", fontFamily: "var(--font-mono)" }}
+          >
+            How It Works
+          </p>
+
+          <div className="space-y-6">
+            {steps.map((step) => (
+              <div key={step.number} className="rounded-[28px] border border-[var(--card-border)] bg-[#13253a] p-5">
+                <div
+                  className="text-center"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "clamp(4rem, 22vw, 6rem)",
+                    fontWeight: 800,
+                    lineHeight: 0.9,
+                    color: "#007AFF",
+                    opacity: 0.18,
+                  }}
+                >
+                  {step.number}
+                </div>
+                <div
+                  className="mb-3 mt-2 flex h-12 w-12 items-center justify-center rounded-2xl mx-auto"
+                  style={{
+                    background: "#007AFF",
+                    color: "#ffffff",
+                    boxShadow: "0 4px 24px rgba(0,122,255,0.3)",
+                  }}
+                >
+                  {step.icon}
+                </div>
+                <h3
+                  className="text-center"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "clamp(1.9rem, 7vw, 2.4rem)",
+                    fontWeight: 700,
+                    color: "#F7FBFE",
+                    marginBottom: "0.5rem",
+                  }}
+                >
+                  {step.title}
+                </h3>
+                <p
+                  style={{
+                    color: "#A0B4C8",
+                    fontSize: "1rem",
+                    lineHeight: 1.55,
+                  }}
+                >
+                  {step.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <motion.div
+        className="relative hidden overflow-hidden lg:sticky lg:top-16 lg:block lg:h-[calc(100vh-4rem)]"
         style={{
-          position: "sticky",
-          top: 0,
-          height: "100vh",
-          overflow: "hidden",
           backgroundColor,
         }}
       >
-        <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,44rem)_minmax(0,34rem)] items-center justify-center gap-12 lg:gap-20 px-4 sm:px-6 max-w-7xl mx-auto">
+        <div className="mx-auto grid h-full max-w-7xl grid-cols-1 content-start items-start justify-center gap-2 px-4 py-6 sm:gap-4 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,38rem)_minmax(0,30rem)] lg:content-center lg:items-center lg:gap-10 lg:px-8 lg:py-6">
           {/* Left: giant step number */}
-          <div className="flex flex-col items-center lg:items-start lg:w-[44rem]">
+          <div className="flex flex-col items-center lg:w-[38rem] lg:items-start">
             <p
-              className="text-base sm:text-lg lg:text-xl uppercase tracking-[0.28em] mb-3"
+              className="mb-2 text-sm uppercase tracking-[0.22em] sm:mb-3 sm:text-lg lg:text-xl lg:tracking-[0.28em]"
               style={{ color: "#007AFF", fontFamily: "var(--font-mono)" }}
             >
               How It Works
@@ -97,9 +156,9 @@ export default function HowItWorks() {
                 transition={{ duration: 0.25 }}
                 style={{
                   fontFamily: "var(--font-display)",
-                  fontSize: "clamp(8rem, 20vw, 18rem)",
+                  fontSize: "clamp(5.25rem, 28vw, 13rem)",
                   fontWeight: 800,
-                  lineHeight: 1,
+                  lineHeight: 0.9,
                   color: "#007AFF",
                   opacity: 0.15,
                 }}
@@ -110,7 +169,7 @@ export default function HowItWorks() {
           </div>
 
           {/* Right: step content */}
-          <div className="relative w-full lg:w-[34rem]" style={{ minHeight: "300px" }}>
+          <div className="relative w-full lg:w-[30rem]" style={{ minHeight: "180px" }}>
             {steps.map((step, i) => (
               <motion.div
                 key={step.number}
@@ -120,10 +179,10 @@ export default function HowItWorks() {
                   opacity: stepOpacities[i],
                   x: stepXs[i],
                 }}
-                className="flex flex-col justify-center w-full"
+                className="flex w-full flex-col justify-start lg:justify-center"
               >
                 <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6"
+                  className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl sm:mb-5 sm:h-14 sm:w-14"
                   style={{
                     background: "#007AFF",
                     color: "#ffffff",
@@ -135,10 +194,10 @@ export default function HowItWorks() {
                 <h3
                   style={{
                     fontFamily: "var(--font-display)",
-                    fontSize: "clamp(2rem, 5vw, 3.5rem)",
+                    fontSize: "clamp(1.8rem, 7vw, 3.5rem)",
                     fontWeight: 700,
                     color: "#F7FBFE",
-                    marginBottom: "1rem",
+                    marginBottom: "0.5rem",
                   }}
                 >
                   {step.title}
@@ -146,8 +205,8 @@ export default function HowItWorks() {
                 <p
                   style={{
                     color: "#A0B4C8",
-                    fontSize: "clamp(1rem, 1.5vw, 1.25rem)",
-                    lineHeight: 1.6,
+                    fontSize: "clamp(1rem, 3.8vw, 1.25rem)",
+                    lineHeight: 1.5,
                     maxWidth: "480px",
                   }}
                 >
