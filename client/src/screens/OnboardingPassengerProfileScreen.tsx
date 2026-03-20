@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Text,
@@ -9,7 +9,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { COLORS } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import { writeStoredPreferenceDraft } from '../preferences/storage';
+import {
+  readStoredPreferenceDraft,
+  writeStoredPreferenceDraft,
+} from '../preferences/storage';
 import type { PassengerType } from '../preferences/types';
 import { DEFAULT_VOICE_LANGUAGE } from '../voice/languages';
 import {
@@ -31,6 +34,24 @@ export default function OnboardingPassengerProfileScreen({
   const [isContinuing, setIsContinuing] = useState(false);
 
   const { defaultPreference } = route.params;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void (async () => {
+      const storedDraft = await readStoredPreferenceDraft();
+
+      if (!isMounted || !storedDraft) {
+        return;
+      }
+
+      setPassengerType(storedDraft.passengerType);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleContinue = async (destination: 'Signup' | 'Login') => {
     if (isContinuing) {

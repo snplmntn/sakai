@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { COLORS, FONTS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useNavigationAlarm } from '../navigation-alert/NavigationAlarmContext';
 import { ALERT_RADIUS_OPTIONS, formatDistanceAway } from '../navigation-alert/utils';
 import RelevantIncidentsSection from './RelevantIncidentsSection';
@@ -48,65 +48,53 @@ export default function NavigationAlarmCard({
           backgroundMonitoringActive ? ' in foreground and background.' : ' while the app stays open.'
         }`
     : navigationRoute
-      ? 'Pick your alarm mode, set the radius, then start navigation on the selected route.'
+      ? 'Ready for the route you selected on Home.'
       : 'Select a route on Home first to arm the near-destination alert.';
 
   return (
-    <View style={[styles.sectionCard, styles.navigationSectionCard]}>
-      <View style={styles.navigationHeader}>
-        <View>
-          <Text style={styles.sectionTitle}>Navigation alarm</Text>
-          <Text style={styles.sectionMeta}>
+    <View style={styles.panel}>
+      <View style={styles.topRow}>
+        <View style={styles.topCopy}>
+          <Text style={styles.eyebrow}>
             {isNavigationActive ? 'Active trip' : 'Selected route'}
           </Text>
+          <Text style={styles.statusText}>{statusMessage}</Text>
         </View>
         {isNavigationActive ? (
-          <View style={styles.navigationLiveBadge}>
-            <Text style={styles.navigationLiveBadgeText}>Live</Text>
+          <View style={styles.liveBadge}>
+            <Text style={styles.liveBadgeText}>Live</Text>
           </View>
         ) : null}
       </View>
 
-      <Text style={styles.statusText}>{statusMessage}</Text>
-
       {navigationRoute ? (
-        <View style={styles.navigationSummaryCard}>
-          <Text style={styles.navigationSummaryTitle}>{navigationRoute.routeLabel}</Text>
+        <View style={styles.routeCard}>
+          <Text style={styles.routeLabel}>{navigationRoute.routeLabel}</Text>
           {navigationRoute.summary.length > 0 ? (
-            <Text style={styles.navigationSummaryText}>{navigationRoute.summary}</Text>
+            <Text style={styles.routeSummary}>{navigationRoute.summary}</Text>
           ) : null}
           {navigationRoute.durationLabel.length > 0 || navigationRoute.fareLabel.length > 0 ? (
-            <Text style={styles.navigationSummaryMeta}>
+            <Text style={styles.routeMeta}>
               {[navigationRoute.durationLabel, navigationRoute.fareLabel]
                 .filter((value) => value.length > 0)
                 .join(' · ')}
             </Text>
           ) : null}
         </View>
-      ) : null}
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateTitle}>No route selected</Text>
+          <Text style={styles.emptyStateText}>
+            Pick a route on Home first, then come back here to start the arrival alarm.
+          </Text>
+        </View>
+      )}
 
-      {navigationRoute ? (
-        <RelevantIncidentsSection
-          incidents={incidents}
-          title="Route area updates"
-          metaNotice={
-            isRefreshingIncidents
-              ? 'Refreshing MMDA updates for this route...'
-              : incidentRefreshFailed
-                ? 'Showing the latest saved route snapshot because refresh is unavailable right now.'
-                : 'Only MMDA updates relevant to this route are shown here.'
-          }
-          emptyText="No active MMDA area updates are affecting this route right now."
-        />
-      ) : null}
-
-      <View style={styles.navigationSettingCard}>
-        <View style={styles.navigationSettingHeader}>
-          <View style={styles.navigationSettingCopy}>
-            <Text style={styles.navigationSettingTitle}>Near-destination alert</Text>
-            <Text style={styles.navigationSettingDescription}>
-              Alerts you before your selected stop.
-            </Text>
+      <View style={styles.settingsGroup}>
+        <View style={styles.settingRow}>
+          <View style={styles.settingCopy}>
+            <Text style={styles.settingTitle}>Near-destination alert</Text>
+            <Text style={styles.settingDescription}>Alerts you before your selected stop.</Text>
           </View>
           <Pressable
             style={[styles.toggleChip, nearDestinationEnabled && styles.toggleChipActive]}
@@ -120,67 +108,68 @@ export default function NavigationAlarmCard({
             </Text>
           </Pressable>
         </View>
-        <Text style={styles.navigationHintCompact}>
+
+        <View style={styles.settingBlock}>
+          <Text style={styles.groupLabel}>Alert style</Text>
+          <View style={styles.optionRow}>
+            {ALARM_MODES.map((item) => (
+              <Pressable
+                key={item.value}
+                style={[styles.optionChip, alarmMode === item.value && styles.optionChipActive]}
+                disabled={isNavigationActive}
+                onPress={() => setAlarmMode(item.value)}
+              >
+                <Text
+                  style={[
+                    styles.optionChipText,
+                    alarmMode === item.value && styles.optionChipTextActive,
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.settingBlock}>
+          <Text style={styles.groupLabel}>Alert radius</Text>
+          <View style={styles.optionRow}>
+            {ALERT_RADIUS_OPTIONS.map((item) => (
+              <Pressable
+                key={item.value}
+                style={[
+                  styles.optionChip,
+                  alertRadiusMeters === item.value && styles.optionChipActive,
+                ]}
+                disabled={isNavigationActive}
+                onPress={() => setAlertRadiusMeters(item.value)}
+              >
+                <Text
+                  style={[
+                    styles.optionChipText,
+                    alertRadiusMeters === item.value && styles.optionChipTextActive,
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <Text style={styles.helperText}>
           Silent mode and Do Not Disturb can still mute sound. Vibration is best-effort.
         </Text>
       </View>
 
-      <View style={styles.navigationOptionGroup}>
-        <Text style={styles.navigationGroupTitle}>Alert style</Text>
-        <View style={styles.navigationChipRow}>
-          {ALARM_MODES.map((item) => (
-            <Pressable
-              key={item.value}
-              style={[styles.navigationChip, alarmMode === item.value && styles.navigationChipActive]}
-              disabled={isNavigationActive}
-              onPress={() => setAlarmMode(item.value)}
-            >
-              <Text
-                style={[
-                  styles.navigationChipText,
-                  alarmMode === item.value && styles.navigationChipTextActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.navigationOptionGroup}>
-        <Text style={styles.navigationGroupTitle}>Alert radius</Text>
-        <View style={styles.navigationChipRow}>
-          {ALERT_RADIUS_OPTIONS.map((item) => (
-            <Pressable
-              key={item.value}
-              style={[
-                styles.navigationChip,
-                alertRadiusMeters === item.value && styles.navigationChipActive,
-              ]}
-              disabled={isNavigationActive}
-              onPress={() => setAlertRadiusMeters(item.value)}
-            >
-              <Text
-                style={[
-                  styles.navigationChipText,
-                  alertRadiusMeters === item.value && styles.navigationChipTextActive,
-                ]}
-              >
-                {item.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
       {isNavigationActive ? (
-        <View style={styles.navigationStatsCard}>
-          <Text style={styles.navigationStatsTitle}>Live status</Text>
-          <Text style={styles.navigationStatsText}>
+        <View style={styles.liveStatusCard}>
+          <Text style={styles.liveStatusLabel}>Live status</Text>
+          <Text style={styles.liveStatusValue}>
             {navigationTarget ? formatDistanceAway(distanceToTargetMeters) : 'No destination target yet.'}
           </Text>
-          <Text style={styles.navigationStatsMeta}>
+          <Text style={styles.liveStatusMeta}>
             {backgroundMonitoringActive
               ? 'Background alerts are armed.'
               : 'Keep Sakai open for continuous arrival checks.'}
@@ -208,186 +197,220 @@ export default function NavigationAlarmCard({
               : 'Start navigation'}
         </Text>
       </Pressable>
+
+      {navigationRoute ? (
+        <RelevantIncidentsSection
+          incidents={incidents}
+          title="Route updates"
+          compact={true}
+          metaNotice={
+            isRefreshingIncidents
+              ? 'Refreshing MMDA updates for this route...'
+              : incidentRefreshFailed
+                ? 'Showing the latest saved route snapshot because refresh is unavailable right now.'
+                : 'Only MMDA updates relevant to this route are shown here.'
+          }
+          emptyText="No active MMDA area updates are affecting this route right now."
+        />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: SPACING.md,
+  panel: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
-    borderColor: '#EEF2F6',
-    gap: SPACING.sm,
+    borderColor: '#E5ECF2',
+    padding: SPACING.lg,
+    gap: SPACING.lg,
   },
-  sectionTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    fontFamily: FONTS.bold,
-    color: '#102033',
-  },
-  sectionMeta: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: '#5D7286',
-  },
-  navigationHeader: {
+  topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  navigationSectionCard: {
-    padding: SPACING.lg,
+    alignItems: 'flex-start',
     gap: SPACING.md,
   },
-  navigationLiveBadge: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 1,
-    borderRadius: 10,
-    backgroundColor: '#EAF7EE',
-    borderWidth: 1,
-    borderColor: '#BEE3C8',
+  topCopy: {
+    flex: 1,
+    gap: SPACING.xs,
   },
-  navigationLiveBadgeText: {
+  eyebrow: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.bold,
+    fontFamily: FONTS.semibold,
+    color: '#7B8A97',
+  },
+  liveBadge: {
+    minWidth: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 2,
+    backgroundColor: '#EAF6EE',
+    borderWidth: 1,
+    borderColor: '#C8E3D0',
+  },
+  liveBadgeText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
     color: COLORS.success,
   },
-  navigationSummaryCard: {
-    borderRadius: 6,
+  routeCard: {
+    borderRadius: RADIUS.md,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E8EDF3',
-    padding: SPACING.lg,
-    gap: SPACING.sm,
+    borderColor: '#E6EDF4',
+    padding: SPACING.md,
+    gap: SPACING.xs,
   },
-  navigationSummaryTitle: {
+  routeLabel: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
-    color: '#102033',
+    fontFamily: FONTS.semibold,
+    color: COLORS.midnight,
   },
-  navigationSummaryText: {
-    fontSize: TYPOGRAPHY.fontSizes.medium,
+  routeSummary: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
-    color: '#415466',
-    lineHeight: 22,
+    color: '#5C6D7C',
+    lineHeight: 20,
   },
-  navigationSummaryMeta: {
+  routeMeta: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: COLORS.primary,
   },
-  navigationSettingCard: {
-    borderRadius: 6,
+  emptyState: {
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: '#E8EDF3',
-    backgroundColor: '#FAFBFC',
-    padding: SPACING.lg,
+    borderColor: '#E6EDF4',
+    backgroundColor: '#FBFCFD',
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  emptyStateTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    fontFamily: FONTS.semibold,
+    color: COLORS.midnight,
+  },
+  emptyStateText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: COLORS.subText,
+    lineHeight: 20,
+  },
+  settingsGroup: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#E6EDF4',
+    backgroundColor: '#FBFCFD',
+    padding: SPACING.md,
     gap: SPACING.md,
   },
-  navigationSettingHeader: {
+  settingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: SPACING.sm,
   },
-  navigationSettingCopy: {
+  settingCopy: {
     flex: 1,
     gap: SPACING.xs,
   },
-  navigationSettingTitle: {
+  settingTitle: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.semibold,
-    color: '#102033',
+    color: COLORS.midnight,
   },
-  navigationSettingDescription: {
+  settingDescription: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
-    color: '#6A7D90',
+    color: COLORS.subText,
     lineHeight: 20,
   },
-  navigationOptionGroup: {
-    gap: SPACING.md,
+  settingBlock: {
+    gap: SPACING.sm,
   },
-  navigationGroupTitle: {
+  groupLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
-    color: '#102033',
+    color: COLORS.midnight,
   },
-  navigationHintCompact: {
+  helperText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
-    color: '#6A7D90',
-    lineHeight: 22,
+    color: COLORS.subText,
+    lineHeight: 20,
   },
   toggleChip: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 10,
-    backgroundColor: '#F4F8FB',
+    paddingVertical: SPACING.sm - 1,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: '#D7E5EF',
+    borderColor: '#D8E2EB',
   },
   toggleChipActive: {
-    backgroundColor: '#102033',
-    borderColor: '#102033',
+    backgroundColor: COLORS.midnight,
+    borderColor: COLORS.midnight,
   },
   toggleChipText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
-    color: '#415466',
+    color: '#435564',
   },
   toggleChipTextActive: {
     color: COLORS.white,
   },
-  navigationChipRow: {
+  optionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING.md,
-  },
-  navigationChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 10,
-    backgroundColor: '#F4F8FB',
-    borderWidth: 1,
-    borderColor: '#D7E5EF',
-  },
-  navigationChipActive: {
-    backgroundColor: '#102033',
-    borderColor: '#102033',
-  },
-  navigationChipText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#415466',
-  },
-  navigationChipTextActive: {
-    color: COLORS.white,
-  },
-  navigationStatsCard: {
-    borderRadius: 6,
-    backgroundColor: '#FFF6EC',
-    borderWidth: 1,
-    borderColor: '#F5D3AA',
-    padding: SPACING.lg,
     gap: SPACING.sm,
   },
-  navigationStatsTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.bold,
-    color: '#8A5317',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+  optionChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm - 1,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#D8E2EB',
+    minWidth: 76,
+    alignItems: 'center',
   },
-  navigationStatsText: {
+  optionChipActive: {
+    backgroundColor: COLORS.midnight,
+    borderColor: COLORS.midnight,
+  },
+  optionChipText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#5A6C7C',
+  },
+  optionChipTextActive: {
+    color: COLORS.white,
+  },
+  liveStatusCard: {
+    borderRadius: RADIUS.md,
+    backgroundColor: '#FFF7EE',
+    borderWidth: 1,
+    borderColor: '#F5DEC0',
+    padding: SPACING.md,
+    gap: SPACING.xs,
+  },
+  liveStatusLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#8A5317',
+  },
+  liveStatusValue: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
-    fontFamily: FONTS.bold,
+    fontFamily: FONTS.semibold,
     color: '#8A5317',
   },
-  navigationStatsMeta: {
+  liveStatusMeta: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
+    fontFamily: FONTS.regular,
     color: '#8A5317',
     lineHeight: 20,
   },
@@ -396,7 +419,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 52,
-    marginTop: SPACING.xs,
   },
   navigationButtonStart: {
     backgroundColor: COLORS.black,
@@ -415,7 +437,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.regular,
-    color: '#657789',
+    color: '#576978',
     lineHeight: 22,
   },
 });

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   createContext,
   useContext,
   useEffect,
@@ -20,7 +21,9 @@ import {
 } from './api';
 import {
   clearStoredAuthState,
+  readHasCompletedOnboarding,
   readStoredAuthState,
+  writeHasCompletedOnboarding,
   writeStoredAuthState,
 } from './storage';
 import {
@@ -105,7 +108,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
   const googleAuthInFlightRef = useRef(false);
 
-  const syncStoredPreferenceDraft = async (accessToken: string): Promise<void> => {
+  const markOnboardingComplete = useCallback(async (): Promise<void> => {
+    await writeHasCompletedOnboarding();
+    setUnauthenticatedRoute('Login');
+  }, []);
+
+  const syncStoredPreferenceDraft = useCallback(async (accessToken: string): Promise<void> => {
     const storedDraft = await readStoredPreferenceDraft();
 
     if (!storedDraft) {
@@ -121,37 +129,49 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     await upsertMyPreferences(accessToken, toPersistedPreferenceDraft(storedDraft));
     await clearStoredPreferenceDraft();
-  };
+  }, []);
 
-  const persistAuthenticatedState = async (value: StoredAuthState): Promise<void> => {
-    await writeStoredAuthState(value);
+  const persistAuthenticatedState = useCallback(
+    async (value: StoredAuthState): Promise<void> => {
+      await writeStoredAuthState(value);
 
-    try {
-      await syncStoredPreferenceDraft(value.session.accessToken);
-    } catch (error) {
-      console.warn('Failed to sync onboarding preferences after authentication', {
-        reason: error instanceof Error ? error.message : 'unknown error',
-      });
-    }
+      try {
+        await syncStoredPreferenceDraft(value.session.accessToken);
+      } catch (error) {
+        console.warn('Failed to sync onboarding preferences after authentication', {
+          reason: error instanceof Error ? error.message : 'unknown error',
+        });
+      }
 
-    setUnauthenticatedRoute('Welcome');
-    setAuthState(toAuthenticatedState(value));
-  };
+      await markOnboardingComplete();
+      setUnauthenticatedRoute('Login');
+      setAuthState(toAuthenticatedState(value));
+    },
+    [markOnboardingComplete, syncStoredPreferenceDraft]
+  );
 
-  const clearAuthState = async (
-    route: 'Welcome' | 'Login' = 'Welcome'
-  ): Promise<void> => {
-    await clearStoredAuthState();
-    setUnauthenticatedRoute(route);
-    setAuthState(UNAUTHENTICATED_STATE);
-  };
+  const clearAuthState = useCallback(
+    async (route: 'Welcome' | 'Login' = 'Welcome'): Promise<void> => {
+      await clearStoredAuthState();
+      setUnauthenticatedRoute(route);
+      setAuthState(UNAUTHENTICATED_STATE);
+    },
+    []
+  );
 
   useEffect(() => {
     let isMounted = true;
 
     const hydrateAuthState = async () => {
       try {
-        const storedState = await readStoredAuthState();
+        const [storedState, storedOnboardingCompleted] = await Promise.all([
+          readStoredAuthState(),
+          readHasCompletedOnboarding(),
+        ]);
+
+        if (isMounted) {
+          setUnauthenticatedRoute(storedOnboardingCompleted ? 'Login' : 'Welcome');
+        }
 
         if (!storedState) {
           if (isMounted) {
@@ -204,7 +224,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       password,
     });
 
-    await clearAuthState('Welcome');
+    await markOnboardingComplete();
+    await clearAuthState('Login');
 
     return payload;
   };
@@ -267,7 +288,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
-  const refreshUser = async (): Promise<AuthUser | null> => {
+  const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
     const currentSession = authState.session;
 
     if (!currentSession) {
@@ -308,7 +329,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await clearAuthState();
       return null;
     }
-  };
+  }, [authState.session, clearAuthState, persistAuthenticatedState]);
 
   const contextValue: AuthContextValue = {
     status: authState.status,
