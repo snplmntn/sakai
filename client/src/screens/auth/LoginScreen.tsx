@@ -51,7 +51,9 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
       setErrorMessage(
         error instanceof ApiError
           ? error.message
-          : 'Unable to sign in right now. Please try again.'
+          : error instanceof Error
+            ? error.message
+            : 'Unable to sign in right now. Please try again.'
       );
     } finally {
       setActiveAction(null);
@@ -73,7 +75,9 @@ export default function LoginScreen({ navigation, route }: LoginScreenProps) {
       setErrorMessage(
         error instanceof ApiError
           ? error.message
-          : 'Unable to sign in with Google right now. Please try again.'
+          : error instanceof Error
+            ? error.message
+            : 'Unable to sign in with Google right now. Please try again.'
       );
     } finally {
       setActiveAction(null);

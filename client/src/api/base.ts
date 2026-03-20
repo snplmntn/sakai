@@ -1,4 +1,5 @@
 import { getExpoGoProjectConfig } from 'expo';
+import { Platform } from 'react-native';
 
 export interface RequestOptions {
   method: 'GET' | 'POST' | 'PUT';
@@ -31,13 +32,11 @@ export class ApiError extends Error {
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const readConfiguredApiBaseUrl = (): string => {
+const readConfiguredApiBaseUrl = (): string | null => {
   const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 
   if (typeof baseUrl !== 'string' || baseUrl.trim().length === 0) {
-    throw new Error(
-      'Missing EXPO_PUBLIC_API_BASE_URL. Set it to the Sakai server base URL.'
-    );
+    return null;
   }
 
   return baseUrl.replace(/\/+$/, '');
@@ -54,6 +53,20 @@ const readExpoGoHostName = (): string | null => {
   return typeof hostName === 'string' && hostName.trim().length > 0
     ? hostName.trim()
     : null;
+};
+
+const inferDevelopmentApiBaseUrl = (): string | null => {
+  const expoGoHostName = readExpoGoHostName();
+
+  if (expoGoHostName !== null) {
+    return `http://${expoGoHostName}:3000`;
+  }
+
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3000';
+  }
+
+  return 'http://localhost:3000';
 };
 
 const resolveDevelopmentApiBaseUrl = (configuredBaseUrl: string): string => {
@@ -89,7 +102,25 @@ const resolveDevelopmentApiBaseUrl = (configuredBaseUrl: string): string => {
 };
 
 export const readApiBaseUrl = (): string =>
-  resolveDevelopmentApiBaseUrl(readConfiguredApiBaseUrl());
+  (() => {
+    const configuredBaseUrl = readConfiguredApiBaseUrl();
+
+    if (configuredBaseUrl !== null) {
+      return resolveDevelopmentApiBaseUrl(configuredBaseUrl);
+    }
+
+    if (__DEV__) {
+      const inferredBaseUrl = inferDevelopmentApiBaseUrl();
+
+      if (inferredBaseUrl !== null) {
+        return inferredBaseUrl;
+      }
+    }
+
+    throw new Error(
+      'Missing EXPO_PUBLIC_API_BASE_URL. Set it to the Sakai server base URL.'
+    );
+  })();
 
 export const buildApiUrl = (path: string): string => `${readApiBaseUrl()}${path}`;
 
