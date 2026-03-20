@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
+import Image from "next/image";
 
 function PhoneMockup() {
   return (
@@ -53,7 +54,6 @@ function PhoneMockup() {
         <circle cx="156" cy="414" r="6" fill="#A0B4C8" opacity="0.3" />
       </svg>
 
-      {/* Floating route card */}
       <motion.div
         initial={{ opacity: 0, x: 24, y: -8 }}
         animate={{ opacity: 1, x: 0, y: 0 }}
@@ -66,14 +66,13 @@ function PhoneMockup() {
         }}
       >
         <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
-          Cubao → Makati
+          Cubao to Makati
         </p>
         <p className="text-xs mt-0.5" style={{ color: "var(--accent)" }}>
-          ₱15 · 28 min
+          P15 · 28 min
         </p>
       </motion.div>
 
-      {/* Floating alert */}
       <motion.div
         initial={{ opacity: 0, x: -24, y: 8 }}
         animate={{ opacity: 1, x: 0, y: 0 }}
@@ -111,7 +110,6 @@ export default function Hero() {
       ref={ref}
       className="hero-surface relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-20 pb-16 px-4"
     >
-      {/* Background glow */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
@@ -124,23 +122,33 @@ export default function Hero() {
         style={{ y, opacity }}
         className="relative z-10 max-w-5xl mx-auto w-full flex flex-col lg:flex-row items-center gap-12 lg:gap-16"
       >
-        {/* Text */}
         <div className="flex-1 text-center lg:text-left">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.1 }}
+            className="mb-6 flex justify-center lg:justify-start"
           >
-            <span
-              className="inline-block text-xs font-semibold uppercase tracking-widest px-3 py-1 rounded-full mb-6"
-              style={{
-                background: "rgba(0,122,255,0.12)",
-                color: "#007AFF",
-                border: "1px solid rgba(0,122,255,0.2)",
-              }}
-            >
-              Metro Manila · Beta
-            </span>
+            <div className="inline-flex flex-col items-center">
+              <Image
+                src="/sakai-hi.gif"
+                alt="Sakai mascot waving"
+                width={560}
+                height={484}
+                priority
+                className="mb-2 h-auto w-28 sm:w-32 lg:w-36 drop-shadow-[0_20px_36px_rgba(0,0,0,0.26)]"
+              />
+              <span
+                className="inline-block text-xs font-semibold uppercase tracking-widest px-3 py-1 rounded-full"
+                style={{
+                  background: "rgba(0,122,255,0.12)",
+                  color: "#007AFF",
+                  border: "1px solid rgba(0,122,255,0.2)",
+                }}
+              >
+                Metro Manila · Beta
+              </span>
+            </div>
           </motion.div>
 
           <motion.h1
@@ -150,9 +158,7 @@ export default function Hero() {
             className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight"
             style={{ color: "#F7FBFE", fontFamily: "var(--font-display)" }}
           >
-            Where to{" "}
-            <span style={{ color: "#007AFF" }}>Sakai</span>
-            {" "}today?
+            Where to <span style={{ color: "#007AFF" }}>Sakai</span> today?
           </motion.h1>
 
           <motion.p
@@ -162,7 +168,8 @@ export default function Hero() {
             className="mt-5 text-lg sm:text-xl max-w-md mx-auto lg:mx-0 leading-relaxed"
             style={{ color: "#A0B4C8" }}
           >
-            Voice-first jeepney and transit planner for Metro Manila. Say where you&apos;re going — Sakai handles the rest.
+            Voice-first jeepney and transit planner for Metro Manila. Say where you&apos;re going
+            {" "}and Sakai handles the rest.
           </motion.p>
 
           <motion.div
@@ -202,12 +209,11 @@ export default function Hero() {
           </motion.div>
         </div>
 
-        {/* Phone mockup */}
         <motion.div
           initial={{ opacity: 0, scale: 0.92, y: 24 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3, ease: "easeOut" }}
-          className="flex-shrink-0 w-full max-w-xs lg:max-w-sm"
+          className="relative flex-shrink-0 w-full max-w-xs lg:max-w-sm"
         >
           <PhoneMockup />
         </motion.div>
