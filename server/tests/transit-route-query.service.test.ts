@@ -26,6 +26,7 @@ vi.mock("../src/models/transit-graph.model.js", () => ({
   listTransitStopsByIds: vi.fn(),
   listTransitEdgesBySourceStopIds: vi.fn(),
   findNearestTransitStops: vi.fn(),
+  searchTransitStopsByQuery: vi.fn(),
   isTransitGraphUnavailableError: vi.fn(() => false)
 }));
 
@@ -130,6 +131,7 @@ describe("transit route query service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedFareModel.getActiveFareCatalog.mockResolvedValue(fareCatalog);
+    mockedTransitGraphModel.searchTransitStopsByQuery.mockResolvedValue([]);
     mockedPlaceModel.resolvePlaceReference
       .mockResolvedValueOnce({
         status: "resolved",
@@ -323,11 +325,11 @@ describe("transit route query service", () => {
       }
     });
 
-    expect(result).not.toBeNull();
-    expect(result?.options).toHaveLength(2);
-    expect(result?.options[0]?.legs.filter((leg) => leg.type === "ride").every((leg) => leg.mode === "jeepney")).toBe(true);
+    expect(result.status).toBe("success");
+    expect(result.result?.options).toHaveLength(2);
+    expect(result.result?.options[0]?.legs.filter((leg) => leg.type === "ride").every((leg) => leg.mode === "jeepney")).toBe(true);
     expect(
-      result?.options[0]?.legs.every(
+      result.result?.options[0]?.legs.every(
         (leg) => leg.type !== "ride" || (Array.isArray(leg.pathCoordinates) && leg.pathCoordinates.length >= 2)
       )
     ).toBe(true);
@@ -497,15 +499,97 @@ describe("transit route query service", () => {
       }
     });
 
-    expect(result).not.toBeNull();
-    expect(result?.options).toHaveLength(1);
-    expect(result?.options[0]?.legs.map((leg) => leg.type)).toEqual(["walk", "ride"]);
-    expect(result?.options[0]?.legs[0]).toMatchObject({
+    expect(result.status).toBe("success");
+    expect(result.result?.options).toHaveLength(1);
+    expect(result.result?.options[0]?.legs.map((leg) => leg.type)).toEqual(["walk", "ride"]);
+    expect(result.result?.options[0]?.legs[0]).toMatchObject({
       type: "walk",
       fromLabel: "EDSA LRT",
       toLabel: "Taft Ave MRT",
       durationMinutes: 1
     });
+  });
+
+  it("falls back to direct stop-name matching when cluster access and nearby lookup both fail", async () => {
+    const cubaoJeep = createTransitStop({
+      stopId: "cubao-jeep",
+      stopName: "Cubao Jeep Terminal",
+      mode: "jeep",
+      line: "Cubao Jeep",
+      latitude: 14.6201,
+      longitude: 121.0501
+    });
+    const rectoJeep = createTransitStop({
+      stopId: "recto-jeep",
+      stopName: "Recto Jeep Stop",
+      mode: "jeep",
+      line: "Recto Jeep",
+      latitude: 14.603,
+      longitude: 120.99
+    });
+
+    mockedTransitGraphModel.listTransitStopsByClusterId
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    mockedTransitGraphModel.findNearestTransitStops
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    mockedTransitGraphModel.searchTransitStopsByQuery
+      .mockResolvedValueOnce([cubaoJeep])
+      .mockResolvedValueOnce([rectoJeep]);
+    mockedTransitGraphModel.listTransitStopsByIds.mockResolvedValue([cubaoJeep, rectoJeep]);
+    mockedTransitGraphModel.listTransitEdgesBySourceStopIds.mockImplementation(
+      async (sourceStopIds: string[]) => {
+        if (sourceStopIds[0] === "cubao-jeep") {
+          return [
+            {
+              sourceStopId: "cubao-jeep",
+              targetStopId: "recto-jeep",
+              weight: 12,
+              mode: "jeep",
+              line: "Cubao Recto Jeep",
+              routeShortName: "CRJ",
+              routeLongName: "Cubao Recto Jeep",
+              transfer: false,
+              distanceMeters: 3200,
+              estimatedTimeMinutes: 12,
+              dataSource: "seed",
+              createdAt: "2026-03-20T00:00:00.000Z"
+            }
+          ];
+        }
+
+        return [];
+      }
+    );
+
+    const result = await queryTransitRoutesIfPossible({
+      origin: {
+        placeId: "cluster:cubao",
+        label: "Cubao"
+      },
+      destination: {
+        placeId: "cluster:recto",
+        label: "Recto"
+      },
+      preference: {
+        value: "balanced",
+        source: "request_override"
+      },
+      passengerType: {
+        value: "regular",
+        source: "request_override"
+      },
+      modifiers: {
+        value: [],
+        source: "request_override"
+      }
+    });
+
+    expect(result.status).toBe("success");
+    expect(result.traceSummary.originResolutionStatus).toBe("resolved:direct_stop_match");
+    expect(result.traceSummary.destinationResolutionStatus).toBe("resolved:direct_stop_match");
+    expect(result.result?.options).toHaveLength(1);
   });
 
   it("does not pass synthetic coordinate ids into place resolution", async () => {
@@ -557,7 +641,7 @@ describe("transit route query service", () => {
       }
     });
 
-    expect(result).toBeNull();
+    expect(result.status).toBe("no_candidates");
     expect(mockedPlaceModel.resolvePlaceReference).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({

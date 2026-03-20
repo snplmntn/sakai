@@ -3,17 +3,15 @@ import {
   View,
   TouchableOpacity,
   StyleSheet,
-  Animated,
   Platform,
+  Text,
 } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Home01Icon, UserIcon, Mic01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
+import { Home01Icon, UserIcon } from '@hugeicons/core-free-icons';
 import { COLORS, RADIUS, FONTS } from '../constants/theme';
-import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const { isListening, requestToggle } = useVoiceSearchTrigger();
   const focusedOptions = descriptors[state.routes[state.index]?.key]?.options;
   const flattenedTabBarStyle = StyleSheet.flatten(focusedOptions?.tabBarStyle);
   const isTabBarHidden =
@@ -26,27 +24,8 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
     return null;
   }
 
-  const handleMicPress = () => {
-    navigation.navigate('Home');
-    requestToggle();
-  };
-
   return (
     <View style={styles.wrapper}>
-      <View style={styles.fabContainer}>
-        <TouchableOpacity
-          style={[styles.fab, isListening && styles.fabActive]}
-          onPress={handleMicPress}
-          activeOpacity={0.8}
-        >
-          <HugeiconsIcon
-            icon={isListening ? Cancel01Icon : Mic01Icon}
-            size={28}
-            color={COLORS.white}
-          />
-        </TouchableOpacity>
-      </View>
-
       <View style={styles.container}>
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
@@ -68,25 +47,21 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
           const iconColor = isFocused ? COLORS.primary : '#B0B8C1';
 
           return (
-            <React.Fragment key={route.key}>
-              {index === 1 && <View style={styles.fabSpacer} />}
-              <TouchableOpacity
-                style={styles.tab}
-                onPress={onPress}
-                activeOpacity={0.7}
-              >
-                <HugeiconsIcon
-                  icon={index === 0 ? Home01Icon : UserIcon}
-                  size={24}
-                  color={iconColor}
-                />
-                <Animated.Text
-                  style={[styles.label, { color: iconColor }]}
-                >
-                  {label}
-                </Animated.Text>
-              </TouchableOpacity>
-            </React.Fragment>
+            <TouchableOpacity
+              key={route.key}
+              style={[styles.tab, isFocused && styles.tabActive]}
+              onPress={onPress}
+              activeOpacity={0.7}
+            >
+              <HugeiconsIcon
+                icon={index === 0 ? Home01Icon : UserIcon}
+                size={22}
+                color={iconColor}
+              />
+              <Text style={[styles.label, { color: iconColor }]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -96,14 +71,17 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
 
 const styles = StyleSheet.create({
   wrapper: {
-    position: 'relative',
     backgroundColor: COLORS.white,
+    borderTopWidth: 1,
+    borderTopColor: '#E7EEF4',
   },
   container: {
     flexDirection: 'row',
     backgroundColor: COLORS.white,
+    paddingHorizontal: 16,
     paddingBottom: Platform.OS === 'ios' ? 24 : 8,
-    paddingTop: 12,
+    paddingTop: 10,
+    gap: 12,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
     shadowColor: 'transparent',
@@ -116,36 +94,15 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 10,
+    borderRadius: RADIUS.md,
+    gap: 4,
+  },
+  tabActive: {
+    backgroundColor: '#EEF5FF',
   },
   label: {
     fontSize: 11,
-    marginTop: 4,
     fontFamily: FONTS.medium,
-  },
-  fabSpacer: {
-    width: 72,
-  },
-  fabContainer: {
-    position: 'absolute',
-    alignSelf: 'center',
-    top: -28,
-    zIndex: 10,
-  },
-  fab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORS.black,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  fabActive: {
-    backgroundColor: COLORS.primary,
   },
 });
