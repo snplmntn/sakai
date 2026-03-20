@@ -5,6 +5,7 @@ export interface RequestOptions {
   path: string;
   accessToken?: string;
   body?: unknown;
+  timeoutMs?: number;
 }
 
 const REQUEST_TIMEOUT_MS = 30000;
@@ -115,7 +116,7 @@ const performRequest = async (
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort();
-  }, REQUEST_TIMEOUT_MS);
+  }, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
   console.log(`[API Request] ${options.method} ${url}`, {
     body: redactSensitiveData(options.body),
