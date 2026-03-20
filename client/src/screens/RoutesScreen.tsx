@@ -20,8 +20,8 @@ import { StatusBar } from 'expo-status-bar';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Cancel01Icon, Mic01Icon } from '@hugeicons/core-free-icons';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { Mic01Icon } from '@hugeicons/core-free-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ApiError } from '../api/base';
@@ -52,7 +52,6 @@ import {
 import { getVoiceInputUnavailableMessage, useVoiceInput } from '../hooks/useVoiceInput';
 import { transcribeSpeechRecording } from '../speech/api';
 import { createFallbackSpeechTranscription } from '../speech/fallback';
-import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
 import {
   getVoiceLanguageLabel,
   getVoiceRecognitionLocale,
@@ -468,12 +467,10 @@ export default function RoutesScreen() {
   const { session } = useAuth();
   const { preferences: savedPreferences } = usePreferences();
   const { setNavigationCandidate, startNavigation } = useNavigationAlarm();
-  const isFocused = useIsFocused();
   const navigation =
     useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const { triggerToken, setIsListening: setVoiceTriggerListening } = useVoiceSearchTrigger();
   const [originText, setOriginText] = useState('');
   const [destText, setDestText] = useState('');
   const [activeField, setActiveField] = useState<ActiveField>(null);
@@ -500,10 +497,11 @@ export default function RoutesScreen() {
   const [mapRouteSegments, setMapRouteSegments] = useState<ReturnType<typeof buildRouteSegments>>([]);
 
   // Voice input
-  const [voiceMode, setVoiceMode] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [voiceTranscriptNotice, setVoiceTranscriptNotice] = useState<string | null>(null);
-  const [speechPhase, setSpeechPhase] = useState<'idle' | 'listening' | 'transcribing' | 'searching'>('idle');
+  const [speechPhase, setSpeechPhase] = useState<
+    'idle' | 'listening' | 'finishing' | 'transcribing' | 'searching'
+  >('idle');
   const [recordingAvailable, setRecordingAvailable] = useState<boolean | null>(null);
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('expanded');
   const {
@@ -523,7 +521,6 @@ export default function RoutesScreen() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingRef = useRef<AudioRecordingRef | null>(null);
   const finalizingRecordingRef = useRef(false);
-  const lastVoiceTriggerRef = useRef(0);
   const directionsCacheRef = useRef<Map<string, Array<{ latitude: number; longitude: number }>>>(new Map());
   const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
     origin: createGooglePlacesSessionToken(),
@@ -557,9 +554,38 @@ export default function RoutesScreen() {
     destination,
   });
   const driveContextNote = buildDriveContextNote(selectedOption);
-  const canSearch = voiceMode
-    ? voiceQuery.trim().length > 0
-    : originText.trim().length > 0 && destText.trim().length > 0;
+  const canSearch = originText.trim().length > 0 && destText.trim().length > 0;
+  const voicePreviewText = partialTranscript.trim() || voiceQuery.trim();
+  const voiceMicDisabled =
+    speechPhase === 'finishing' || speechPhase === 'transcribing' || speechPhase === 'searching' || queryLoading;
+  const voiceStatusTitle =
+    speechPhase === 'listening'
+      ? 'Listening now'
+      : speechPhase === 'finishing'
+        ? 'Finishing your voice request'
+        : speechPhase === 'transcribing'
+          ? 'Transcribing your route request'
+          : speechPhase === 'searching'
+            ? 'Searching from what you said'
+            : 'Hold the mic to talk';
+  const voiceStatusBadge =
+    speechPhase === 'listening'
+      ? 'Release to send'
+      : speechPhase === 'finishing'
+        ? 'Waiting for speech end'
+        : speechPhase === 'idle'
+          ? 'Hold to talk'
+          : 'Working';
+  const voiceStatusBody =
+    speechPhase === 'listening'
+      ? 'Sakai is listening. Keep holding and say your route naturally.'
+      : speechPhase === 'finishing'
+        ? 'You let go. Sakai will detect the end of speech, then send your request.'
+        : speechPhase === 'transcribing'
+          ? 'Turning your speech into a route request with multilingual transcription.'
+          : speechPhase === 'searching'
+            ? 'Matching your spoken request to route data and your saved commute preferences.'
+            : 'Say things like "BGC fastest route" or "Gate 3 from Espana."';
   const showResultsCanvas = queryLoading || routeResult !== null;
   const selectedRoute = selectedOption ?? allRouteOptions[0] ?? null;
   const expandedSheetHeight = Math.min(
@@ -705,7 +731,7 @@ export default function RoutesScreen() {
   ]);
 
   useEffect(() => {
-    if (!activeField || voiceMode) {
+    if (!activeField) {
       setSuggestions([]);
       setSuggestionsLoading(false);
       return;
@@ -742,7 +768,7 @@ export default function RoutesScreen() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [activeField, activeText, canUseGooglePlaces, voiceMode]);
+  }, [activeField, activeText, canUseGooglePlaces]);
 
   // â”€â”€ Sync transcript â†’ voiceQuery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -751,14 +777,6 @@ export default function RoutesScreen() {
       setVoiceQuery(transcript);
     }
   }, [transcript]);
-
-  useEffect(() => {
-    setVoiceTriggerListening(speechPhase === 'listening');
-
-    return () => {
-      setVoiceTriggerListening(false);
-    };
-  }, [setVoiceTriggerListening, speechPhase]);
 
   // â”€â”€ Map fit after result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -917,7 +935,6 @@ export default function RoutesScreen() {
         throw new Error('No route request was detected. Try saying your destination again.');
       }
 
-      setVoiceMode(false);
       setVoiceQuery(normalizedQuery);
       setVoiceTranscriptNotice(null);
       const destinationHint = extractVoiceDestinationHint(normalizedQuery);
@@ -1026,7 +1043,6 @@ export default function RoutesScreen() {
       );
     } finally {
       finalizingRecordingRef.current = false;
-      setVoiceTriggerListening(false);
     }
   }, [
     accessToken,
@@ -1035,7 +1051,6 @@ export default function RoutesScreen() {
     resolveCurrentOrigin,
     runVoiceSearch,
     savedPreferences.voiceLanguage,
-    setVoiceTriggerListening,
     transcript,
   ]);
 
@@ -1052,7 +1067,6 @@ export default function RoutesScreen() {
     try {
       setActiveField(null);
       setSuggestions([]);
-      setVoiceMode(true);
       setQueryError(null);
       setVoiceTranscriptNotice(null);
       resetTranscript();
@@ -1103,51 +1117,31 @@ export default function RoutesScreen() {
       return;
     }
 
-    await stopListening();
-    await finalizeRecordingAndSearch();
-  }, [finalizeRecordingAndSearch, speechPhase, stopListening]);
+    setSpeechPhase('finishing');
 
-  const cancelSpeechCapture = useCallback(async () => {
-    const recording = recordingRef.current;
-    recordingRef.current = null;
-    setSpeechPhase('idle');
-
-    if (isListening) {
+    try {
       await stopListening();
+    } catch (error) {
+      setSpeechPhase('idle');
+      setQueryError(error instanceof Error ? error.message : 'Unable to finish voice capture.');
     }
-
-    if (recording) {
-      await recording.stopAndUnloadAsync().catch(() => undefined);
-    }
-    setVoiceTriggerListening(false);
-  }, [isListening, setVoiceTriggerListening, stopListening]);
+  }, [speechPhase, stopListening]);
 
   useEffect(() => {
-    if (voiceMode || origin !== null || hasResolvedInitialOriginRef.current) {
+    if (origin !== null || hasResolvedInitialOriginRef.current) {
       return;
     }
 
     hasResolvedInitialOriginRef.current = true;
     void resolveCurrentOrigin(true);
-  }, [origin, resolveCurrentOrigin, voiceMode]);
+  }, [origin, resolveCurrentOrigin]);
 
   useEffect(() => {
-    if (!isFocused || triggerToken === 0 || triggerToken === lastVoiceTriggerRef.current) {
-      return;
-    }
-
-    lastVoiceTriggerRef.current = triggerToken;
-
-    if (speechPhase === 'listening') {
-      void stopSpeechCapture();
-      return;
-    }
-
-    void startSpeechCapture();
-  }, [isFocused, speechPhase, startSpeechCapture, stopSpeechCapture, triggerToken]);
-
-  useEffect(() => {
-    if (speechPhase !== 'listening' || isListening || !recordingRef.current) {
+    if (
+      (speechPhase !== 'listening' && speechPhase !== 'finishing') ||
+      isListening ||
+      !recordingRef.current
+    ) {
       return;
     }
 
@@ -1206,68 +1200,25 @@ export default function RoutesScreen() {
     [activeField, resetGoogleSessionToken, resetRoutePresentation]
   );
 
-  const enterVoiceMode = useCallback(() => {
-    setActiveField(null);
-    setSuggestions([]);
-    void startSpeechCapture();
-  }, [startSpeechCapture]);
-
-  const exitVoiceMode = useCallback(async () => {
-    try {
-      if (speechPhase === 'listening') {
-        await cancelSpeechCapture();
-      } else if (isListening) {
-        await stopListening();
-      }
-    } finally {
-      recordingRef.current = null;
-      setSpeechPhase('idle');
-      resetTranscript();
-      setVoiceQuery('');
-      setVoiceMode(false);
-    }
-  }, [cancelSpeechCapture, isListening, resetTranscript, speechPhase, stopListening]);
-
   const handleSearch = useCallback(async () => {
     if (queryLoading || !canSearch) return;
-
-    const trimmedVoiceQuery = voiceQuery.trim();
     const selectedOrigin = origin;
     const selectedDestination = destination;
-
-    if (voiceMode) {
-      if (trimmedVoiceQuery.length === 0) return;
-    }
 
     setQueryLoading(true);
     setQueryError(null);
     setSuggestions([]);
     try {
-      if (voiceMode) {
-        const fallbackOrigin =
-          selectedOrigin ?? cachedCurrentOrigin ?? (await resolveCurrentOrigin(false));
-        const result = await queryRoutesByText({
-          queryText: trimmedVoiceQuery,
-          originFallback: fallbackOrigin ?? undefined,
-          preference,
-          passengerType,
-          modifiers,
-          accessToken,
-        });
+      const result = await queryRoutes({
+        origin: selectedOrigin ?? { label: originText.trim() },
+        destination: selectedDestination ?? { label: destText.trim() },
+        preference,
+        passengerType,
+        modifiers,
+        accessToken,
+      });
 
-        applyStructuredResult(result, fallbackOrigin, selectedDestination);
-      } else {
-        const result = await queryRoutes({
-          origin: selectedOrigin ?? { label: originText.trim() },
-          destination: selectedDestination ?? { label: destText.trim() },
-          preference,
-          passengerType,
-          modifiers,
-          accessToken,
-        });
-
-        applyStructuredResult(result, selectedOrigin, selectedDestination);
-      }
+      applyStructuredResult(result, selectedOrigin, selectedDestination);
     } catch (err: unknown) {
       const clarificationState = readClarificationState(err);
 
@@ -1295,9 +1246,6 @@ export default function RoutesScreen() {
     passengerType,
     preference,
     queryLoading,
-    resolveCurrentOrigin,
-    voiceMode,
-    voiceQuery,
   ]);
 
   const toggleExpanded = useCallback((id: string) => {
@@ -1502,7 +1450,6 @@ export default function RoutesScreen() {
           <Pressable
             style={styles.floatingEditButton}
             onPress={() => {
-              setVoiceMode(false);
               setSpeechPhase('idle');
               setRouteResult(null);
               setQueryLoading(false);
@@ -1689,196 +1636,185 @@ export default function RoutesScreen() {
             <Text style={styles.heroTitle}>Where to Sakai today?</Text>
 
             <View style={styles.searchCard}>
-              {voiceMode ? (
-                /* â”€â”€ Voice mode â”€â”€ */
-                <View style={styles.voiceCard}>
-                  <TextInput
-                    style={styles.voiceInput}
-                    value={isListening ? partialTranscript : voiceQuery}
-                    onChangeText={setVoiceQuery}
-                    placeholder={isListening ? 'Listening...' : 'Say your destination...'}
-                    placeholderTextColor="rgba(255,255,255,0.4)"
-                    editable={!isListening}
-                    multiline
-                  />
-
-                  <View style={styles.voiceActions}>
-                    <TouchableOpacity
-                      style={[styles.micBtn, isListening && styles.micBtnActive]}
-                      onPress={speechPhase === 'listening' ? stopSpeechCapture : startSpeechCapture}
-                    >
-                      <HugeiconsIcon
-                        icon={isListening ? Cancel01Icon : Mic01Icon}
-                        size={22}
-                        color={COLORS.white}
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => {
-                        void exitVoiceMode();
-                      }}
-                      style={styles.switchToTypeBtn}
-                    >
-                      <Text style={styles.switchToTypeText}>Type instead</Text>
-                    </TouchableOpacity>
+              <>
+                {/* From */}
+                <View style={[styles.searchField, activeField === 'origin' && styles.searchFieldActive]}>
+                  <Text style={styles.searchFieldLabel}>From</Text>
+                  <View style={styles.fieldHeaderActions}>
+                    <Pressable style={styles.inlineActionButton} onPress={() => void handleLocatePress()}>
+                      <Text style={styles.inlineActionText}>Locate</Text>
+                    </Pressable>
+                    <Pressable style={styles.inlineActionButton} onPress={handleSwapLocations}>
+                      <Text style={styles.inlineActionText}>Reverse</Text>
+                    </Pressable>
                   </View>
-
-                  <Text style={styles.voiceMetaText}>
-                    Voice language: {getVoiceLanguageLabel(savedPreferences.voiceLanguage)}
-                  </Text>
-
-                  {voiceError !== null && (
-                    <Text style={styles.voiceErrorText}>{voiceError}</Text>
-                  )}
-                  {voiceTranscriptNotice !== null && (
-                    <Text style={styles.voiceInfoText}>{voiceTranscriptNotice}</Text>
+                </View>
+                <View style={[styles.searchField, activeField === 'origin' && styles.searchFieldActive]}>
+                  <TextInput
+                    style={styles.searchInput}
+                    value={originText}
+                    onChangeText={(text) => {
+                      resetRoutePresentation();
+                      setOriginText(text);
+                      if (origin) setOrigin(null);
+                      setActiveField('origin');
+                      setSuggestions([]);
+                    }}
+                    onFocus={() => setActiveField('origin')}
+                    placeholder="Current location or a stop"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    returnKeyType="next"
+                  />
+                  {originText.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => clearField('origin')}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Text style={styles.clearBtn}>x</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
-              ) : (
-                /* â”€â”€ Structured From/To mode â”€â”€ */
-                <>
-                  {/* From */}
-                  <View style={[styles.searchField, activeField === 'origin' && styles.searchFieldActive]}>
-                    <Text style={styles.searchFieldLabel}>From</Text>
-                    <View style={styles.fieldHeaderActions}>
-                      <Pressable style={styles.inlineActionButton} onPress={() => void handleLocatePress()}>
-                        <Text style={styles.inlineActionText}>Locate</Text>
-                      </Pressable>
-                      <Pressable style={styles.inlineActionButton} onPress={handleSwapLocations}>
-                        <Text style={styles.inlineActionText}>Reverse</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                  <View style={[styles.searchField, activeField === 'origin' && styles.searchFieldActive]}>
-                    <TextInput
-                      style={styles.searchInput}
-                      value={originText}
-                      onChangeText={(text) => {
-                        resetRoutePresentation();
-                        setOriginText(text);
-                        if (origin) setOrigin(null);
-                        setActiveField('origin');
-                        setSuggestions([]);
-                      }}
-                      onFocus={() => setActiveField('origin')}
-                      placeholder="Current location or a stop"
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      returnKeyType="next"
-                    />
-                    {originText.length > 0 && (
-                      <TouchableOpacity
-                        onPress={() => clearField('origin')}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Text style={styles.clearBtn}>x</Text>
-                      </TouchableOpacity>
+
+                {activeField === 'origin' && (
+                  <View style={styles.inlineSuggestionsCard}>
+                    {suggestionsLoading || selectingPlace ? (
+                      <View style={styles.suggestionsSpinner}>
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                        <Text style={styles.suggestionsSpinnerText}>
+                          {selectingPlace ? 'Getting location...' : 'Searching...'}
+                        </Text>
+                      </View>
+                    ) : suggestions.length > 0 ? (
+                      suggestions.map((s) => (
+                        <SuggestionRow
+                          key={getPlaceSuggestionKey(s)}
+                          suggestion={s}
+                          onSelect={handleSuggestionSelect}
+                        />
+                      ))
+                    ) : (
+                      <Text style={styles.noResults}>
+                        {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
+                      </Text>
                     )}
                   </View>
+                )}
 
-                  {activeField === 'origin' && (
-                    <View style={styles.inlineSuggestionsCard}>
-                      {suggestionsLoading || selectingPlace ? (
-                        <View style={styles.suggestionsSpinner}>
-                          <ActivityIndicator size="small" color={COLORS.primary} />
-                          <Text style={styles.suggestionsSpinnerText}>
-                            {selectingPlace ? 'Getting location...' : 'Searching...'}
-                          </Text>
-                        </View>
-                      ) : suggestions.length > 0 ? (
-                        suggestions.map((s) => (
-                          <SuggestionRow
-                            key={getPlaceSuggestionKey(s)}
-                            suggestion={s}
-                            onSelect={handleSuggestionSelect}
-                          />
-                        ))
-                      ) : (
-                        <Text style={styles.noResults}>
-                          {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
-                        </Text>
-                      )}
-                    </View>
-                  )}
+                <View style={styles.fieldDivider} />
 
-                  <View style={styles.fieldDivider} />
-
-                  {/* To */}
-                  <View
-                    style={[styles.searchField, activeField === 'destination' && styles.searchFieldActive]}
-                  >
-                    <Text style={styles.searchFieldLabel}>To</Text>
-                  </View>
-                  <View
-                    style={[styles.searchField, activeField === 'destination' && styles.searchFieldActive]}
-                  >
-                    <TextInput
-                      style={styles.searchInput}
-                      value={destText}
-                      onChangeText={(text) => {
-                        resetRoutePresentation();
-                        setDestText(text);
-                        if (destination) setDestination(null);
-                        setActiveField('destination');
-                        setSuggestions([]);
-                      }}
-                      onFocus={() => setActiveField('destination')}
-                      placeholder="Destination"
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      returnKeyType="search"
-                      onSubmitEditing={canSearch ? handleSearch : undefined}
-                    />
-                    {destText.length > 0 && (
+                {/* To */}
+                <View
+                  style={[styles.searchField, activeField === 'destination' && styles.searchFieldActive]}
+                >
+                  <Text style={styles.searchFieldLabel}>To</Text>
+                  {voiceAvailable ? <Text style={styles.searchFieldHint}>Hold mic to talk</Text> : null}
+                </View>
+                <View
+                  style={[styles.searchField, activeField === 'destination' && styles.searchFieldActive]}
+                >
+                  <TextInput
+                    style={styles.searchInput}
+                    value={destText}
+                    onChangeText={(text) => {
+                      resetRoutePresentation();
+                      setDestText(text);
+                      if (destination) setDestination(null);
+                      setActiveField('destination');
+                      setSuggestions([]);
+                    }}
+                    onFocus={() => setActiveField('destination')}
+                    placeholder="Destination"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    returnKeyType="search"
+                    onSubmitEditing={canSearch ? handleSearch : undefined}
+                  />
+                  <View style={styles.destinationActions}>
+                    {destText.length > 0 && speechPhase === 'idle' ? (
                       <TouchableOpacity
                         onPress={() => clearField('destination')}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       >
                         <Text style={styles.clearBtn}>x</Text>
                       </TouchableOpacity>
+                    ) : null}
+                    {voiceAvailable ? (
+                      <Pressable
+                        style={[
+                          styles.voiceHoldButton,
+                          speechPhase === 'listening' && styles.voiceHoldButtonActive,
+                          voiceMicDisabled && styles.voiceHoldButtonBusy,
+                        ]}
+                        onPressIn={() => {
+                          void startSpeechCapture();
+                        }}
+                        onPressOut={() => {
+                          void stopSpeechCapture();
+                        }}
+                        disabled={voiceMicDisabled}
+                      >
+                        <HugeiconsIcon icon={Mic01Icon} size={18} color={COLORS.white} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+
+                {activeField === 'destination' && (
+                  <View style={styles.inlineSuggestionsCard}>
+                    {suggestionsLoading || selectingPlace ? (
+                      <View style={styles.suggestionsSpinner}>
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                        <Text style={styles.suggestionsSpinnerText}>
+                          {selectingPlace ? 'Getting location...' : 'Searching...'}
+                        </Text>
+                      </View>
+                    ) : suggestions.length > 0 ? (
+                      suggestions.map((s) => (
+                        <SuggestionRow
+                          key={getPlaceSuggestionKey(s)}
+                          suggestion={s}
+                          onSelect={handleSuggestionSelect}
+                        />
+                      ))
+                    ) : (
+                      <Text style={styles.noResults}>
+                        {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
+                      </Text>
                     )}
                   </View>
+                )}
 
-                  {activeField === 'destination' && (
-                    <View style={styles.inlineSuggestionsCard}>
-                      {suggestionsLoading || selectingPlace ? (
-                        <View style={styles.suggestionsSpinner}>
-                          <ActivityIndicator size="small" color={COLORS.primary} />
-                          <Text style={styles.suggestionsSpinnerText}>
-                            {selectingPlace ? 'Getting location...' : 'Searching...'}
-                          </Text>
-                        </View>
-                      ) : suggestions.length > 0 ? (
-                        suggestions.map((s) => (
-                          <SuggestionRow
-                            key={getPlaceSuggestionKey(s)}
-                            suggestion={s}
-                            onSelect={handleSuggestionSelect}
-                          />
-                        ))
-                      ) : (
-                        <Text style={styles.noResults}>
-                          {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Speak instead toggle */}
-                  {voiceAvailable && (
-                    <TouchableOpacity
-                      style={styles.voiceToggle}
-                      onPress={enterVoiceMode}
-                    >
-                      <HugeiconsIcon icon={Mic01Icon} size={16} color={COLORS.primary} />
-                      <Text style={styles.voiceToggleText}>Speak instead</Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
+                <View
+                  style={[
+                    styles.voiceStatusCard,
+                    speechPhase !== 'idle' && styles.voiceStatusCardActive,
+                  ]}
+                >
+                  <View style={styles.voiceStatusHeader}>
+                    <Text style={styles.voiceStatusTitle}>{voiceStatusTitle}</Text>
+                    {voiceAvailable ? (
+                      <View style={styles.voiceStatusBadge}>
+                        <Text style={styles.voiceStatusBadgeText}>{voiceStatusBadge}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.voiceStatusBody}>{voiceStatusBody}</Text>
+                  {voicePreviewText.length > 0 ? (
+                    <Text style={styles.voiceStatusPreview}>{voicePreviewText}</Text>
+                  ) : null}
+                  <Text style={styles.voiceMetaText}>
+                    Voice language: {getVoiceLanguageLabel(savedPreferences.voiceLanguage)}
+                  </Text>
+                  {voiceError !== null && speechPhase === 'idle' ? (
+                    <Text style={styles.voiceErrorText}>{voiceError}</Text>
+                  ) : null}
+                  {voiceTranscriptNotice !== null ? (
+                    <Text style={styles.voiceInfoText}>{voiceTranscriptNotice}</Text>
+                  ) : null}
+                </View>
+              </>
             </View>
           </View>
 
-          {/* â”€â”€ Body â”€â”€ */}
           <View style={styles.body}>
             {/* Search button */}
             <TouchableOpacity
@@ -1898,18 +1834,6 @@ export default function RoutesScreen() {
             {queryError && (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorText}>{queryError}</Text>
-              </View>
-            )}
-
-            {speechPhase !== 'idle' && (
-              <View style={styles.messageCard}>
-                <Text style={styles.fallbackNoteText}>
-                  {speechPhase === 'listening'
-                    ? 'Listening... say where you want to go.'
-                    : speechPhase === 'transcribing'
-                      ? 'Transcribing your route request...'
-                      : 'Searching routes from your current location...'}
-                </Text>
               </View>
             )}
 
@@ -2053,12 +1977,23 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.55)',
     width: 42,
   },
+  searchFieldHint: {
+    marginLeft: 'auto',
+    fontSize: 11,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.62)',
+  },
   searchInput: {
     flex: 1,
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.medium,
     color: COLORS.white,
     padding: 0,
+  },
+  destinationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
   },
   clearBtn: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -2419,54 +2354,73 @@ const styles = StyleSheet.create({
   },
 
   // Voice input
-  voiceToggle: {
+  voiceHoldButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  voiceHoldButtonActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  voiceHoldButtonBusy: {
+    backgroundColor: 'rgba(69,123,157,0.72)',
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  voiceStatusCard: {
+    margin: SPACING.md,
+    marginTop: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    gap: SPACING.xs,
+  },
+  voiceStatusCardActive: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  voiceStatusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.10)',
+    gap: SPACING.sm,
   },
-  voiceToggleText: {
-    fontSize: 12,
-    fontFamily: FONTS.medium,
-    color: COLORS.primary,
+  voiceStatusTitle: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.white,
   },
-  voiceCard: {
-    padding: SPACING.md,
-    gap: SPACING.md,
+  voiceStatusBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
   },
-  voiceInput: {
+  voiceStatusBadgeText: {
+    fontSize: 11,
+    fontFamily: FONTS.semibold,
+    color: 'rgba(255,255,255,0.88)',
+  },
+  voiceStatusBody: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 19,
+  },
+  voiceStatusPreview: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.medium,
     color: COLORS.white,
-    minHeight: 56,
-    textAlignVertical: 'top',
-  },
-  voiceActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-  },
-  micBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micBtnActive: {
-    backgroundColor: COLORS.danger,
-  },
-  switchToTypeBtn: {
-    paddingVertical: SPACING.sm,
-  },
-  switchToTypeText: {
-    fontSize: 12,
-    fontFamily: FONTS.medium,
-    color: 'rgba(255,255,255,0.55)',
+    lineHeight: 22,
   },
   voiceMetaText: {
     fontSize: 12,
@@ -2616,5 +2570,6 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
 });
+
 
 

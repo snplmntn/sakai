@@ -320,6 +320,73 @@ export const listTransitStopsByClusterId = async (clusterId: string): Promise<Tr
   return listTransitStopRowsByNormalizedName(clusterId.slice(CLUSTER_ID_PREFIX.length));
 };
 
+const rankTransitStopQueryMatch = (stop: TransitStop, normalizedQuery: string) => {
+  const normalizedStopName = normalizeSearchText(stop.stopName);
+
+  if (stop.normalizedName === normalizedQuery) {
+    return 0;
+  }
+
+  if (normalizedStopName === normalizedQuery) {
+    return 1;
+  }
+
+  if (stop.normalizedName.startsWith(normalizedQuery)) {
+    return 2;
+  }
+
+  if (normalizedStopName.startsWith(normalizedQuery)) {
+    return 3;
+  }
+
+  if (stop.normalizedName.includes(normalizedQuery)) {
+    return 4;
+  }
+
+  if (normalizedStopName.includes(normalizedQuery)) {
+    return 5;
+  }
+
+  return 6;
+};
+
+export const searchTransitStopsByQuery = async (
+  query: string,
+  options: {
+    limit?: number;
+  } = {}
+): Promise<TransitStop[]> => {
+  const normalizedQuery = normalizeSearchText(query);
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const client = getSupabaseAdminClient();
+  const limit = Math.max(1, Math.min(options.limit ?? 8, 20));
+  const { data, error } = await client
+    .from("transit_stops")
+    .select("*")
+    .or(`normalized_name.ilike.%${normalizedQuery}%,stop_name.ilike.%${query.trim()}%`)
+    .limit(limit * 8);
+
+  if (error) {
+    throw new HttpError(500, `Failed to search transit stops by query: ${error.message}`);
+  }
+
+  return ((data ?? []) as TransitStopRow[])
+    .map(mapTransitStop)
+    .sort(
+      (left, right) =>
+        rankTransitStopQueryMatch(left, normalizedQuery) - rankTransitStopQueryMatch(right, normalizedQuery) ||
+        right.lineCount - left.lineCount ||
+        Number(right.isMultimodal) - Number(left.isMultimodal) ||
+        left.stopName.localeCompare(right.stopName) ||
+        left.stopId.localeCompare(right.stopId)
+    )
+    .slice(0, limit);
+};
+
 export const listTransitStopsByIds = async (stopIds: string[]): Promise<TransitStop[]> => {
   if (stopIds.length === 0) {
     return [];

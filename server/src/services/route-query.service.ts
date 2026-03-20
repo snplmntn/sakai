@@ -1425,7 +1425,7 @@ export const queryRoutes = async (input: {
     modifierSource: effectiveValues.modifiers.source
   };
 
-  const [transitResult, googleFallback] = await Promise.all([
+  const [transitAttempt, googleFallback] = await Promise.all([
     queryTransitRoutesIfPossible({
       origin: buildPointFromResolvedPlace(parsedContext.origin, originResolution.place),
       destination: buildPointFromResolvedPlace(parsedContext.destination, destinationResolution.place),
@@ -1451,12 +1451,26 @@ export const queryRoutes = async (input: {
     })
   ]);
 
-  if (transitResult) {
+  if (transitAttempt.status === "success" && transitAttempt.result) {
+    console.info("Route query selected transit planner result", {
+      operation: "route_query_planner_select",
+      requestId: transitAttempt.traceSummary.requestId,
+      planner: "transit",
+      optionCount: transitAttempt.result.options.length
+    });
+
     return {
-      ...transitResult,
+      ...transitAttempt.result,
       googleFallback
     };
   }
+
+  console.info("Route query falling back from transit planner to legacy graph", {
+    operation: "route_query_planner_fallback",
+    requestId: transitAttempt.traceSummary.requestId,
+    transitStatus: transitAttempt.status,
+    transitReason: transitAttempt.traceSummary.finalReason
+  });
 
   const normalizedQuery = fallbackNormalizedQuery;
 
@@ -1547,6 +1561,13 @@ export const queryRoutes = async (input: {
   });
 
   if (routeOptions.length === 0) {
+    console.info("Route query legacy planner produced no route options", {
+      operation: "route_query_planner_empty",
+      requestId: transitAttempt.traceSummary.requestId,
+      transitStatus: transitAttempt.status,
+      transitReason: transitAttempt.traceSummary.finalReason
+    });
+
     return {
       normalizedQuery,
       options: [],
@@ -1575,6 +1596,13 @@ export const queryRoutes = async (input: {
       })
     })
   );
+
+  console.info("Route query selected legacy planner result", {
+    operation: "route_query_planner_select",
+    requestId: transitAttempt.traceSummary.requestId,
+    planner: "legacy_graph",
+    optionCount: summarizedOptions.length
+  });
 
   return {
     normalizedQuery,
