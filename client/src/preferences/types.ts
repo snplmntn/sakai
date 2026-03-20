@@ -1,12 +1,19 @@
 import { isRecord } from '../api/base';
 import type { PassengerType, RouteModifier, RoutePreference } from '../routes/types';
+import {
+  DEFAULT_VOICE_LANGUAGE,
+  isVoiceLanguagePreference,
+  type VoiceLanguagePreference,
+} from '../voice/languages';
 
 export type { PassengerType, RouteModifier, RoutePreference } from '../routes/types';
+export type { VoiceLanguagePreference } from '../voice/languages';
 
 export interface PreferenceDraft {
   defaultPreference: RoutePreference;
   passengerType: PassengerType;
   routeModifiers: RouteModifier[];
+  voiceLanguage: VoiceLanguagePreference;
 }
 
 export interface UserPreferences extends PreferenceDraft {
@@ -28,6 +35,7 @@ export const createDefaultUserPreferences = (): UserPreferences => ({
   defaultPreference: DEFAULT_ROUTE_PREFERENCE,
   passengerType: DEFAULT_PASSENGER_TYPE,
   routeModifiers: [],
+  voiceLanguage: DEFAULT_VOICE_LANGUAGE,
   isPersisted: false,
   createdAt: null,
   updatedAt: null,
@@ -108,6 +116,18 @@ const isPassengerType = (value: unknown): value is PassengerType =>
 const isRouteModifier = (value: unknown): value is RouteModifier =>
   value === 'jeep_if_possible' || value === 'less_walking';
 
+const readVoiceLanguage = (value: unknown): VoiceLanguagePreference => {
+  if (value === undefined) {
+    return DEFAULT_VOICE_LANGUAGE;
+  }
+
+  if (!isVoiceLanguagePreference(value)) {
+    throw new Error('Expected voiceLanguage to be a valid voice language preference');
+  }
+
+  return value;
+};
+
 const readRouteModifiers = (value: unknown): RouteModifier[] => {
   if (value === undefined) {
     return [];
@@ -163,6 +183,7 @@ export const parsePreferenceDraft = (value: unknown): PreferenceDraft => {
     defaultPreference: value.defaultPreference,
     passengerType: value.passengerType,
     routeModifiers: readRouteModifiers(value.routeModifiers),
+    voiceLanguage: readVoiceLanguage(value.voiceLanguage),
   };
 };
 

@@ -1,12 +1,10 @@
 import {
-  parseGoogleAuthUrlPayload,
   parseAuthPayload,
   parseAuthUser,
   type AuthPayload,
   type AuthUser,
-  type GoogleAuthUrlPayload,
 } from './types';
-import { ApiError, requestData, requestWithoutData } from '../api/base';
+import { ApiError, buildApiUrl, requestData, requestWithoutData } from '../api/base';
 
 interface EmailPasswordCredentials {
   email: string;
@@ -16,8 +14,6 @@ interface EmailPasswordCredentials {
 interface RefreshSessionInput {
   refreshToken: string;
 }
-
-const GOOGLE_AUTH_START_TIMEOUT_MS = 60000;
 
 export const signUp = async (
   credentials: EmailPasswordCredentials
@@ -55,17 +51,8 @@ export const refreshSession = async (
     parseAuthPayload
   );
 
-export const getGoogleAuthUrl = async (
-  appRedirectUri: string
-): Promise<GoogleAuthUrlPayload> =>
-  requestData(
-    {
-      method: 'GET',
-      path: `/api/auth/google/start?appRedirectUri=${encodeURIComponent(appRedirectUri)}`,
-      timeoutMs: GOOGLE_AUTH_START_TIMEOUT_MS,
-    },
-    parseGoogleAuthUrlPayload
-  );
+export const buildGoogleAuthStartUrl = (appRedirectUri: string): string =>
+  buildApiUrl(`/api/auth/google/start?appRedirectUri=${encodeURIComponent(appRedirectUri)}`);
 
 export const getMe = async (accessToken: string): Promise<AuthUser> =>
   requestData(

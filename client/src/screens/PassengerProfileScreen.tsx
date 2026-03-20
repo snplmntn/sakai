@@ -23,6 +23,7 @@ export default function PassengerProfileScreen() {
         defaultPreference: preferences.defaultPreference,
         passengerType: nextPassengerType,
         routeModifiers: preferences.routeModifiers,
+        voiceLanguage: preferences.voiceLanguage,
       });
       showToast({ tone: 'success', message: 'Passenger profile updated.' });
     } catch (error) {

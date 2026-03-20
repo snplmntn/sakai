@@ -178,6 +178,8 @@ The backend now supports optional Vertex/Gemini-powered route intent parsing, MM
 ### Google OAuth Callback Behavior
 
 - `GET /api/auth/google/start` accepts an optional `appRedirectUri` query string so the client can tell the backend which deep link should receive the auth result
+- Browser requests to `GET /api/auth/google/start` redirect directly to the Supabase Google authorize URL so mobile auth can survive backend cold starts
+- API callers can still request `Accept: application/json` to receive the authorize URL in the existing JSON envelope
 - The backend derives its own Google callback URL from the current request origin unless `AUTH_GOOGLE_REDIRECT_URI` is explicitly set as an override
 - `GET /api/auth/google/callback` exchanges the Supabase auth code on the backend
 - On success, it redirects to the signed app redirect URI with auth data in the URL fragment

@@ -22,6 +22,7 @@ export default function RoutePreferencesScreen() {
         defaultPreference: nextPreference,
         passengerType: preferences.passengerType,
         routeModifiers: preferences.routeModifiers,
+        voiceLanguage: preferences.voiceLanguage,
       });
       showToast({ tone: 'success', message: 'Route preference updated.' });
     } catch (error) {

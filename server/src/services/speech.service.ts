@@ -8,9 +8,27 @@ const GOOGLE_GENERATE_CONTENT_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${GOOGLE_GEMINI_AUDIO_MODEL}:generateContent`;
 const GOOGLE_REQUEST_TIMEOUT_MS = 25_000;
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+const LANGUAGE_OVERRIDE_LABELS = {
+  "en-PH": "English (Philippines)",
+  "fil-PH": "Filipino / Tagalog",
+  "ceb-PH": "Cebuano",
+  "ilo-PH": "Ilocano",
+  "hil-PH": "Hiligaynon",
+  "pam-PH": "Kapampangan",
+  "war-PH": "Waray"
+} as const;
+
+type SpeechLanguageOverride = keyof typeof LANGUAGE_OVERRIDE_LABELS;
+
+const nullableTextSchema = z
+  .union([z.string().trim().min(1).max(80), z.null()])
+  .optional()
+  .transform((value) => value ?? null);
 
 const speechTranscriptionResultSchema = z.object({
-  transcript: z.string().trim().min(1).max(2_000)
+  transcript: z.string().trim().min(1).max(2_000),
+  detectedLanguageCode: nullableTextSchema,
+  detectedLanguageLabel: nullableTextSchema
 });
 
 interface GeminiPart {
@@ -84,9 +102,13 @@ const decodeAudioSize = (audioBase64: string) => {
 export const transcribeSpeech = async (input: {
   audioBase64: string;
   mimeType: string;
+  languageOverride?: SpeechLanguageOverride | null;
 }): Promise<{
   transcript: string;
   confidence: null;
+  detectedLanguageCode: string | null;
+  detectedLanguageLabel: string | null;
+  detectionMode: "auto" | "override";
 }> => {
   if (decodeAudioSize(input.audioBase64) > MAX_AUDIO_BYTES) {
     throw new HttpError(413, "Audio clip is too large for transcription", {
@@ -98,6 +120,10 @@ export const transcribeSpeech = async (input: {
   const timeoutId = setTimeout(() => {
     controller.abort();
   }, GOOGLE_REQUEST_TIMEOUT_MS);
+
+  const languageOverride = input.languageOverride ?? null;
+  const languageOverrideLabel =
+    languageOverride === null ? null : LANGUAGE_OVERRIDE_LABELS[languageOverride];
 
   try {
     const response = await fetch(
@@ -115,7 +141,16 @@ export const transcribeSpeech = async (input: {
               parts: [
                 {
                   text:
-                    "Transcribe this spoken commute request exactly. Return JSON only with one field named transcript. Do not summarize."
+                    [
+                      "Transcribe this spoken commute request exactly.",
+                      "Detect the spoken language automatically unless a language override is provided.",
+                      "The speech may be Taglish, Filipino, English, Cebuano, Ilocano, Hiligaynon, Kapampangan, Waray, or another language.",
+                      "Preserve mixed-language phrasing, route labels, place names, and proper nouns.",
+                      languageOverrideLabel === null
+                        ? "Return JSON only with transcript, detectedLanguageCode, and detectedLanguageLabel."
+                        : `Bias the transcription toward ${languageOverrideLabel}. Return JSON only with transcript, detectedLanguageCode, and detectedLanguageLabel.`,
+                      "Do not summarize."
+                    ].join(" ")
                 },
                 {
                   inlineData: {
@@ -134,9 +169,15 @@ export const transcribeSpeech = async (input: {
               properties: {
                 transcript: {
                   type: "STRING"
+                },
+                detectedLanguageCode: {
+                  type: "STRING"
+                },
+                detectedLanguageLabel: {
+                  type: "STRING"
                 }
               },
-              required: ["transcript"]
+              required: ["transcript", "detectedLanguageCode", "detectedLanguageLabel"]
             }
           }
         }),
@@ -168,7 +209,12 @@ export const transcribeSpeech = async (input: {
 
     return {
       transcript: parsedResult.data.transcript,
-      confidence: null
+      confidence: null,
+      detectedLanguageCode:
+        languageOverride ?? parsedResult.data.detectedLanguageCode,
+      detectedLanguageLabel:
+        languageOverrideLabel ?? parsedResult.data.detectedLanguageLabel,
+      detectionMode: languageOverride === null ? "auto" : "override"
     };
   } catch (error) {
     if (error instanceof HttpError) {
