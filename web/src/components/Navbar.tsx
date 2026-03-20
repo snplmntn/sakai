@@ -36,7 +36,10 @@ export default function Navbar() {
           />
           <span
             className="text-lg font-semibold tracking-tight"
-            style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+            style={{
+              color: scrolled ? "var(--text-primary)" : "#F7FBFE",
+              fontFamily: "var(--font-display)",
+            }}
           >
             Sakai
           </span>
