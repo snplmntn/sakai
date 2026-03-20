@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import type {
   ExpoSpeechRecognitionErrorEvent,
   ExpoSpeechRecognitionResultEvent,
@@ -19,14 +20,37 @@ export interface VoiceInputActions {
   resetTranscript: () => void;
 }
 
-interface UseVoiceInputOptions {
-  locale?: string;
-}
-
-type SpeechRecognitionRuntime = typeof import('expo-speech-recognition');
 type SpeechRecognitionSubscription = {
   remove: () => void;
 };
+type SpeechRecognitionPermissionResponse = {
+  granted: boolean;
+};
+type SpeechRecognitionModule = {
+  addListener: (
+    eventName: 'start' | 'end' | 'result' | 'error',
+    listener: (
+      event:
+        | ExpoSpeechRecognitionResultEvent
+        | ExpoSpeechRecognitionErrorEvent
+        | Record<string, never>
+    ) => void
+  ) => SpeechRecognitionSubscription;
+  getPermissionsAsync: () => Promise<SpeechRecognitionPermissionResponse>;
+  requestPermissionsAsync: () => Promise<SpeechRecognitionPermissionResponse>;
+  isRecognitionAvailable: () => boolean;
+  start: (options: {
+    lang: string;
+    interimResults: boolean;
+    addsPunctuation: boolean;
+    continuous: boolean;
+  }) => void;
+  stop: () => void;
+};
+
+interface UseVoiceInputOptions {
+  locale?: string;
+}
 
 const VOICE_UNAVAILABLE_MESSAGE =
   Platform.OS === 'web'
@@ -34,31 +58,24 @@ const VOICE_UNAVAILABLE_MESSAGE =
     : 'Speech recognition is unavailable in this build or on this device. Rebuild the app after native changes, then make sure system speech recognition is enabled.';
 
 let activeVoiceOwner: symbol | null = null;
-
-let speechRecognitionRuntime: SpeechRecognitionRuntime | null | undefined;
+let speechRecognitionModule: SpeechRecognitionModule | null | undefined;
 
 const getVoiceInputUnavailableMessage = (): string => VOICE_UNAVAILABLE_MESSAGE;
 
-const getSpeechRecognitionRuntime = (): SpeechRecognitionRuntime | null => {
+const getSpeechRecognitionModule = (): SpeechRecognitionModule | null => {
   if (Platform.OS === 'web') {
     return null;
   }
 
-  if (speechRecognitionRuntime !== undefined) {
-    return speechRecognitionRuntime;
+  if (speechRecognitionModule !== undefined) {
+    return speechRecognitionModule;
   }
 
-  try {
-    speechRecognitionRuntime = require('expo-speech-recognition') as SpeechRecognitionRuntime;
-  } catch {
-    speechRecognitionRuntime = null;
-  }
-
-  return speechRecognitionRuntime;
+  speechRecognitionModule = requireOptionalNativeModule<SpeechRecognitionModule>(
+    'ExpoSpeechRecognition'
+  );
+  return speechRecognitionModule;
 };
-
-const getSpeechRecognitionModule = (): SpeechRecognitionRuntime['ExpoSpeechRecognitionModule'] | null =>
-  getSpeechRecognitionRuntime()?.ExpoSpeechRecognitionModule ?? null;
 
 const getPrimaryResultTranscript = (event: ExpoSpeechRecognitionResultEvent): string =>
   event.results[0]?.transcript ?? '';
@@ -139,9 +156,9 @@ export const useVoiceInput = (
           return;
         }
 
-        const nextTranscript = getPrimaryResultTranscript(event);
+        const nextTranscript = getPrimaryResultTranscript(event as ExpoSpeechRecognitionResultEvent);
 
-        if (event.isFinal) {
+        if ((event as ExpoSpeechRecognitionResultEvent).isFinal) {
           setTranscript(nextTranscript);
           setPartialTranscript('');
           return;
@@ -157,7 +174,9 @@ export const useVoiceInput = (
 
         isListeningRef.current = false;
         setIsListening(false);
-        setError(getFriendlySpeechErrorMessage(event, resolvedLocale));
+        setError(
+          getFriendlySpeechErrorMessage(event as ExpoSpeechRecognitionErrorEvent, resolvedLocale)
+        );
       }));
     }
 
