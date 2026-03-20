@@ -1,6 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
 const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+const appIconAsset = './assets/647550748_1861598611332676_3411325275701079353_n.png';
 
 const config: ExpoConfig = {
   name: 'sakai-app',
@@ -8,10 +9,10 @@ const config: ExpoConfig = {
   scheme: 'sakai',
   version: '1.0.0',
   orientation: 'portrait',
-  icon: './assets/icon.png',
+  icon: appIconAsset,
   userInterfaceStyle: 'light',
   splash: {
-    image: './assets/splash-icon.png',
+    image: './assets/splash-sakai.png',
     resizeMode: 'contain',
     backgroundColor: '#ffffff',
   },
@@ -34,10 +35,8 @@ const config: ExpoConfig = {
   android: {
     package: 'com.anonymous.sakaiapp',
     adaptiveIcon: {
-      backgroundColor: '#E6F4FE',
-      foregroundImage: './assets/android-icon-foreground.png',
-      backgroundImage: './assets/android-icon-background.png',
-      monochromeImage: './assets/android-icon-monochrome.png',
+      backgroundColor: '#ffffff',
+      foregroundImage: appIconAsset,
     },
     predictiveBackGestureEnabled: false,
     config: {
@@ -72,7 +71,7 @@ const config: ExpoConfig = {
       },
     ],
     'expo-notifications',
-    '@react-native-voice/voice',
+    'expo-speech-recognition',
   ],
 };
 

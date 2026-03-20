@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { NativeModules, Platform } from 'react-native';
-import Voice, {
-  type SpeechErrorEvent,
-  type SpeechResultsEvent,
-} from '@react-native-voice/voice';
+import { Platform } from 'react-native';
+import type {
+  ExpoSpeechRecognitionErrorEvent,
+  ExpoSpeechRecognitionResultEvent,
+} from 'expo-speech-recognition';
 
 export interface VoiceInputState {
   isListening: boolean;
@@ -23,32 +23,69 @@ interface UseVoiceInputOptions {
   locale?: string;
 }
 
-type NativeVoiceModule = {
-  destroySpeech: (callback: (error: string) => void) => void;
-  isSpeechAvailable: (callback: (isAvailable: 0 | 1, error: string) => void) => void;
-  startSpeech: (...args: unknown[]) => void;
-  stopSpeech: (callback: (error: string) => void) => void;
+type SpeechRecognitionRuntime = typeof import('expo-speech-recognition');
+type SpeechRecognitionSubscription = {
+  remove: () => void;
 };
 
 const VOICE_UNAVAILABLE_MESSAGE =
   Platform.OS === 'web'
     ? 'Voice input is unavailable on web.'
-    : 'Voice input is unavailable in this build.';
+    : 'Speech recognition is unavailable in this build or on this device. Rebuild the app after native changes, then make sure system speech recognition is enabled.';
 
 let activeVoiceOwner: symbol | null = null;
 
-const hasNativeVoiceSupport = (): boolean => {
-  const nativeVoiceModule = NativeModules.Voice as Partial<NativeVoiceModule> | null | undefined;
+let speechRecognitionRuntime: SpeechRecognitionRuntime | null | undefined;
 
-  return (
-    Platform.OS !== 'web' &&
-    nativeVoiceModule !== null &&
-    nativeVoiceModule !== undefined &&
-    typeof nativeVoiceModule.destroySpeech === 'function' &&
-    typeof nativeVoiceModule.isSpeechAvailable === 'function' &&
-    typeof nativeVoiceModule.startSpeech === 'function' &&
-    typeof nativeVoiceModule.stopSpeech === 'function'
-  );
+const getVoiceInputUnavailableMessage = (): string => VOICE_UNAVAILABLE_MESSAGE;
+
+const getSpeechRecognitionRuntime = (): SpeechRecognitionRuntime | null => {
+  if (Platform.OS === 'web') {
+    return null;
+  }
+
+  if (speechRecognitionRuntime !== undefined) {
+    return speechRecognitionRuntime;
+  }
+
+  try {
+    speechRecognitionRuntime = require('expo-speech-recognition') as SpeechRecognitionRuntime;
+  } catch {
+    speechRecognitionRuntime = null;
+  }
+
+  return speechRecognitionRuntime;
+};
+
+const getSpeechRecognitionModule = (): SpeechRecognitionRuntime['ExpoSpeechRecognitionModule'] | null =>
+  getSpeechRecognitionRuntime()?.ExpoSpeechRecognitionModule ?? null;
+
+const getPrimaryResultTranscript = (event: ExpoSpeechRecognitionResultEvent): string =>
+  event.results[0]?.transcript ?? '';
+
+const getFriendlySpeechErrorMessage = (
+  event: ExpoSpeechRecognitionErrorEvent,
+  locale: string
+): string => {
+  switch (event.error) {
+    case 'not-allowed':
+      return 'Speech recognition permission is off. Allow microphone and speech recognition access in Settings.';
+    case 'service-not-allowed':
+      return 'Speech recognition is turned off or unavailable on this device. Enable the system speech service and try again.';
+    case 'language-not-supported':
+      return `Speech recognition does not support ${locale}. Try Auto detect or a different voice language.`;
+    case 'audio-capture':
+      return 'Microphone capture failed. Close other voice apps and try again.';
+    case 'busy':
+      return 'Speech recognition is already in use. Try again in a moment.';
+    case 'no-speech':
+    case 'speech-timeout':
+      return 'No speech was detected. Try speaking again.';
+    case 'network':
+      return 'Speech recognition could not reach the service. Check connectivity and try again.';
+    default:
+      return event.message.trim().length > 0 ? event.message : 'Voice recognition failed.';
+  }
 };
 
 export const useVoiceInput = (
@@ -62,123 +99,145 @@ export const useVoiceInput = (
   const mountedRef = useRef(true);
   const isListeningRef = useRef(false);
   const ownerRef = useRef(Symbol('voice-input-owner'));
-
-  const bindVoiceListeners = () => {
-    const ownerId = ownerRef.current;
-    activeVoiceOwner = ownerId;
-
-    Voice.onSpeechStart = () => {
-      if (!mountedRef.current || activeVoiceOwner !== ownerId) {
-        return;
-      }
-
-      isListeningRef.current = true;
-      setIsListening(true);
-    };
-
-    Voice.onSpeechEnd = () => {
-      if (!mountedRef.current || activeVoiceOwner !== ownerId) {
-        return;
-      }
-
-      isListeningRef.current = false;
-      setIsListening(false);
-    };
-
-    Voice.onSpeechResults = (e: SpeechResultsEvent) => {
-      if (!mountedRef.current || activeVoiceOwner !== ownerId) {
-        return;
-      }
-
-      setTranscript(e.value?.[0] ?? '');
-    };
-
-    Voice.onSpeechPartialResults = (e: SpeechResultsEvent) => {
-      if (!mountedRef.current || activeVoiceOwner !== ownerId) {
-        return;
-      }
-
-      setPartialTranscript(e.value?.[0] ?? '');
-    };
-
-    Voice.onSpeechError = (e: SpeechErrorEvent) => {
-      if (!mountedRef.current || activeVoiceOwner !== ownerId) {
-        return;
-      }
-
-      isListeningRef.current = false;
-      setIsListening(false);
-      setError(e.error?.message ?? 'Voice recognition failed');
-    };
-  };
+  const resolvedLocale = options.locale ?? Intl.DateTimeFormat().resolvedOptions().locale ?? 'en-US';
 
   useEffect(() => {
     mountedRef.current = true;
+    const speechModule = getSpeechRecognitionModule();
+    const ownerId = ownerRef.current;
+    const subscriptions: SpeechRecognitionSubscription[] = [];
 
-    if (!hasNativeVoiceSupport()) {
+    if (speechModule === null) {
       setIsAvailable(false);
+    } else {
+      try {
+        setIsAvailable(speechModule.isRecognitionAvailable());
+      } catch {
+        setIsAvailable(false);
+      }
 
-      return () => {
-        mountedRef.current = false;
-        if (activeVoiceOwner === ownerRef.current) {
-          activeVoiceOwner = null;
+      subscriptions.push(speechModule.addListener('start', () => {
+        if (!mountedRef.current || activeVoiceOwner !== ownerId) {
+          return;
         }
-      };
+
+        isListeningRef.current = true;
+        setIsListening(true);
+      }));
+
+      subscriptions.push(speechModule.addListener('end', () => {
+        if (!mountedRef.current || activeVoiceOwner !== ownerId) {
+          return;
+        }
+
+        isListeningRef.current = false;
+        setIsListening(false);
+      }));
+
+      subscriptions.push(speechModule.addListener('result', (event) => {
+        if (!mountedRef.current || activeVoiceOwner !== ownerId) {
+          return;
+        }
+
+        const nextTranscript = getPrimaryResultTranscript(event);
+
+        if (event.isFinal) {
+          setTranscript(nextTranscript);
+          setPartialTranscript('');
+          return;
+        }
+
+        setPartialTranscript(nextTranscript);
+      }));
+
+      subscriptions.push(speechModule.addListener('error', (event) => {
+        if (!mountedRef.current || activeVoiceOwner !== ownerId) {
+          return;
+        }
+
+        isListeningRef.current = false;
+        setIsListening(false);
+        setError(getFriendlySpeechErrorMessage(event, resolvedLocale));
+      }));
     }
-
-    void Voice.isAvailable()
-      .then((available) => {
-        if (mountedRef.current) {
-          setIsAvailable(Boolean(available));
-        }
-      })
-      .catch(() => {
-        if (mountedRef.current) {
-          setIsAvailable(false);
-        }
-      });
 
     return () => {
       mountedRef.current = false;
+      subscriptions.forEach((subscription) => {
+        subscription.remove();
+      });
 
       if (activeVoiceOwner === ownerRef.current) {
         activeVoiceOwner = null;
 
         if (isListeningRef.current) {
-          void Voice.stop().catch(() => undefined);
+          getSpeechRecognitionModule()?.stop();
         }
       }
     };
-  }, []);
+  }, [resolvedLocale]);
 
   const startListening = async () => {
-    if (!hasNativeVoiceSupport()) {
+    const speechModule = getSpeechRecognitionModule();
+
+    if (speechModule === null) {
+      const errorMessage = VOICE_UNAVAILABLE_MESSAGE;
       setIsAvailable(false);
       setIsListening(false);
-      setError(VOICE_UNAVAILABLE_MESSAGE);
-      return;
+      throw new Error(errorMessage);
     }
 
-    bindVoiceListeners();
-    setError(null);
-    setTranscript('');
-    setPartialTranscript('');
-
     try {
-      await Voice.start(options.locale ?? Intl.DateTimeFormat().resolvedOptions().locale ?? 'en-US');
+      const permissions = await speechModule.getPermissionsAsync();
+      const grantedPermissions = permissions.granted
+        ? permissions
+        : await speechModule.requestPermissionsAsync();
+
+      if (!grantedPermissions.granted) {
+        const errorMessage = getFriendlySpeechErrorMessage(
+          { error: 'not-allowed', message: '' },
+          resolvedLocale
+        );
+        setIsAvailable(speechModule.isRecognitionAvailable());
+        setIsListening(false);
+        throw new Error(errorMessage);
+      }
+
+      const recognitionAvailable = speechModule.isRecognitionAvailable();
+      setIsAvailable(recognitionAvailable);
+
+      if (!recognitionAvailable) {
+        const errorMessage = VOICE_UNAVAILABLE_MESSAGE;
+        setIsListening(false);
+        throw new Error(errorMessage);
+      }
+
+      activeVoiceOwner = ownerRef.current;
+      setError(null);
+      setTranscript('');
+      setPartialTranscript('');
+      speechModule.start({
+        lang: resolvedLocale,
+        interimResults: true,
+        addsPunctuation: true,
+        continuous: false,
+      });
     } catch (err: unknown) {
       if (activeVoiceOwner === ownerRef.current) {
         activeVoiceOwner = null;
       }
 
+      const errorMessage = err instanceof Error ? err.message : 'Voice recognition failed';
       isListeningRef.current = false;
       setIsListening(false);
-      setError(err instanceof Error ? err.message : 'Voice recognition failed');
+      throw (err instanceof Error ? err : new Error(errorMessage));
     }
   };
 
   const stopListening = async () => {
-    if (!hasNativeVoiceSupport()) {
+    const speechModule = getSpeechRecognitionModule();
+
+    if (speechModule === null) {
       setIsAvailable(false);
       setIsListening(false);
       setError(VOICE_UNAVAILABLE_MESSAGE);
@@ -186,7 +245,7 @@ export const useVoiceInput = (
     }
 
     try {
-      await Voice.stop();
+      speechModule.stop();
     } catch (err: unknown) {
       isListeningRef.current = false;
       setIsListening(false);
@@ -213,3 +272,5 @@ export const useVoiceInput = (
     resetTranscript,
   };
 };
+
+export { getVoiceInputUnavailableMessage };
