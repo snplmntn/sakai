@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { isRecord } from '../api/base';
 import type { ActiveNavigationSession, AlarmMode, AlertRadiusMeters, NavigationTarget } from './types';
+import type { RouteQueryIncident } from '../routes/types';
 
 const ACTIVE_NAVIGATION_STORAGE_KEY = 'sakai.active.navigation.session';
 
@@ -28,6 +29,35 @@ const parseNavigationTarget = (value: unknown): NavigationTarget => {
   };
 };
 
+const parseRouteIncident = (value: unknown): RouteQueryIncident => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.alertType !== 'string' ||
+    typeof value.location !== 'string' ||
+    (value.direction !== null && value.direction !== undefined && typeof value.direction !== 'string') ||
+    (value.severity !== 'low' && value.severity !== 'medium' && value.severity !== 'high') ||
+    typeof value.summary !== 'string' ||
+    typeof value.displayUntil !== 'string' ||
+    typeof value.scrapedAt !== 'string' ||
+    typeof value.sourceUrl !== 'string'
+  ) {
+    throw new Error('Invalid route incident');
+  }
+
+  return {
+    id: value.id,
+    alertType: value.alertType,
+    location: value.location,
+    direction: value.direction ?? null,
+    severity: value.severity,
+    summary: value.summary,
+    displayUntil: value.displayUntil,
+    scrapedAt: value.scrapedAt,
+    sourceUrl: value.sourceUrl,
+  };
+};
+
 const parseActiveNavigationSession = (value: unknown): ActiveNavigationSession => {
   if (
     !isRecord(value) ||
@@ -44,6 +74,20 @@ const parseActiveNavigationSession = (value: unknown): ActiveNavigationSession =
   return {
     routeId: value.routeId,
     routeLabel: value.routeLabel,
+    summary: typeof value.summary === 'string' ? value.summary : '',
+    durationLabel: typeof value.durationLabel === 'string' ? value.durationLabel : '',
+    fareLabel: typeof value.fareLabel === 'string' ? value.fareLabel : '',
+    originLabel: typeof value.originLabel === 'string' ? value.originLabel : '',
+    destinationLabel:
+      typeof value.destinationLabel === 'string'
+        ? value.destinationLabel
+        : parseNavigationTarget(value.destination).label,
+    corridorTags: Array.isArray(value.corridorTags)
+      ? value.corridorTags.filter((item): item is string => typeof item === 'string')
+      : [],
+    relevantIncidents: Array.isArray(value.relevantIncidents)
+      ? value.relevantIncidents.map(parseRouteIncident)
+      : [],
     destination: parseNavigationTarget(value.destination),
     alertRadiusMeters: value.alertRadiusMeters,
     alarmMode: value.alarmMode,

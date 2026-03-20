@@ -11,6 +11,8 @@ const envSchema = z.object({
   AUTH_STATE_SIGNING_SECRET: z.string().min(32),
   AI_PROVIDER: z.enum(["gemini_developer", "vertex_express"]).default("vertex_express"),
   GEMINI_API_KEY: z.string().min(1).optional(),
+  GOOGLE_API_KEY: z.string().min(1).optional(),
+  GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   VERTEX_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL_PRIMARY: z.string().min(1).optional(),
   GEMINI_MODEL_LIGHT: z.string().min(1).optional(),

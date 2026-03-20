@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  NativeModules,
   Platform,
   ScrollView,
   StyleSheet,
@@ -11,11 +12,15 @@ import {
   View,
 } from 'react-native';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import { Cancel01Icon, Mic01Icon } from '@hugeicons/core-free-icons';
+import { useIsFocused } from '@react-navigation/native';
+import { ApiError } from '../api/base';
 import { useAuth } from '../auth/AuthContext';
 import MapSetupNotice from '../components/MapSetupNotice';
+import RelevantIncidentsSection from '../components/RelevantIncidentsSection';
+import { useNavigationAlarm } from '../navigation-alert/NavigationAlarmContext';
 import SafeScreen from '../components/SafeScreen';
 import { hasGoogleMapsApiKey, hasGooglePlacesApiKey } from '../config/env';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
@@ -25,39 +30,31 @@ import {
   resolvePlaceSuggestion,
   searchMergedPlaceSuggestions,
 } from '../places/search';
-import { reverseGeocodeCurrentLocation } from '../places/api';
+import { getGoogleDirectionsPath, reverseGeocodeCurrentLocation } from '../places/api';
 import { usePreferences } from '../preferences/PreferencesContext';
 import { queryRoutes, queryRoutesByText } from '../routes/api';
 import {
   buildCoordinateFallbackNote,
   buildRouteMarkers,
+  buildRouteSegments,
   formatDuration,
   formatFare,
 } from '../routes/view-models';
 import { useVoiceInput } from '../hooks/useVoiceInput';
-import type { PlaceSuggestion, SelectedPlace } from '../places/types';
+import { transcribeSpeechRecording } from '../speech/api';
+import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
+import { extractVoiceDestinationHint, normalizeVoiceRouteQuery } from '../voice/route-query';
+import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import type {
   PassengerType,
+  RouteModifier,
   RoutePreference,
   RouteQueryLeg,
   RouteQueryOption,
   RouteQueryResult,
 } from '../routes/types';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const PREFERENCES: { key: RoutePreference; label: string }[] = [
-  { key: 'balanced', label: 'Balanced' },
-  { key: 'fastest', label: 'Fastest' },
-  { key: 'cheapest', label: 'Cheapest' },
-];
-
-const PASSENGER_TYPES: { key: PassengerType; label: string }[] = [
-  { key: 'regular', label: 'Regular' },
-  { key: 'student', label: 'Student' },
-  { key: 'senior', label: 'Senior' },
-  { key: 'pwd', label: 'PWD' },
-];
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const MODE_LABELS: Record<string, string> = {
   jeepney: 'Jeep',
@@ -65,6 +62,7 @@ const MODE_LABELS: Record<string, string> = {
   mrt3: 'MRT3',
   lrt1: 'LRT1',
   lrt2: 'LRT2',
+  rail: 'Rail',
   car: 'Car',
   bus: 'Bus',
 };
@@ -76,9 +74,32 @@ const MARKER_COLORS: Record<string, string> = {
   transfer: COLORS.warning,
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const ROUTE_LINE_COLORS: Record<string, string> = {
+  jeepney: '#007AFF',
+  uv: '#34C759',
+  mrt3: '#FF9500',
+  lrt1: '#FF3B30',
+  lrt2: '#AF52DE',
+  rail: '#FF9500',
+  car: '#102033',
+  bus: '#0A84FF',
+  walk: '#5D7286',
+};
 
-function LegRow({ leg }: { leg: RouteQueryLeg }) {
+type AudioRecordingRef = {
+  stopAndUnloadAsync: () => Promise<unknown>;
+  getURI: () => string | null;
+};
+
+// â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function LegRow({
+  leg,
+  optionSource,
+}: {
+  leg: RouteQueryLeg;
+  optionSource: RouteQueryOption['source'];
+}) {
   if (leg.type === 'walk') {
     return (
       <View style={styles.legRow}>
@@ -88,7 +109,7 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
         <View style={styles.legInfo}>
           <Text style={styles.legName}>Walk to {leg.toLabel}</Text>
           <Text style={styles.legMeta}>
-            {leg.distanceMeters}m · {formatDuration(leg.durationMinutes)}
+            {leg.distanceMeters}m Â· {formatDuration(leg.durationMinutes)}
           </Text>
         </View>
       </View>
@@ -103,12 +124,16 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
         </View>
         <View style={styles.legInfo}>
           <Text style={styles.legName}>
-            {leg.fromLabel} → {leg.toLabel}
+            {leg.fromLabel} â†’ {leg.toLabel}
           </Text>
           <Text style={styles.legMeta}>
-            {leg.distanceKm.toFixed(1)} km · {formatDuration(leg.durationMinutes)}
+            {leg.distanceKm.toFixed(1)} km Â· {formatDuration(leg.durationMinutes)}
           </Text>
-          <Text style={styles.legFare}>{formatFare(leg.fare.amount)}</Text>
+          <Text style={styles.legFare}>
+            {optionSource === 'google_fallback'
+              ? 'Estimated in total only'
+              : formatFare(leg.fare.amount)}
+          </Text>
         </View>
       </View>
     );
@@ -123,9 +148,13 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
         <Text style={styles.legName}>{leg.routeName}</Text>
         <Text style={styles.legMeta}>{leg.directionLabel}</Text>
         <Text style={styles.legMeta}>
-          {leg.fromStop.stopName} → {leg.toStop.stopName}
+          {leg.fromStop.stopName} â†’ {leg.toStop.stopName}
         </Text>
-        <Text style={styles.legFare}>{formatFare(leg.fare.amount)}</Text>
+        <Text style={styles.legFare}>
+          {optionSource === 'google_fallback'
+            ? 'Estimated in total only'
+            : formatFare(leg.fare.amount)}
+        </Text>
       </View>
     </View>
   );
@@ -133,12 +162,14 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
 
 function RouteCard({
   option,
+  compactIncidentMeta,
   selected,
   onSelect,
   expanded,
   onToggleLegs,
 }: {
   option: RouteQueryOption;
+  compactIncidentMeta?: string | null;
   selected: boolean;
   onSelect: () => void;
   expanded: boolean;
@@ -147,6 +178,7 @@ function RouteCard({
   const isEstimated =
     option.fareConfidence === 'estimated' || option.fareConfidence === 'partially_estimated';
   const fareBadgeLabel = option.fareConfidence === 'partially_estimated' ? 'Part. Est.' : 'Est. Fare';
+  const isGoogleFallback = option.source === 'google_fallback';
 
   return (
     <TouchableOpacity
@@ -164,6 +196,8 @@ function RouteCard({
       </View>
 
       <Text style={styles.routeSummary}>{option.summary}</Text>
+      {option.providerLabel ? <Text style={styles.routeProviderLabel}>{option.providerLabel}</Text> : null}
+      {option.providerNotice ? <Text style={styles.routeProviderNote}>{option.providerNotice}</Text> : null}
 
       <View style={styles.statsRow}>
         <View style={styles.statBlock}>
@@ -192,14 +226,30 @@ function RouteCard({
         </View>
       )}
 
+      {!isGoogleFallback && option.relevantIncidents.length > 0 && (
+        <RelevantIncidentsSection
+          incidents={option.relevantIncidents}
+          compact
+          maxItems={1}
+          metaNotice={compactIncidentMeta}
+        />
+      )}
+
       <TouchableOpacity onPress={onToggleLegs} style={styles.toggleBtn} activeOpacity={0.7}>
         <Text style={styles.toggleBtnText}>{expanded ? 'Hide breakdown' : 'Show breakdown'}</Text>
       </TouchableOpacity>
 
       {expanded && (
         <View style={styles.legList}>
+          {!isGoogleFallback && option.relevantIncidents.length > 0 && (
+            <RelevantIncidentsSection
+              incidents={option.relevantIncidents}
+              title="Route impact"
+              metaNotice="These MMDA updates match this routeâ€™s corridor or endpoints."
+            />
+          )}
           {option.legs.map((leg) => (
-            <LegRow key={leg.id} leg={leg} />
+            <LegRow key={leg.id} leg={leg} optionSource={option.source} />
           ))}
           {option.fareAssumptions.length > 0 && (
             <Text style={styles.fareNote}>* {option.fareAssumptions.join(' ')}</Text>
@@ -238,7 +288,7 @@ function SuggestionRow({
   onSelect: (s: PlaceSuggestion) => void;
 }) {
   const isSakai = suggestion.source === 'sakai';
-  const secondary = isSakai ? `${suggestion.city} · ${suggestion.kind}` : suggestion.secondaryText;
+  const secondary = isSakai ? `${suggestion.city} Â· ${suggestion.kind}` : suggestion.secondaryText;
 
   return (
     <TouchableOpacity
@@ -263,11 +313,14 @@ function SuggestionRow({
   );
 }
 
-// ─── Main screen ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Main screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function RoutesScreen() {
   const { session } = useAuth();
   const { preferences: savedPreferences } = usePreferences();
+  const { setNavigationCandidate, startNavigation } = useNavigationAlarm();
+  const isFocused = useIsFocused();
+  const { triggerToken, setIsListening: setVoiceTriggerListening } = useVoiceSearchTrigger();
   const [originText, setOriginText] = useState('');
   const [destText, setDestText] = useState('');
   const [activeField, setActiveField] = useState<'origin' | 'destination' | null>(null);
@@ -281,17 +334,22 @@ export default function RoutesScreen() {
 
   const [preference, setPreference] = useState<RoutePreference>('balanced');
   const [passengerType, setPassengerType] = useState<PassengerType>('regular');
+  const [modifiers, setModifiers] = useState<RouteModifier[]>([]);
 
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [googleServiceNotice, setGoogleServiceNotice] = useState<string | null>(null);
   const [locationNotice, setLocationNotice] = useState<string | null>(null);
   const [routeResult, setRouteResult] = useState<RouteQueryResult | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
+  const [mapRouteSegments, setMapRouteSegments] = useState<ReturnType<typeof buildRouteSegments>>([]);
 
   // Voice input
   const [voiceMode, setVoiceMode] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
+  const [speechPhase, setSpeechPhase] = useState<'idle' | 'listening' | 'transcribing' | 'searching'>('idle');
+  const [recordingAvailable, setRecordingAvailable] = useState<boolean | null>(null);
   const {
     isListening,
     transcript,
@@ -305,6 +363,11 @@ export default function RoutesScreen() {
 
   const mapRef = useRef<MapView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isMapInteracting, setIsMapInteracting] = useState(false);
+  const recordingRef = useRef<AudioRecordingRef | null>(null);
+  const finalizingRecordingRef = useRef(false);
+  const lastVoiceTriggerRef = useRef(0);
+  const directionsCacheRef = useRef<Map<string, Array<{ latitude: number; longitude: number }>>>(new Map());
   const googleSessionTokensRef = useRef<Record<'origin' | 'destination', string>>({
     origin: createGooglePlacesSessionToken(),
     destination: createGooglePlacesSessionToken(),
@@ -315,17 +378,45 @@ export default function RoutesScreen() {
   const accessToken = session?.accessToken;
   const isGoogleMapsConfigured = hasGoogleMapsApiKey();
   const canUseGooglePlaces = hasGooglePlacesApiKey();
+  const allRouteOptions = useMemo(
+    () => (routeResult ? [...routeResult.options, ...routeResult.googleFallback.options] : []),
+    [routeResult]
+  );
+  const selectedOption = allRouteOptions.find((o) => o.id === selectedOptionId) ?? null;
+  const mapMarkers = useMemo(
+    () => buildRouteMarkers({ origin, destination, routeResult, option: selectedOption }),
+    [destination, origin, routeResult, selectedOption]
+  );
+  const fallbackRouteSegments = useMemo(
+    () => buildRouteSegments({ origin, destination, routeResult, option: selectedOption }),
+    [destination, origin, routeResult, selectedOption]
+  );
+  const coordinateFallbackNote = buildCoordinateFallbackNote({
+    routeResult,
+    origin,
+    destination,
+  });
+  const driveContextNote = buildDriveContextNote(selectedOption);
+
+  useEffect(() => {
+    setRecordingAvailable(Boolean(NativeModules.ExponentAV));
+  }, []);
 
   const resetGoogleSessionToken = useCallback((field: 'origin' | 'destination') => {
     googleSessionTokensRef.current[field] = createGooglePlacesSessionToken();
   }, []);
 
-  // ── Debounced suggestion fetch ──────────────────────────────────────────────
+  // â”€â”€ Debounced suggestion fetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   useEffect(() => {
     setPreference(savedPreferences.defaultPreference);
     setPassengerType(savedPreferences.passengerType);
-  }, [savedPreferences.defaultPreference, savedPreferences.passengerType]);
+    setModifiers(savedPreferences.routeModifiers);
+  }, [
+    savedPreferences.defaultPreference,
+    savedPreferences.passengerType,
+    savedPreferences.routeModifiers,
+  ]);
 
   useEffect(() => {
     if (!activeField) {
@@ -365,30 +456,129 @@ export default function RoutesScreen() {
     };
   }, [activeField, activeText, canUseGooglePlaces]);
 
-  // ── Sync transcript → voiceQuery ───────────────────────────────────────────
+  // â”€â”€ Sync transcript â†’ voiceQuery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   useEffect(() => {
     if (transcript) setVoiceQuery(transcript);
   }, [transcript]);
 
-  // ── Map fit after result ────────────────────────────────────────────────────
+  useEffect(() => {
+    setVoiceTriggerListening(speechPhase === 'listening');
+
+    return () => {
+      setVoiceTriggerListening(false);
+    };
+  }, [setVoiceTriggerListening, speechPhase]);
+
+  // â”€â”€ Map fit after result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   useEffect(() => {
     if (!routeResult || !selectedOptionId) return;
-    const option = routeResult.options.find((o) => o.id === selectedOptionId);
-    if (!option) return;
+    const coords = [
+      ...mapMarkers.map((marker) => ({ latitude: marker.latitude, longitude: marker.longitude })),
+      ...mapRouteSegments.flatMap((segment) => segment.coordinates),
+    ];
 
-    const markers = buildRouteMarkers({ origin, destination, option });
-    if (markers.length < 2) return;
+    if (coords.length < 2) return;
 
-    const coords = markers.map((m) => ({ latitude: m.latitude, longitude: m.longitude }));
     setTimeout(() => {
       mapRef.current?.fitToCoordinates(coords, {
         edgePadding: { top: 40, right: 40, bottom: 40, left: 40 },
         animated: true,
       });
     }, 300);
-  }, [routeResult, selectedOptionId, origin, destination]);
+  }, [mapMarkers, mapRouteSegments, routeResult, selectedOptionId]);
+
+  useEffect(() => {
+    setMapRouteSegments(fallbackRouteSegments);
+    setGoogleServiceNotice(null);
+
+    if (!isGoogleMapsConfigured || fallbackRouteSegments.length === 0) {
+      return;
+    }
+
+    const needsDirections = fallbackRouteSegments.some(
+      (segment) => (segment.type === 'walk' || segment.type === 'drive') && segment.coordinates.length >= 2
+    );
+
+    if (!needsDirections) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const hydrateRouteSegments = async () => {
+      let hasDirectionFailure = false;
+
+      const resolvedSegments = await Promise.all(
+        fallbackRouteSegments.map(async (segment) => {
+          if ((segment.type !== 'walk' && segment.type !== 'drive') || segment.coordinates.length < 2) {
+            return segment;
+          }
+
+          const [originCoordinate, destinationCoordinate] = segment.coordinates;
+          const cacheKey = [
+            segment.type,
+            originCoordinate.latitude,
+            originCoordinate.longitude,
+            destinationCoordinate.latitude,
+            destinationCoordinate.longitude,
+          ].join(':');
+          const cachedPath = directionsCacheRef.current.get(cacheKey);
+
+          if (cachedPath) {
+            return {
+              ...segment,
+              coordinates: cachedPath,
+              isFallbackGeometry: false,
+            };
+          }
+
+          try {
+            const googlePath = await getGoogleDirectionsPath({
+              origin: originCoordinate,
+              destination: destinationCoordinate,
+              mode: segment.type === 'walk' ? 'walking' : 'driving',
+            });
+
+            if (!googlePath || googlePath.length < 2) {
+              hasDirectionFailure = true;
+              return segment;
+            }
+
+            directionsCacheRef.current.set(cacheKey, googlePath);
+
+            return {
+              ...segment,
+              coordinates: googlePath,
+              isFallbackGeometry: false,
+            };
+          } catch {
+            hasDirectionFailure = true;
+            return segment;
+          }
+        })
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      setMapRouteSegments(resolvedSegments);
+
+      if (hasDirectionFailure) {
+        setGoogleServiceNotice(
+          'Some walk or car map paths are shown as straight lines because Google Directions is unavailable right now.'
+        );
+      }
+    };
+
+    void hydrateRouteSegments();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackRouteSegments, isGoogleMapsConfigured]);
 
   const resolveCurrentOrigin = useCallback(async () => {
     try {
@@ -421,6 +611,186 @@ export default function RoutesScreen() {
     }
   }, []);
 
+  const runVoiceSearch = useCallback(
+    async (spokenQuery: string, originFallback?: SelectedPlace | null) => {
+      const normalizedQuery = normalizeVoiceRouteQuery(spokenQuery);
+
+      if (normalizedQuery.length === 0) {
+        throw new Error('No route request was detected. Try saying your destination again.');
+      }
+
+      setVoiceMode(false);
+      setVoiceQuery(normalizedQuery);
+      const destinationHint = extractVoiceDestinationHint(normalizedQuery);
+      if (destinationHint.length > 0) {
+        setDestText(destinationHint);
+        setDestination(null);
+      }
+
+      setQueryLoading(true);
+      setQueryError(null);
+      setRouteResult(null);
+      setSelectedOptionId(null);
+      setExpandedOptions(new Set());
+      setSpeechPhase('searching');
+
+      try {
+        const result = await queryRoutesByText({
+          queryText: normalizedQuery,
+          originFallback: originFallback ?? undefined,
+          preference,
+          passengerType,
+          modifiers,
+          accessToken,
+        });
+
+        const initialOption = result.options[0] ?? result.googleFallback.options[0] ?? null;
+        setRouteResult(result);
+        setSelectedOptionId(initialOption?.id ?? null);
+        setExpandedOptions(initialOption ? new Set([initialOption.id]) : new Set());
+        setOriginText(result.normalizedQuery.origin.label);
+        setDestText(result.normalizedQuery.destination.label);
+      } finally {
+        setQueryLoading(false);
+        setSpeechPhase('idle');
+      }
+    },
+    [accessToken, modifiers, passengerType, preference]
+  );
+
+  const finalizeRecordingAndSearch = useCallback(async () => {
+    if (finalizingRecordingRef.current) {
+      return;
+    }
+
+    finalizingRecordingRef.current = true;
+
+    try {
+      const recording = recordingRef.current;
+      recordingRef.current = null;
+
+      if (!recording) {
+        const fallbackOrigin = origin ?? (await resolveCurrentOrigin());
+        if (fallbackOrigin) {
+          setOrigin(fallbackOrigin);
+          setOriginText(fallbackOrigin.label);
+        }
+
+        await runVoiceSearch(transcript, fallbackOrigin);
+        return;
+      }
+
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+
+      if (!uri) {
+        throw new Error('Voice recording could not be saved. Try again.');
+      }
+
+      setSpeechPhase('transcribing');
+      const speechResult = await transcribeSpeechRecording({
+        uri,
+        mimeType: 'audio/aac',
+        accessToken,
+      });
+      const fallbackOrigin = origin ?? (await resolveCurrentOrigin());
+      if (fallbackOrigin) {
+        setOrigin(fallbackOrigin);
+        setOriginText(fallbackOrigin.label);
+      }
+
+      await runVoiceSearch(
+        speechResult.transcript.trim().length > 0 ? speechResult.transcript : transcript,
+        fallbackOrigin
+      );
+    } finally {
+      finalizingRecordingRef.current = false;
+      setVoiceTriggerListening(false);
+    }
+  }, [accessToken, origin, resolveCurrentOrigin, runVoiceSearch, setVoiceTriggerListening, transcript]);
+
+  const startSpeechCapture = useCallback(async () => {
+    if (speechPhase !== 'idle') {
+      return;
+    }
+
+    if (!voiceAvailable) {
+      setQueryError('Voice input is unavailable in this build.');
+      return;
+    }
+
+    try {
+      setActiveField(null);
+      setSuggestions([]);
+      setVoiceMode(true);
+      setQueryError(null);
+      resetTranscript();
+      setVoiceQuery('');
+      setSpeechPhase('listening');
+
+      if (recordingAvailable) {
+        const expoAv = await import('expo-av');
+        const permission = await expoAv.Audio.requestPermissionsAsync();
+
+        if (!permission.granted) {
+          setSpeechPhase('idle');
+          setQueryError('Microphone access is off. Allow microphone access to speak your route.');
+          return;
+        }
+
+        await expoAv.Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          interruptionModeIOS: expoAv.InterruptionModeIOS.DoNotMix,
+          interruptionModeAndroid: expoAv.InterruptionModeAndroid.DoNotMix,
+          shouldDuckAndroid: true,
+          staysActiveInBackground: false,
+        });
+
+        const { recording } = await expoAv.Audio.Recording.createAsync(
+          expoAv.Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        recordingRef.current = recording;
+      }
+
+      await startListening();
+    } catch (error) {
+      const recording = recordingRef.current;
+      recordingRef.current = null;
+      if (recording) {
+        await recording.stopAndUnloadAsync().catch(() => undefined);
+      }
+      setSpeechPhase('idle');
+      setQueryError(
+        error instanceof Error ? error.message : 'Unable to start voice capture right now.'
+      );
+    }
+  }, [recordingAvailable, resetTranscript, speechPhase, startListening, voiceAvailable]);
+
+  const stopSpeechCapture = useCallback(async () => {
+    if (speechPhase !== 'listening') {
+      return;
+    }
+
+    await stopListening();
+    await finalizeRecordingAndSearch();
+  }, [finalizeRecordingAndSearch, speechPhase, stopListening]);
+
+  const cancelSpeechCapture = useCallback(async () => {
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+    setSpeechPhase('idle');
+
+    if (isListening) {
+      await stopListening();
+    }
+
+    if (recording) {
+      await recording.stopAndUnloadAsync().catch(() => undefined);
+    }
+    setVoiceTriggerListening(false);
+  }, [isListening, setVoiceTriggerListening, stopListening]);
+
   useEffect(() => {
     if (voiceMode || origin !== null || hasResolvedInitialOriginRef.current) {
       return;
@@ -430,7 +800,30 @@ export default function RoutesScreen() {
     void resolveCurrentOrigin();
   }, [origin, resolveCurrentOrigin, voiceMode]);
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isFocused || triggerToken === 0 || triggerToken === lastVoiceTriggerRef.current) {
+      return;
+    }
+
+    lastVoiceTriggerRef.current = triggerToken;
+
+    if (speechPhase === 'listening') {
+      void stopSpeechCapture();
+      return;
+    }
+
+    void startSpeechCapture();
+  }, [isFocused, speechPhase, startSpeechCapture, stopSpeechCapture, triggerToken]);
+
+  useEffect(() => {
+    if (speechPhase !== 'listening' || isListening || !recordingRef.current) {
+      return;
+    }
+
+    void finalizeRecordingAndSearch();
+  }, [finalizeRecordingAndSearch, isListening, speechPhase]);
+
+  // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleSuggestionSelect = useCallback(
     async (suggestion: PlaceSuggestion) => {
@@ -477,20 +870,24 @@ export default function RoutesScreen() {
   const enterVoiceMode = useCallback(() => {
     setActiveField(null);
     setSuggestions([]);
-    setVoiceMode(true);
-  }, []);
+    void startSpeechCapture();
+  }, [startSpeechCapture]);
 
   const exitVoiceMode = useCallback(async () => {
     try {
-      if (isListening) {
+      if (speechPhase === 'listening') {
+        await cancelSpeechCapture();
+      } else if (isListening) {
         await stopListening();
       }
     } finally {
+      recordingRef.current = null;
+      setSpeechPhase('idle');
       resetTranscript();
       setVoiceQuery('');
       setVoiceMode(false);
     }
-  }, [isListening, resetTranscript, stopListening]);
+  }, [cancelSpeechCapture, isListening, resetTranscript, speechPhase, stopListening]);
 
   const handleSearch = useCallback(async () => {
     if (queryLoading) return;
@@ -513,10 +910,13 @@ export default function RoutesScreen() {
     try {
       let result: RouteQueryResult;
       if (voiceMode) {
+        const fallbackOrigin = selectedOrigin ?? (await resolveCurrentOrigin());
         result = await queryRoutesByText({
           queryText: trimmedVoiceQuery,
+          originFallback: fallbackOrigin ?? undefined,
           preference,
           passengerType,
+          modifiers,
           accessToken,
         });
       } else {
@@ -529,17 +929,83 @@ export default function RoutesScreen() {
           destination: selectedDestination,
           preference,
           passengerType,
+          modifiers,
           accessToken,
         });
       }
+      const initialOption = result.options[0] ?? result.googleFallback.options[0] ?? null;
       setRouteResult(result);
-      if (result.options[0]) setSelectedOptionId(result.options[0].id);
+      setSelectedOptionId(initialOption?.id ?? null);
     } catch (err: unknown) {
+      if (err instanceof ApiError && err.statusCode === 400) {
+        const details = err.details;
+
+        if (
+          details !== null &&
+          typeof details === 'object' &&
+          'reasonCode' in details &&
+          details.reasonCode === 'clarification_required'
+        ) {
+          const detailRecord = details as Record<string, unknown>;
+          const field = detailRecord.field === 'origin' ? 'origin' : 'destination';
+          const rawMatches = Array.isArray(detailRecord.matches)
+            ? detailRecord.matches
+            : Array.isArray(detailRecord.destinationMatches)
+              ? detailRecord.destinationMatches
+              : Array.isArray(detailRecord.originMatches)
+                ? detailRecord.originMatches
+                : [];
+          const clarificationSuggestions: PlaceSuggestion[] = rawMatches.flatMap((match) => {
+            if (typeof match !== 'object' || match === null) {
+              return [];
+            }
+
+            const candidate = match as Record<string, unknown>;
+
+            if (
+              typeof candidate.id !== 'string' ||
+              typeof candidate.canonicalName !== 'string' ||
+              typeof candidate.city !== 'string' ||
+              typeof candidate.kind !== 'string' ||
+              typeof candidate.latitude !== 'number' ||
+              typeof candidate.longitude !== 'number' ||
+              typeof candidate.matchedBy !== 'string' ||
+              typeof candidate.matchedText !== 'string'
+            ) {
+              return [];
+            }
+
+            const suggestion: SakaiPlaceSuggestion = {
+              source: 'sakai',
+              id: candidate.id,
+              label: candidate.canonicalName,
+              city: candidate.city,
+              kind: candidate.kind as SakaiPlaceSuggestion['kind'],
+              latitude: candidate.latitude,
+              longitude: candidate.longitude,
+              googlePlaceId:
+                typeof candidate.googlePlaceId === 'string' ? candidate.googlePlaceId : null,
+              matchedBy: candidate.matchedBy as SakaiPlaceSuggestion['matchedBy'],
+              matchedText: candidate.matchedText,
+            };
+
+            return [suggestion];
+          });
+
+          if (clarificationSuggestions.length > 0) {
+            setSuggestions(clarificationSuggestions);
+            setActiveField(field);
+            setQueryError('Choose the stop cluster you meant.');
+            return;
+          }
+        }
+      }
+
       setQueryError(err instanceof Error ? err.message : 'Route search failed. Try again.');
     } finally {
       setQueryLoading(false);
     }
-  }, [accessToken, destination, origin, passengerType, preference, queryLoading, voiceMode, voiceQuery]);
+  }, [accessToken, destination, modifiers, origin, passengerType, preference, queryLoading, resolveCurrentOrigin, voiceMode, voiceQuery]);
 
   const toggleExpanded = useCallback((id: string) => {
     setExpandedOptions((prev) => {
@@ -565,24 +1031,34 @@ export default function RoutesScreen() {
     setActiveField(field);
   }, []);
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Derived â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  const selectedOption = routeResult?.options.find((o) => o.id === selectedOptionId) ?? null;
-  const mapMarkers = buildRouteMarkers({ origin, destination, option: selectedOption });
-  const coordinateFallbackNote = buildCoordinateFallbackNote({
-    routeResult,
-    origin,
-    destination,
-  });
-  const driveContextNote = buildDriveContextNote(selectedOption);
   const canSearch = voiceMode
     ? voiceQuery.trim().length > 0
     : origin !== null && destination !== null;
-  const activePreferenceLabel = PREFERENCES.find((p) => p.key === preference)?.label ?? 'Balanced';
-  const activePassengerLabel =
-    PASSENGER_TYPES.find((p) => p.key === passengerType)?.label ?? 'Regular';
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedOption) {
+      setNavigationCandidate(null);
+      return;
+    }
+
+    setNavigationCandidate({
+      routeId: selectedOption.id,
+      routeLabel: selectedOption.recommendationLabel,
+      summary: selectedOption.summary,
+      durationLabel: formatDuration(selectedOption.totalDurationMinutes),
+      fareLabel: formatFare(selectedOption.totalFare),
+      originLabel: routeResult?.normalizedQuery.origin.label ?? origin?.label ?? 'Origin',
+      destinationLabel:
+        routeResult?.normalizedQuery.destination.label ?? destination?.label ?? 'Destination',
+      corridorTags: selectedOption.corridorTags,
+      relevantIncidents: selectedOption.relevantIncidents,
+      destination: selectedOption.navigationTarget,
+    });
+  }, [destination?.label, origin?.label, routeResult?.normalizedQuery.destination.label, routeResult?.normalizedQuery.origin.label, selectedOption, setNavigationCandidate]);
+
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <SafeScreen
@@ -598,32 +1074,25 @@ export default function RoutesScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          scrollEnabled={!isMapInteracting}
         >
-          {/* ── Hero card ── */}
+          {/* â”€â”€ Hero card â”€â”€ */}
           <View style={styles.heroCard}>
             <View style={styles.heroRule} />
             <View style={styles.heroTopRow}>
               <Text style={styles.heroLabel}>Routes</Text>
-              <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeText}>{activePreferenceLabel}</Text>
-              </View>
             </View>
             <Text style={styles.heroTitle}>Where to Sakai today?</Text>
-            <View style={styles.heroMetaRow}>
-              <View style={styles.heroMetaBadge}>
-                <Text style={styles.heroMetaText}>Fare profile: {activePassengerLabel}</Text>
-              </View>
-            </View>
 
             <View style={styles.searchCard}>
               {voiceMode ? (
-                /* ── Voice mode ── */
+                /* â”€â”€ Voice mode â”€â”€ */
                 <View style={styles.voiceCard}>
                   <TextInput
                     style={styles.voiceInput}
                     value={isListening ? partialTranscript : voiceQuery}
                     onChangeText={setVoiceQuery}
-                    placeholder={isListening ? 'Listening…' : 'Say your destination…'}
+                    placeholder={isListening ? 'Listening...' : 'Say your destination...'}
                     placeholderTextColor="rgba(255,255,255,0.4)"
                     editable={!isListening}
                     multiline
@@ -632,7 +1101,7 @@ export default function RoutesScreen() {
                   <View style={styles.voiceActions}>
                     <TouchableOpacity
                       style={[styles.micBtn, isListening && styles.micBtnActive]}
-                      onPress={isListening ? stopListening : startListening}
+                      onPress={speechPhase === 'listening' ? stopSpeechCapture : startSpeechCapture}
                     >
                       <HugeiconsIcon
                         icon={isListening ? Cancel01Icon : Mic01Icon}
@@ -656,7 +1125,7 @@ export default function RoutesScreen() {
                   )}
                 </View>
               ) : (
-                /* ── Structured From/To mode ── */
+                /* â”€â”€ Structured From/To mode â”€â”€ */
                 <>
                   {/* From */}
                   <View style={[styles.searchField, activeField === 'origin' && styles.searchFieldActive]}>
@@ -682,10 +1151,35 @@ export default function RoutesScreen() {
                         onPress={() => clearField('origin')}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       >
-                        <Text style={styles.clearBtn}>✕</Text>
+                        <Text style={styles.clearBtn}>x</Text>
                       </TouchableOpacity>
                     )}
                   </View>
+
+                  {activeField === 'origin' && (
+                    <View style={styles.inlineSuggestionsCard}>
+                      {suggestionsLoading || selectingPlace ? (
+                        <View style={styles.suggestionsSpinner}>
+                          <ActivityIndicator size="small" color={COLORS.primary} />
+                          <Text style={styles.suggestionsSpinnerText}>
+                            {selectingPlace ? 'Getting location...' : 'Searching...'}
+                          </Text>
+                        </View>
+                      ) : suggestions.length > 0 ? (
+                        suggestions.map((s) => (
+                          <SuggestionRow
+                            key={getPlaceSuggestionKey(s)}
+                            suggestion={s}
+                            onSelect={handleSuggestionSelect}
+                          />
+                        ))
+                      ) : (
+                        <Text style={styles.noResults}>
+                          {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
                   <View style={styles.fieldDivider} />
 
@@ -716,10 +1210,35 @@ export default function RoutesScreen() {
                         onPress={() => clearField('destination')}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       >
-                        <Text style={styles.clearBtn}>✕</Text>
+                        <Text style={styles.clearBtn}>x</Text>
                       </TouchableOpacity>
                     )}
                   </View>
+
+                  {activeField === 'destination' && (
+                    <View style={styles.inlineSuggestionsCard}>
+                      {suggestionsLoading || selectingPlace ? (
+                        <View style={styles.suggestionsSpinner}>
+                          <ActivityIndicator size="small" color={COLORS.primary} />
+                          <Text style={styles.suggestionsSpinnerText}>
+                            {selectingPlace ? 'Getting location...' : 'Searching...'}
+                          </Text>
+                        </View>
+                      ) : suggestions.length > 0 ? (
+                        suggestions.map((s) => (
+                          <SuggestionRow
+                            key={getPlaceSuggestionKey(s)}
+                            suggestion={s}
+                            onSelect={handleSuggestionSelect}
+                          />
+                        ))
+                      ) : (
+                        <Text style={styles.noResults}>
+                          {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
                   {/* Speak instead toggle */}
                   {voiceAvailable && (
@@ -736,84 +1255,8 @@ export default function RoutesScreen() {
             </View>
           </View>
 
-          {/* ── Suggestion list ── */}
-          {activeField !== null && (
-            <View style={styles.suggestionsCard}>
-              {suggestionsLoading || selectingPlace ? (
-                <View style={styles.suggestionsSpinner}>
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                  <Text style={styles.suggestionsSpinnerText}>
-                    {selectingPlace ? 'Getting location…' : 'Searching…'}
-                  </Text>
-                </View>
-              ) : suggestions.length > 0 ? (
-                suggestions.map((s) => (
-                  <SuggestionRow
-                    key={getPlaceSuggestionKey(s)}
-                    suggestion={s}
-                    onSelect={handleSuggestionSelect}
-                  />
-                ))
-              ) : (
-                <Text style={styles.noResults}>
-                  {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
-                </Text>
-              )}
-              <TouchableOpacity
-                onPress={() => {
-                  setActiveField(null);
-                  setSuggestions([]);
-                }}
-                style={styles.dismissBtn}
-              >
-                <Text style={styles.dismissText}>Dismiss</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* ── Body ── */}
+          {/* â”€â”€ Body â”€â”€ */}
           <View style={styles.body}>
-            {/* Preference chips */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Preference</Text>
-              <View style={styles.chipRow}>
-                {PREFERENCES.map((p) => (
-                  <TouchableOpacity
-                    key={p.key}
-                    style={[styles.chip, preference === p.key && styles.chipActive]}
-                    onPress={() => setPreference(p.key)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.chipText, preference === p.key && styles.chipTextActive]}>
-                      {p.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Passenger type chips */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Passenger</Text>
-              <View style={styles.chipRow}>
-                {PASSENGER_TYPES.map((p) => (
-                  <TouchableOpacity
-                    key={p.key}
-                    style={[styles.chip, passengerType === p.key && styles.chipActive]}
-                    onPress={() => setPassengerType(p.key)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.chipText, passengerType === p.key && styles.chipTextActive]}>
-                      {p.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text style={styles.sectionHint}>
-                Saved default: {PASSENGER_TYPES.find((p) => p.key === savedPreferences.passengerType)?.label ?? 'Regular'}
-              </Text>
-            </View>
-
             {/* Search button */}
             <TouchableOpacity
               style={[styles.searchBtn, !canSearch && styles.searchBtnDisabled]}
@@ -835,9 +1278,27 @@ export default function RoutesScreen() {
               </View>
             )}
 
+            {speechPhase !== 'idle' && (
+              <View style={styles.messageCard}>
+                <Text style={styles.fallbackNoteText}>
+                  {speechPhase === 'listening'
+                    ? 'Listening... say where you want to go.'
+                    : speechPhase === 'transcribing'
+                      ? 'Transcribing your route request...'
+                      : 'Searching routes from your current location...'}
+                </Text>
+              </View>
+            )}
+
             {locationNotice && (
               <View style={styles.messageCard}>
                 <Text style={styles.fallbackNoteText}>{locationNotice}</Text>
+              </View>
+            )}
+
+            {googleServiceNotice && (
+              <View style={styles.messageCard}>
+                <Text style={styles.fallbackNoteText}>{googleServiceNotice}</Text>
               </View>
             )}
 
@@ -849,6 +1310,9 @@ export default function RoutesScreen() {
                     ref={mapRef}
                     style={styles.map}
                     provider={PROVIDER_GOOGLE}
+                    onTouchStart={() => setIsMapInteracting(true)}
+                    onTouchEnd={() => setIsMapInteracting(false)}
+                    onTouchCancel={() => setIsMapInteracting(false)}
                     initialRegion={{
                       latitude: 14.5995,
                       longitude: 120.9842,
@@ -856,6 +1320,15 @@ export default function RoutesScreen() {
                       longitudeDelta: 0.2,
                     }}
                   >
+                    {mapRouteSegments.map((segment) => (
+                      <Polyline
+                        key={segment.id}
+                        coordinates={segment.coordinates}
+                        strokeColor={ROUTE_LINE_COLORS[segment.mode] ?? COLORS.primary}
+                        strokeWidth={segment.type === 'ride' ? 5 : 4}
+                        lineDashPattern={segment.type === 'walk' ? [8, 6] : undefined}
+                      />
+                    ))}
                     {mapMarkers.map((marker) => (
                       <Marker
                         key={marker.id}
@@ -883,6 +1356,15 @@ export default function RoutesScreen() {
               </View>
             )}
 
+            {routeResult &&
+              routeResult.options.length === 0 &&
+              routeResult.googleFallback.options.length === 0 &&
+              routeResult.googleFallback.message && (
+                <View style={styles.messageCard}>
+                  <Text style={styles.messageText}>{routeResult.googleFallback.message}</Text>
+                </View>
+              )}
+
             {routeResult && routeResult.options.length > 0 && (coordinateFallbackNote || driveContextNote) && (
               <View style={styles.messageCard}>
                 {coordinateFallbackNote && <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>}
@@ -890,17 +1372,62 @@ export default function RoutesScreen() {
               </View>
             )}
 
-            {/* Route cards */}
-            {routeResult?.options.map((option) => (
-              <RouteCard
-                key={option.id}
-                option={option}
-                selected={option.id === selectedOptionId}
-                onSelect={() => setSelectedOptionId(option.id)}
-                expanded={expandedOptions.has(option.id)}
-                onToggleLegs={() => toggleExpanded(option.id)}
-              />
-            ))}
+            {routeResult?.options.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Sakai routes</Text>
+                {routeResult.options.map((option) => (
+                  <View key={option.id}>
+                    <RouteCard
+                      option={option}
+                      compactIncidentMeta="Shown because this route may be affected."
+                      selected={option.id === selectedOptionId}
+                      onSelect={() => setSelectedOptionId(option.id)}
+                      expanded={expandedOptions.has(option.id)}
+                      onToggleLegs={() => toggleExpanded(option.id)}
+                    />
+                    {option.id === selectedOptionId && (
+                      <TouchableOpacity
+                        style={styles.searchBtn}
+                        onPress={() => {
+                          void startNavigation();
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.searchBtnText}>Start route</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            {routeResult?.googleFallback.options.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Also from Google Maps</Text>
+                {routeResult.googleFallback.options.map((option) => (
+                  <View key={option.id}>
+                    <RouteCard
+                      option={option}
+                      selected={option.id === selectedOptionId}
+                      onSelect={() => setSelectedOptionId(option.id)}
+                      expanded={expandedOptions.has(option.id)}
+                      onToggleLegs={() => toggleExpanded(option.id)}
+                    />
+                    {option.id === selectedOptionId && (
+                      <TouchableOpacity
+                        style={styles.searchBtn}
+                        onPress={() => {
+                          void startNavigation();
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.searchBtnText}>Start route</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -908,7 +1435,7 @@ export default function RoutesScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const styles = StyleSheet.create({
   flex: {
@@ -1031,6 +1558,11 @@ const styles = StyleSheet.create({
   },
 
   // Suggestions
+  inlineSuggestionsCard: {
+    backgroundColor: COLORS.card,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+  },
   suggestionsCard: {
     backgroundColor: COLORS.card,
     marginHorizontal: SPACING.md,
@@ -1124,31 +1656,6 @@ const styles = StyleSheet.create({
     color: '#5D7286',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-  },
-  chip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 999,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: '#DCE7EF',
-  },
-  chipActive: {
-    backgroundColor: '#102033',
-    borderColor: '#102033',
-  },
-  chipText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: '#415466',
-  },
-  chipTextActive: {
-    color: COLORS.white,
   },
   sectionHint: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -1264,6 +1771,17 @@ const styles = StyleSheet.create({
   },
   routeSummary: {
     fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: '#5D7286',
+    lineHeight: 18,
+  },
+  routeProviderLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.primary,
+  },
+  routeProviderNote: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
     color: '#5D7286',
     lineHeight: 18,
@@ -1437,3 +1955,5 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
   },
 });
+
+

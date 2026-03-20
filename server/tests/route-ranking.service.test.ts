@@ -93,6 +93,13 @@ const createOption = (input: {
       : []),
   ],
   relevantIncidents: [],
+  source: "sakai",
+  navigationTarget: {
+    latitude: 14.61,
+    longitude: 121.01,
+    label: "Destination",
+    kind: "dropoff_stop"
+  }
 });
 
 describe("route ranking service", () => {

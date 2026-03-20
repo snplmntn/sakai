@@ -333,6 +333,10 @@ export default function TripMapScreen() {
       summary: selectedRoute.summary,
       durationLabel: selectedRoute.duration,
       fareLabel: selectedRoute.fare,
+      originLabel: originSelection?.label ?? 'Current location',
+      destinationLabel: destinationSelection?.label ?? selectedRoute.title,
+      corridorTags: [],
+      relevantIncidents: [],
       destination: DEMO_DESTINATION_TARGET,
     };
 

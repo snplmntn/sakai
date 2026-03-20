@@ -518,6 +518,10 @@ create unique index if not exists stops_external_stop_code_uidx
   on public.stops (external_stop_code)
   where external_stop_code is not null;
 
+grant select on public.stops to service_role;
+grant select on public.stops to authenticated;
+grant select on public.stops to anon;
+
 create table if not exists public.routes (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
@@ -546,6 +550,10 @@ alter table if exists public.routes
 
 create index if not exists routes_code_idx
   on public.routes (code);
+
+grant select on public.routes to service_role;
+grant select on public.routes to authenticated;
+grant select on public.routes to anon;
 
 create table if not exists public.route_variants (
   id uuid primary key default gen_random_uuid(),
@@ -609,6 +617,10 @@ create index if not exists route_variants_origin_place_id_idx
 create index if not exists route_variants_destination_place_id_idx
   on public.route_variants (destination_place_id);
 
+grant select on public.route_variants to service_role;
+grant select on public.route_variants to authenticated;
+grant select on public.route_variants to anon;
+
 create table if not exists public.route_legs (
   id uuid primary key default gen_random_uuid(),
   route_variant_id uuid not null references public.route_variants(id) on delete cascade,
@@ -631,6 +643,10 @@ create unique index if not exists route_legs_route_variant_id_sequence_uidx
 create index if not exists route_legs_route_variant_id_sequence_idx
   on public.route_legs (route_variant_id, sequence);
 
+grant select on public.route_legs to service_role;
+grant select on public.route_legs to authenticated;
+grant select on public.route_legs to anon;
+
 create table if not exists public.transfer_points (
   id uuid primary key default gen_random_uuid(),
   from_stop_id uuid not null references public.stops(id) on delete cascade,
@@ -649,6 +665,61 @@ create index if not exists transfer_points_from_stop_id_idx
 
 create index if not exists transfer_points_to_stop_id_idx
   on public.transfer_points (to_stop_id);
+
+grant select on public.transfer_points to service_role;
+grant select on public.transfer_points to authenticated;
+grant select on public.transfer_points to anon;
+
+create table if not exists public.transit_stops (
+  stop_id text primary key,
+  stop_name text not null,
+  normalized_name text not null,
+  lat double precision not null,
+  lon double precision not null,
+  mode text not null,
+  line text not null,
+  all_modes text not null,
+  all_lines text not null,
+  is_multimodal boolean not null default false,
+  line_count integer not null default 1,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists transit_stops_normalized_name_idx
+  on public.transit_stops (normalized_name);
+
+create index if not exists transit_stops_lat_lon_idx
+  on public.transit_stops (lat, lon);
+
+grant select on public.transit_stops to service_role;
+grant select on public.transit_stops to authenticated;
+grant select on public.transit_stops to anon;
+
+create table if not exists public.transit_stop_edges (
+  source_stop_id text not null references public.transit_stops(stop_id) on delete cascade,
+  target_stop_id text not null references public.transit_stops(stop_id) on delete cascade,
+  weight numeric(8, 2) not null,
+  mode text not null,
+  line text not null,
+  route_short_name text,
+  route_long_name text,
+  transfer boolean not null default false,
+  distance_meters numeric(10, 2) not null,
+  estimated_time_min numeric(8, 2) not null,
+  data_source text not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  primary key (source_stop_id, target_stop_id, line, mode, transfer)
+);
+
+create index if not exists transit_stop_edges_source_stop_id_idx
+  on public.transit_stop_edges (source_stop_id);
+
+create index if not exists transit_stop_edges_target_stop_id_idx
+  on public.transit_stop_edges (target_stop_id);
+
+grant select on public.transit_stop_edges to service_role;
+grant select on public.transit_stop_edges to authenticated;
+grant select on public.transit_stop_edges to anon;
 
 create table if not exists public.fare_rule_versions (
   id uuid primary key default gen_random_uuid(),
@@ -675,6 +746,10 @@ create unique index if not exists fare_rule_versions_mode_version_name_uidx
 create index if not exists fare_rule_versions_mode_idx
   on public.fare_rule_versions (mode);
 
+grant select on public.fare_rule_versions to service_role;
+grant select on public.fare_rule_versions to authenticated;
+grant select on public.fare_rule_versions to anon;
+
 create table if not exists public.fare_products (
   id uuid primary key default gen_random_uuid(),
   fare_rule_version_id uuid not null references public.fare_rule_versions(id) on delete cascade,
@@ -700,6 +775,10 @@ create unique index if not exists fare_products_version_product_code_uidx
 create index if not exists fare_products_product_code_idx
   on public.fare_products (product_code);
 
+grant select on public.fare_products to service_role;
+grant select on public.fare_products to authenticated;
+grant select on public.fare_products to anon;
+
 create table if not exists public.train_station_fares (
   id uuid primary key default gen_random_uuid(),
   fare_rule_version_id uuid not null references public.fare_rule_versions(id) on delete cascade,
@@ -720,6 +799,10 @@ create index if not exists train_station_fares_origin_stop_id_idx
 create index if not exists train_station_fares_destination_stop_id_idx
   on public.train_station_fares (destination_stop_id);
 
+grant select on public.train_station_fares to service_role;
+grant select on public.train_station_fares to authenticated;
+grant select on public.train_station_fares to anon;
+
 create table if not exists public.community_submissions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id),
@@ -735,6 +818,8 @@ create table if not exists public.community_submissions (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+drop trigger if exists set_community_submissions_updated_at on public.community_submissions;
+
 create trigger set_community_submissions_updated_at
 before update on public.community_submissions
 for each row
@@ -744,18 +829,21 @@ alter table public.community_submissions enable row level security;
 
 grant select, insert, update, delete on public.community_submissions to authenticated;
 
+drop policy if exists "Allow users to view their own submissions" on public.community_submissions;
 create policy "Allow users to view their own submissions"
 on public.community_submissions
 for select
 to authenticated
 using (auth.uid() = user_id);
 
+drop policy if exists "Allow users to create submissions" on public.community_submissions;
 create policy "Allow users to create submissions"
 on public.community_submissions
 for insert
 to authenticated
 with check (auth.uid() = user_id);
 
+drop policy if exists "Allow users to update their own pending submissions" on public.community_submissions;
 create policy "Allow users to update their own pending submissions"
 on public.community_submissions
 for update
@@ -782,6 +870,8 @@ create table if not exists public.community_questions (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+drop trigger if exists set_community_questions_updated_at on public.community_questions;
+
 create trigger set_community_questions_updated_at
 before update on public.community_questions
 for each row
@@ -795,6 +885,8 @@ create table if not exists public.community_question_answers (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+drop trigger if exists set_community_question_answers_updated_at on public.community_question_answers;
 
 create trigger set_community_question_answers_updated_at
 before update on public.community_question_answers
@@ -820,24 +912,28 @@ grant select, insert on public.community_questions to authenticated;
 grant select, insert on public.community_question_answers to authenticated;
 grant execute on function public.increment_community_question_reply_count(uuid) to authenticated;
 
+drop policy if exists "Allow authenticated users to view community questions" on public.community_questions;
 create policy "Allow authenticated users to view community questions"
 on public.community_questions
 for select
 to authenticated
 using (true);
 
+drop policy if exists "Allow users to create community questions" on public.community_questions;
 create policy "Allow users to create community questions"
 on public.community_questions
 for insert
 to authenticated
 with check (auth.uid() = user_id);
 
+drop policy if exists "Allow authenticated users to view question answers" on public.community_question_answers;
 create policy "Allow authenticated users to view question answers"
 on public.community_question_answers
 for select
 to authenticated
 using (true);
 
+drop policy if exists "Allow users to create answers" on public.community_question_answers;
 create policy "Allow users to create answers"
 on public.community_question_answers
 for insert

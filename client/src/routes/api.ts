@@ -8,6 +8,7 @@ import type {
   RoutePreference,
   RouteQueryIncident,
   RouteQueryLeg,
+  RouteNavigationTarget,
   RouteQueryOption,
   RouteQueryPointInput,
   RouteQueryResult,
@@ -36,6 +37,26 @@ const parseNullableString = (value: unknown, field: string): string | null => {
   }
 
   return parseString(value, field);
+};
+
+const parsePathCoordinates = (
+  value: unknown,
+  field: string
+): Array<{ latitude: number; longitude: number }> | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.map((coordinate, index) => {
+    if (!isRecord(coordinate)) {
+      throw new Error(`Invalid ${field}[${index}] in route response`);
+    }
+
+    return {
+      latitude: parseNumber(coordinate.latitude, `${field}[${index}].latitude`),
+      longitude: parseNumber(coordinate.longitude, `${field}[${index}].longitude`),
+    };
+  });
 };
 
 const parseStop = (value: unknown): RouteStop => {
@@ -87,6 +108,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       distanceMeters: parseNumber(value.distanceMeters, 'walk.distanceMeters'),
       durationMinutes: parseNumber(value.durationMinutes, 'walk.durationMinutes'),
       fare: parseFareBreakdown(value.fare),
+      pathCoordinates: parsePathCoordinates(value.pathCoordinates, 'walk.pathCoordinates'),
     };
   }
 
@@ -100,6 +122,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       distanceKm: parseNumber(value.distanceKm, 'drive.distanceKm'),
       durationMinutes: parseNumber(value.durationMinutes, 'drive.durationMinutes'),
       fare: parseFareBreakdown(value.fare),
+      pathCoordinates: parsePathCoordinates(value.pathCoordinates, 'drive.pathCoordinates'),
     };
   }
 
@@ -121,6 +144,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       ? value.corridorTags.map((tag) => parseString(tag, 'ride.corridorTags'))
       : [],
     fare: parseFareBreakdown(value.fare),
+    pathCoordinates: parsePathCoordinates(value.pathCoordinates, 'ride.pathCoordinates'),
   };
 };
 
@@ -148,6 +172,33 @@ const parseIncident = (value: unknown): RouteQueryIncident => {
   };
 };
 
+const parseNullableNumber = (value: unknown, field: string): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return parseNumber(value, field);
+};
+
+const parseNavigationTarget = (value: unknown): RouteNavigationTarget => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid route navigation target');
+  }
+
+  const kind = parseString(value.kind, 'navigationTarget.kind');
+
+  if (kind !== 'destination' && kind !== 'dropoff_stop') {
+    throw new Error('Invalid route navigation target kind');
+  }
+
+  return {
+    latitude: parseNumber(value.latitude, 'navigationTarget.latitude'),
+    longitude: parseNumber(value.longitude, 'navigationTarget.longitude'),
+    label: parseString(value.label, 'navigationTarget.label'),
+    kind,
+  };
+};
+
 const parseRouteOption = (value: unknown): RouteQueryOption => {
   if (!isRecord(value)) {
     throw new Error('Invalid route option');
@@ -161,7 +212,7 @@ const parseRouteOption = (value: unknown): RouteQueryOption => {
       ? value.highlights.map((item) => parseString(item, 'option.highlights'))
       : [],
     totalDurationMinutes: parseNumber(value.totalDurationMinutes, 'option.totalDurationMinutes'),
-    totalFare: parseNumber(value.totalFare, 'option.totalFare'),
+    totalFare: parseNullableNumber(value.totalFare, 'option.totalFare'),
     fareConfidence: parseString(value.fareConfidence, 'option.fareConfidence') as RouteQueryOption['fareConfidence'],
     transferCount: parseNumber(value.transferCount, 'option.transferCount'),
     corridorTags: Array.isArray(value.corridorTags)
@@ -174,6 +225,35 @@ const parseRouteOption = (value: unknown): RouteQueryOption => {
     relevantIncidents: Array.isArray(value.relevantIncidents)
       ? value.relevantIncidents.map(parseIncident)
       : [],
+    navigationTarget: parseNavigationTarget(value.navigationTarget),
+    source: parseString(value.source, 'option.source') as RouteQueryOption['source'],
+    providerLabel:
+      typeof value.providerLabel === 'string' ? value.providerLabel : undefined,
+    providerNotice:
+      typeof value.providerNotice === 'string' ? value.providerNotice : undefined,
+  };
+};
+
+const parseFallbackResult = (value: unknown): RouteQueryResult['googleFallback'] => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid google fallback response');
+  }
+
+  const status = parseString(value.status, 'googleFallback.status');
+
+  if (
+    status !== 'available' &&
+    status !== 'no_results' &&
+    status !== 'unavailable' &&
+    status !== 'skipped'
+  ) {
+    throw new Error('Invalid google fallback status');
+  }
+
+  return {
+    status,
+    options: Array.isArray(value.options) ? value.options.map(parseRouteOption) : [],
+    message: typeof value.message === 'string' ? value.message : undefined,
   };
 };
 
@@ -186,6 +266,8 @@ const parseNormalizedPoint = (value: unknown) => {
     placeId: parseString(value.placeId, 'normalized.placeId'),
     label: parseString(value.label, 'normalized.label'),
     matchedBy: parseString(value.matchedBy, 'normalized.matchedBy') as PlaceMatchSource,
+    latitude: parseNumber(value.latitude, 'normalized.latitude'),
+    longitude: parseNumber(value.longitude, 'normalized.longitude'),
   };
 };
 
@@ -210,6 +292,7 @@ const parseRouteQueryResult = (value: unknown): RouteQueryResult => {
       modifierSource: parseString(value.normalizedQuery.modifierSource, 'normalized.modifierSource'),
     },
     options: Array.isArray(value.options) ? value.options.map(parseRouteOption) : [],
+    googleFallback: parseFallbackResult(value.googleFallback),
     message: typeof value.message === 'string' ? value.message : undefined,
   };
 };
@@ -248,6 +331,7 @@ export const queryRoutes = async (input: {
 
 export const queryRoutesByText = async (input: {
   queryText: string;
+  originFallback?: SelectedPlace;
   preference: RoutePreference;
   passengerType?: PassengerType;
   modifiers?: RouteModifier[];
@@ -260,10 +344,31 @@ export const queryRoutesByText = async (input: {
       accessToken: input.accessToken,
       body: {
         queryText: input.queryText,
+        originFallback: input.originFallback ? toPointInput(input.originFallback) : undefined,
         preference: input.preference,
         passengerType: input.passengerType ?? 'regular',
         modifiers: input.modifiers,
       },
     },
     parseRouteQueryResult
+  );
+
+export const queryRelevantAreaUpdates = async (input: {
+  corridorTags: string[];
+  originLabel: string;
+  destinationLabel: string;
+  limit?: number;
+}): Promise<RouteQueryIncident[]> =>
+  requestData(
+    {
+      method: 'POST',
+      path: '/api/area-updates/relevant',
+      body: {
+        corridorTags: input.corridorTags,
+        originLabel: input.originLabel,
+        destinationLabel: input.destinationLabel,
+        limit: input.limit,
+      },
+    },
+    (value) => (Array.isArray(value) ? value.map(parseIncident) : [])
   );
