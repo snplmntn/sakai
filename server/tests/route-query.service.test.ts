@@ -189,7 +189,26 @@ describe("route query service", () => {
     mockedAreaUpdateModel.listActiveAreaUpdates.mockResolvedValue([]);
     mockedPlaceModel.getPlaceById.mockResolvedValue(null);
     mockedStopModel.findNearestStops.mockResolvedValue([]);
-    mockedTransitRouteQueryService.queryTransitRoutesIfPossible.mockResolvedValue(null);
+    mockedTransitRouteQueryService.queryTransitRoutesIfPossible.mockResolvedValue({
+      status: "unavailable",
+      result: null,
+      traceSummary: {
+        requestId: "transit-test-default",
+        originInputLabel: "origin",
+        destinationInputLabel: "destination",
+        originResolutionStatus: "pending",
+        destinationResolutionStatus: "pending",
+        originAccessStopIds: [],
+        destinationAccessStopIds: [],
+        edgeLookupCount: 0,
+        exploredStateCount: 0,
+        candidateCount: 0,
+        droppedCandidateCount: 0,
+        manualInterchangeEdgeCount: 0,
+        queueCapHit: false,
+        finalReason: "mock_unavailable"
+      }
+    });
     mockedTransferPointModel.listTransferPointsByStopIds.mockResolvedValue([]);
     mockedFareModel.getActiveFareCatalog.mockResolvedValue(jeepneyFareCatalog);
     mockedGoogleRouteFallbackService.queryGoogleFallbackRoutes.mockResolvedValue({
@@ -946,34 +965,24 @@ describe("route query service", () => {
       });
     mockedStopModel.listStopsByPlaceId.mockResolvedValueOnce([destinationStop]);
     mockedTransitRouteQueryService.queryTransitRoutesIfPossible.mockResolvedValueOnce({
-      normalizedQuery: {
-        origin: {
-          placeId: "cluster:edsa lrt",
-          label: "EDSA LRT",
-          matchedBy: "canonicalName",
-          latitude: 14.5381,
-          longitude: 121.001
-        },
-        destination: {
-          placeId: "place-destination",
-          label: "PUP Sta. Mesa",
-          matchedBy: "alias",
-          latitude: 14.5995,
-          longitude: 121.0114
-        },
-        preference: "balanced",
-        passengerType: "regular",
-        preferenceSource: "request_override",
-        passengerTypeSource: "request_override",
-        modifiers: [],
-        modifierSource: "default"
+      status: "no_candidates",
+      result: null,
+      traceSummary: {
+        requestId: "transit-test-no-candidates",
+        originInputLabel: "EDSA LRT",
+        destinationInputLabel: "PUP Sta. Mesa",
+        originResolutionStatus: "resolved:cluster",
+        destinationResolutionStatus: "resolved:nearest_stop",
+        originAccessStopIds: ["edsa-lrt-stop"],
+        destinationAccessStopIds: ["pup-stop"],
+        edgeLookupCount: 1,
+        exploredStateCount: 1,
+        candidateCount: 0,
+        droppedCandidateCount: 0,
+        manualInterchangeEdgeCount: 0,
+        queueCapHit: false,
+        finalReason: "transit_no_candidates_fallback"
       },
-      options: [],
-      googleFallback: {
-        status: "skipped",
-        options: []
-      },
-      message: "No supported route found for EDSA LRT to PUP Sta. Mesa in the current coverage"
     });
 
     await queryRoutes({

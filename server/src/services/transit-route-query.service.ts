@@ -50,6 +50,37 @@ interface TransitEndpointResolution {
   accessStops: TransitAccessStop[];
 }
 
+type TransitPlannerAttemptStatus = "success" | "no_candidates" | "unavailable";
+
+interface TransitEndpointAttempt {
+  resolution: TransitEndpointResolution | null;
+  status: "resolved" | "no_candidates" | "unavailable";
+  reason: string;
+}
+
+interface TransitPlannerTraceSummary {
+  requestId: string;
+  originInputLabel: string;
+  destinationInputLabel: string;
+  originResolutionStatus: string;
+  destinationResolutionStatus: string;
+  originAccessStopIds: string[];
+  destinationAccessStopIds: string[];
+  edgeLookupCount: number;
+  exploredStateCount: number;
+  candidateCount: number;
+  droppedCandidateCount: number;
+  manualInterchangeEdgeCount: number;
+  queueCapHit: boolean;
+  finalReason: string;
+}
+
+export interface TransitPlannerAttempt {
+  status: TransitPlannerAttemptStatus;
+  result: RouteQueryResult | null;
+  traceSummary: TransitPlannerTraceSummary;
+}
+
 interface TransitPathState {
   currentStopId: string;
   totalWeight: number;
@@ -104,6 +135,52 @@ const warnOnce = (key: string, message: string, details: Record<string, unknown>
   fallbackWarningKeys.add(key);
   console.warn(message, details);
 };
+
+const createTransitRequestId = () =>
+  `transit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const logTransitTrace = (
+  message: string,
+  trace: TransitPlannerTraceSummary,
+  details: Record<string, unknown> = {}
+) => {
+  console.info(message, {
+    operation: "transit_route_query_trace",
+    requestId: trace.requestId,
+    ...details
+  });
+};
+
+const setTraceResolutionStatus = (
+  trace: TransitPlannerTraceSummary,
+  field: "origin" | "destination",
+  status: string
+) => {
+  if (field === "origin") {
+    trace.originResolutionStatus = status;
+    return;
+  }
+
+  trace.destinationResolutionStatus = status;
+};
+
+const setTraceAccessStopIds = (
+  trace: TransitPlannerTraceSummary,
+  field: "origin" | "destination",
+  stopIds: string[]
+) => {
+  if (field === "origin") {
+    trace.originAccessStopIds = stopIds;
+    return;
+  }
+
+  trace.destinationAccessStopIds = stopIds;
+};
+
+const getTraceAccessStopIds = (
+  trace: TransitPlannerTraceSummary,
+  field: "origin" | "destination"
+) => (field === "origin" ? trace.originAccessStopIds : trace.destinationAccessStopIds);
 
 const createWalkFareBreakdown = () => ({
   amount: 0,
@@ -309,17 +386,56 @@ const buildAccessStopsFromCoordinates = async (point: RouteQueryPointInput, labe
   }));
 };
 
+const buildAccessStopsFromDirectStopMatch = async (label: string) => {
+  const matchedStops = await transitGraphModel.searchTransitStopsByQuery(label, {
+    limit: MAX_ACCESS_STOPS
+  });
+
+  return matchedStops.map((stop) => ({
+    stop,
+    distanceMeters: 0,
+    durationMinutes: 0,
+    fromLabel: label
+  }));
+};
+
+const buildDirectMatchNormalizedPoint = (input: {
+  field: "origin" | "destination";
+  label: string;
+  fallbackPlaceId?: string;
+  fallbackMatchedBy?: RouteQueryNormalizedInput["origin"]["matchedBy"];
+  accessStops: TransitAccessStop[];
+}) => {
+  const firstStop = input.accessStops[0]?.stop;
+
+  return {
+    placeId:
+      input.fallbackPlaceId ??
+      (firstStop ? `cluster:${firstStop.normalizedName}` : `coords:${input.field}`),
+    label: input.label,
+    matchedBy: input.fallbackMatchedBy ?? "canonicalName",
+    latitude: firstStop?.latitude ?? 0,
+    longitude: firstStop?.longitude ?? 0
+  } satisfies RouteQueryNormalizedInput["origin"];
+};
+
 const resolveTransitEndpoint = async (
   field: "origin" | "destination",
-  point: RouteQueryPointInput
-): Promise<TransitEndpointResolution | null> => {
+  point: RouteQueryPointInput,
+  trace: TransitPlannerTraceSummary
+): Promise<TransitEndpointAttempt> => {
   const clusterPlaceId = point.placeId?.startsWith("cluster:") ? point.placeId : undefined;
   const shouldAttemptTransit =
     Boolean(clusterPlaceId) ||
     (typeof point.latitude === "number" && typeof point.longitude === "number");
 
   if (!shouldAttemptTransit) {
-    return null;
+    setTraceResolutionStatus(trace, field, "no_candidates:transit_not_applicable");
+    return {
+      resolution: null,
+      status: "no_candidates",
+      reason: "transit_not_applicable"
+    };
   }
 
   let clusterResolution;
@@ -336,14 +452,24 @@ const resolveTransitEndpoint = async (
         operation: "transit_route_query_resolution_fallback",
         reason: error instanceof Error ? error.message : "unknown error"
       });
-      return null;
+      setTraceResolutionStatus(trace, field, "unavailable:place_resolution_failed");
+      return {
+        resolution: null,
+        status: "unavailable",
+        reason: "place_resolution_failed"
+      };
     }
 
     throw error;
   }
 
   if (!clusterResolution) {
-    return null;
+    setTraceResolutionStatus(trace, field, "no_candidates:empty_place_resolution");
+    return {
+      resolution: null,
+      status: "no_candidates",
+      reason: "empty_place_resolution"
+    };
   }
 
   if (clusterResolution.status === "ambiguous") {
@@ -354,8 +480,13 @@ const resolveTransitEndpoint = async (
     });
   }
 
+  const fallbackLabel =
+    clusterResolution.status === "resolved"
+      ? clusterResolution.place.canonicalName
+      : point.label ?? (field === "origin" ? "Current location" : "Destination");
+
   if (clusterResolution.status === "resolved" && clusterResolution.place.id.startsWith("cluster:")) {
-    const accessStops = await buildAccessStopsFromCluster(
+    const clusterAccessStops = await buildAccessStopsFromCluster(
       clusterResolution.place.id,
       clusterResolution.place.canonicalName
     ).catch((error) => {
@@ -364,68 +495,188 @@ const resolveTransitEndpoint = async (
           operation: "transit_route_query_cluster_fallback",
           reason: error instanceof Error ? error.message : "unknown error"
         });
-        return [];
+        return null;
       }
 
       throw error;
     });
 
-    if (accessStops.length === 0) {
-      return null;
+    if (clusterAccessStops === null) {
+      setTraceResolutionStatus(trace, field, "unavailable:cluster_access_failed");
+      return {
+        resolution: null,
+        status: "unavailable",
+        reason: "cluster_access_failed"
+      };
     }
 
-    return {
-      normalizedPoint: {
+    if (clusterAccessStops.length > 0) {
+      setTraceResolutionStatus(trace, field, "resolved:cluster");
+      setTraceAccessStopIds(
+        trace,
+        field,
+        clusterAccessStops.map((accessStop) => accessStop.stop.stopId)
+      );
+      logTransitTrace("Transit endpoint resolved from cluster", trace, {
+        field,
         placeId: clusterResolution.place.id,
-        label: clusterResolution.place.canonicalName,
-        matchedBy: clusterResolution.place.matchedBy,
-        latitude: clusterResolution.place.latitude,
-        longitude: clusterResolution.place.longitude
-      },
-      accessStops
-    };
+        accessStopIds: getTraceAccessStopIds(trace, field)
+      });
+
+      return {
+        resolution: {
+          normalizedPoint: {
+            placeId: clusterResolution.place.id,
+            label: clusterResolution.place.canonicalName,
+            matchedBy: clusterResolution.place.matchedBy,
+            latitude: clusterResolution.place.latitude,
+            longitude: clusterResolution.place.longitude
+          },
+          accessStops: clusterAccessStops
+        },
+        status: "resolved",
+        reason: "cluster_access"
+      };
+    }
+
+    logTransitTrace("Transit cluster resolved but had no member stops; retrying fallback access lookup", trace, {
+      field,
+      placeId: clusterResolution.place.id
+    });
   }
 
-  const coordinatesLabel = point.label ?? (field === "origin" ? "Current location" : "Destination");
-  const coordinateAccessStops = await buildAccessStopsFromCoordinates(point, coordinatesLabel).catch(
+  const coordinatePoint =
+    clusterResolution.status === "resolved"
+      ? {
+          ...point,
+          latitude: point.latitude ?? clusterResolution.place.latitude,
+          longitude: point.longitude ?? clusterResolution.place.longitude
+        }
+      : point;
+  const coordinateAccessStops = await buildAccessStopsFromCoordinates(coordinatePoint, fallbackLabel).catch(
     (error) => {
       if (transitGraphModel.isTransitGraphUnavailableError(error)) {
         warnOnce("transit_route_query_nearest_stop_fallback", "Transit nearby-stop access unavailable; skipping transit planner", {
           operation: "transit_route_query_nearest_stop_fallback",
           reason: error instanceof Error ? error.message : "unknown error"
         });
-        return [];
+        return null;
       }
 
       throw error;
     }
   );
 
-  if (coordinateAccessStops.length === 0) {
-    return null;
+  if (coordinateAccessStops === null) {
+    setTraceResolutionStatus(trace, field, "unavailable:nearest_stop_lookup_failed");
+    return {
+      resolution: null,
+      status: "unavailable",
+      reason: "nearest_stop_lookup_failed"
+    };
   }
 
+  if (coordinateAccessStops.length > 0) {
+    setTraceResolutionStatus(trace, field, "resolved:nearest_stop");
+    setTraceAccessStopIds(
+      trace,
+      field,
+      coordinateAccessStops.map((accessStop) => accessStop.stop.stopId)
+    );
+    logTransitTrace("Transit endpoint resolved from nearby stops", trace, {
+      field,
+      accessStopIds: getTraceAccessStopIds(trace, field)
+    });
+
+    return {
+      resolution: {
+        normalizedPoint: {
+          placeId: clusterResolution.status === "resolved" ? clusterResolution.place.id : `coords:${field}`,
+          label:
+            clusterResolution.status === "resolved"
+              ? clusterResolution.place.canonicalName
+              : fallbackLabel,
+          matchedBy:
+            clusterResolution.status === "resolved"
+              ? clusterResolution.place.matchedBy
+              : "coordinates",
+          latitude:
+            clusterResolution.status === "resolved"
+              ? clusterResolution.place.latitude
+              : point.latitude ?? coordinateAccessStops[0]?.stop.latitude ?? 0,
+          longitude:
+            clusterResolution.status === "resolved"
+              ? clusterResolution.place.longitude
+              : point.longitude ?? coordinateAccessStops[0]?.stop.longitude ?? 0
+        },
+        accessStops: coordinateAccessStops
+      },
+      status: "resolved",
+      reason: "nearest_stop_access"
+    };
+  }
+
+  if (fallbackLabel.trim()) {
+    const directMatchAccessStops = await buildAccessStopsFromDirectStopMatch(fallbackLabel).catch((error) => {
+      if (transitGraphModel.isTransitGraphUnavailableError(error)) {
+        warnOnce("transit_route_query_direct_stop_match_fallback", "Transit direct stop search unavailable; skipping transit planner", {
+          operation: "transit_route_query_direct_stop_match_fallback",
+          reason: error instanceof Error ? error.message : "unknown error"
+        });
+        return null;
+      }
+
+      throw error;
+    });
+
+    if (directMatchAccessStops === null) {
+      setTraceResolutionStatus(trace, field, "unavailable:direct_stop_match_failed");
+      return {
+        resolution: null,
+        status: "unavailable",
+        reason: "direct_stop_match_failed"
+      };
+    }
+
+    if (directMatchAccessStops.length > 0) {
+      setTraceResolutionStatus(trace, field, "resolved:direct_stop_match");
+      setTraceAccessStopIds(
+        trace,
+        field,
+        directMatchAccessStops.map((accessStop) => accessStop.stop.stopId)
+      );
+      logTransitTrace("Transit endpoint resolved from direct stop-name match", trace, {
+        field,
+        label: fallbackLabel,
+        accessStopIds: getTraceAccessStopIds(trace, field)
+      });
+
+      return {
+        resolution: {
+          normalizedPoint: buildDirectMatchNormalizedPoint({
+            field,
+            label: fallbackLabel,
+            fallbackPlaceId:
+              clusterResolution.status === "resolved" ? clusterResolution.place.id : undefined,
+            fallbackMatchedBy:
+              clusterResolution.status === "resolved"
+                ? clusterResolution.place.matchedBy
+                : "canonicalName",
+            accessStops: directMatchAccessStops
+          }),
+          accessStops: directMatchAccessStops
+        },
+        status: "resolved",
+        reason: "direct_stop_match"
+      };
+    }
+  }
+
+  setTraceResolutionStatus(trace, field, "no_candidates:no_access_stops");
   return {
-    normalizedPoint: {
-      placeId: clusterResolution.status === "resolved" ? clusterResolution.place.id : `coords:${field}`,
-      label:
-        clusterResolution.status === "resolved"
-          ? clusterResolution.place.canonicalName
-          : coordinatesLabel,
-      matchedBy:
-        clusterResolution.status === "resolved"
-          ? clusterResolution.place.matchedBy
-          : "coordinates",
-      latitude:
-        clusterResolution.status === "resolved"
-          ? clusterResolution.place.latitude
-          : point.latitude ?? coordinateAccessStops[0]?.stop.latitude ?? 0,
-      longitude:
-        clusterResolution.status === "resolved"
-          ? clusterResolution.place.longitude
-          : point.longitude ?? coordinateAccessStops[0]?.stop.longitude ?? 0
-    },
-    accessStops: coordinateAccessStops
+    resolution: null,
+    status: "no_candidates",
+    reason: "no_access_stops"
   };
 };
 
@@ -699,15 +950,70 @@ export const queryTransitRoutesIfPossible = async (input: {
   preference: EffectiveValue<RoutePreference>;
   passengerType: EffectiveValue<PassengerType>;
   modifiers: EffectiveValue<RouteModifier[]>;
-}): Promise<RouteQueryResult | null> => {
-  const [originResolution, destinationResolution] = await Promise.all([
-    resolveTransitEndpoint("origin", input.origin),
-    resolveTransitEndpoint("destination", input.destination)
+}): Promise<TransitPlannerAttempt> => {
+  const trace: TransitPlannerTraceSummary = {
+    requestId: createTransitRequestId(),
+    originInputLabel: input.origin.label ?? input.origin.placeId ?? "origin",
+    destinationInputLabel: input.destination.label ?? input.destination.placeId ?? "destination",
+    originResolutionStatus: "pending",
+    destinationResolutionStatus: "pending",
+    originAccessStopIds: [],
+    destinationAccessStopIds: [],
+    edgeLookupCount: 0,
+    exploredStateCount: 0,
+    candidateCount: 0,
+    droppedCandidateCount: 0,
+    manualInterchangeEdgeCount: 0,
+    queueCapHit: false,
+    finalReason: "pending"
+  };
+
+  logTransitTrace("Transit planner started", trace, {
+    origin: input.origin,
+    destination: input.destination,
+    preference: input.preference.value,
+    modifiers: input.modifiers.value
+  });
+
+  const [originAttempt, destinationAttempt] = await Promise.all([
+    resolveTransitEndpoint("origin", input.origin, trace),
+    resolveTransitEndpoint("destination", input.destination, trace)
   ]);
 
-  if (!originResolution || !destinationResolution) {
-    return null;
+  if (originAttempt.status === "unavailable" || destinationAttempt.status === "unavailable") {
+    trace.finalReason =
+      originAttempt.status === "unavailable"
+        ? `origin_${originAttempt.reason}`
+        : `destination_${destinationAttempt.reason}`;
+    logTransitTrace("Transit planner unavailable; route query should fall back", trace, {
+      traceSummary: trace
+    });
+
+    return {
+      status: "unavailable",
+      result: null,
+      traceSummary: trace
+    };
   }
+
+  if (!originAttempt.resolution || !destinationAttempt.resolution) {
+    trace.finalReason =
+      !originAttempt.resolution
+        ? `origin_${originAttempt.reason}`
+        : `destination_${destinationAttempt.reason}`;
+    logTransitTrace("Transit planner found no usable endpoint access; route query should fall back", trace, {
+      traceSummary: trace
+    });
+
+    return {
+      status: "no_candidates",
+      result: null,
+      traceSummary: trace
+    };
+  }
+
+  const originResolution = originAttempt.resolution;
+  const destinationResolution = destinationAttempt.resolution;
 
   const normalizedQuery: RouteQueryNormalizedInput = {
     origin: originResolution.normalizedPoint,
@@ -761,6 +1067,7 @@ export const queryTransitRoutesIfPossible = async (input: {
     }
 
     processedStateCount += 1;
+    trace.exploredStateCount = processedStateCount;
 
     const destinationStop = destinationMap.get(state.currentStopId);
 
@@ -775,6 +1082,11 @@ export const queryTransitRoutesIfPossible = async (input: {
           destinationStop,
           rawEdges: state.rawEdges,
           totalWeight: state.totalWeight + destinationStop.durationMinutes
+        });
+        trace.candidateCount = candidates.length;
+        logTransitTrace("Transit planner found a route candidate", trace, {
+          currentStopId: state.currentStopId,
+          candidateCount: candidates.length
         });
       }
 
@@ -805,11 +1117,25 @@ export const queryTransitRoutesIfPossible = async (input: {
         });
 
       if (fetchedOutgoingEdges === null) {
-        return null;
+        trace.finalReason = "permission_denied_transit_tables";
+        logTransitTrace("Transit edge lookup failed; route query should fall back", trace, {
+          stopId: state.currentStopId
+        });
+
+        return {
+          status: "unavailable",
+          result: null,
+          traceSummary: trace
+        };
       }
 
       outgoingEdges = fetchedOutgoingEdges;
       outgoingEdgeCache.set(state.currentStopId, outgoingEdges);
+      trace.edgeLookupCount += 1;
+      logTransitTrace("Transit planner fetched outgoing edges", trace, {
+        stopId: state.currentStopId,
+        edgeCount: outgoingEdges.length
+      });
     }
 
     if (!outgoingEdges) {
@@ -887,6 +1213,7 @@ export const queryTransitRoutesIfPossible = async (input: {
         )
       ) {
         augmentedOutgoingEdges.push(manualEdge);
+        trace.manualInterchangeEdgeCount += 1;
       }
     }
 
@@ -931,17 +1258,23 @@ export const queryTransitRoutesIfPossible = async (input: {
     }
   }
 
+  trace.queueCapHit = queue.length > MAX_TRANSIT_QUEUE_SIZE || processedStateCount >= MAX_TRANSIT_QUEUE_SIZE;
+
   if (candidates.length === 0) {
-    return {
+    trace.finalReason = trace.queueCapHit ? "queue_cap_hit" : "transit_no_candidates_fallback";
+    logTransitTrace("Transit planner found no candidates; route query should fall back", trace, {
       normalizedQuery,
-      options: [],
-      googleFallback: {
-        status: "skipped",
-        options: []
-      },
-      message: `No supported route found for ${normalizedQuery.origin.label} to ${normalizedQuery.destination.label} in the current coverage`
+      traceSummary: trace
+    });
+
+    return {
+      status: "no_candidates",
+      result: null,
+      traceSummary: trace
     };
   }
+
+  let droppedCandidateCount = 0;
 
   const routeOptions = (
     await Promise.all(
@@ -955,6 +1288,7 @@ export const queryTransitRoutesIfPossible = async (input: {
           });
         } catch (error) {
           if (error instanceof HttpError) {
+            droppedCandidateCount += 1;
             console.warn("Dropped transit route candidate during option building", {
               operation: "transit_route_query_option_drop",
               reason: error.message
@@ -967,6 +1301,21 @@ export const queryTransitRoutesIfPossible = async (input: {
       })
     )
   ).filter((option): option is RouteQueryOption => option !== null);
+  trace.droppedCandidateCount = droppedCandidateCount;
+
+  if (routeOptions.length === 0) {
+    trace.finalReason = "all_candidates_dropped";
+    logTransitTrace("Transit planner dropped all candidates; route query should fall back", trace, {
+      normalizedQuery,
+      traceSummary: trace
+    });
+
+    return {
+      status: "no_candidates",
+      result: null,
+      traceSummary: trace
+    };
+  }
 
   const optionsWithIncidents = await attachRelevantIncidentsToOptions({
     options: rankRouteOptions(routeOptions, normalizedQuery.preference, normalizedQuery.modifiers),
@@ -981,13 +1330,22 @@ export const queryTransitRoutesIfPossible = async (input: {
       })
     }))
   );
+  trace.finalReason = "transit_success";
+  logTransitTrace("Transit planner succeeded", trace, {
+    optionCount: summarizedOptions.length,
+    normalizedQuery
+  });
 
   return {
-    normalizedQuery,
-    options: summarizedOptions,
-    googleFallback: {
-      status: "skipped",
-      options: []
-    }
+    status: "success",
+    result: {
+      normalizedQuery,
+      options: summarizedOptions,
+      googleFallback: {
+        status: "skipped",
+        options: []
+      }
+    },
+    traceSummary: trace
   };
 };
