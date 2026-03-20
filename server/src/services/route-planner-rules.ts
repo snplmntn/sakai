@@ -190,6 +190,22 @@ export const listRuntimeManualInterchangeCounterpartQueries = (stopName: string)
   return [...counterpartQueries];
 };
 
+export const listAllManualInterchangeStopNames = (): string[] => {
+  const names = new Set<string>();
+
+  for (const spec of MANUAL_INTERCHANGE_SPECS) {
+    for (const name of spec.sourceNames) {
+      names.add(name);
+    }
+
+    for (const name of spec.targetNames) {
+      names.add(name);
+    }
+  }
+
+  return [...names];
+};
+
 const buildManualInterchangeEdge = (
   fromStop: TransitStop,
   toStop: TransitStop,
@@ -264,12 +280,12 @@ const getBalancedModeMultiplier = (input: {
     (input.destinationFamily === "lrt" || input.destinationFamily === "mrt");
 
   if (railEndpoints) {
-    if (isRail) {
-      return 0.68;
+    if (isJeep) {
+      return 0.88;
     }
 
-    if (isJeep) {
-      return 1.85;
+    if (isRail) {
+      return 1.08;
     }
 
     if (input.isTransfer) {
@@ -278,30 +294,68 @@ const getBalancedModeMultiplier = (input: {
   }
 
   if (input.originFamily === "lrt" && input.destinationFamily === "lrt") {
-    if (isLrt) {
-      return 0.62;
+    if (isJeep) {
+      return 0.9;
     }
 
-    if (isJeep) {
-      return 2;
+    if (isLrt) {
+      return 1.08;
     }
   }
 
   if (input.originFamily === "mrt" && input.destinationFamily === "mrt") {
-    if (isMrt) {
-      return 0.62;
+    if (isJeep) {
+      return 0.9;
     }
 
-    if (isJeep) {
-      return 2;
+    if (isMrt) {
+      return 1.08;
     }
+  }
+
+  if (isJeep) {
+    return 0.9;
   }
 
   if (isRail) {
-    return 0.92;
+    return 1.04;
   }
 
   return 1;
+};
+
+const getMixPreferenceModeMultiplier = (edgeMode: string, routeName: string) => {
+  if (isJeepMode(edgeMode)) {
+    return 0.72;
+  }
+
+  if (isRailMode(edgeMode, routeName)) {
+    return 1.22;
+  }
+
+  return 1;
+};
+
+export const getJeepneyPriorityAdjustment = (input: {
+  preference: RoutePreference;
+  jeepLegCount: number;
+  railLegCount: number;
+}) => {
+  if (input.preference !== "balanced") {
+    return 0;
+  }
+
+  let adjustment = 0;
+
+  if (input.jeepLegCount === 0) {
+    adjustment += 24;
+  } else if (input.jeepLegCount >= 1 && input.jeepLegCount <= 5) {
+    adjustment -= 7.5;
+  } else {
+    adjustment += (input.jeepLegCount - 5) * 1.8;
+  }
+
+  return adjustment;
 };
 
 export const getTransferMultiplier = (input: {
@@ -354,6 +408,8 @@ export const getTransitEdgeTraversalWeight = (input: {
   }
 
   if (input.preference === "balanced") {
+    const mixMultiplier = getMixPreferenceModeMultiplier(input.edge.mode, routeName);
+    segmentCost *= mixMultiplier;
     segmentCost *= getBalancedModeMultiplier({
       edgeMode: input.edge.mode,
       routeName,
@@ -442,7 +498,12 @@ export const buildPlannerCandidateMetrics = (input: {
   const railRideCount = input.rideSegments.filter((segment) => isRailMode(segment.mode)).length;
 
   const commuterEfficiencyScore =
-    input.totalDurationMinutes + transferCount * 12 + rideHopCount * 4 + microRidePenalty;
+    input.totalDurationMinutes + transferCount * 12 + rideHopCount * 4 + microRidePenalty +
+    getJeepneyPriorityAdjustment({
+      preference: input.preference,
+      jeepLegCount: input.rideSegments.filter((segment) => isJeepMode(segment.mode)).length,
+      railLegCount: input.rideSegments.filter((segment) => isRailMode(segment.mode)).length
+    });
   let score =
     input.preference === "fastest"
       ? input.totalDurationMinutes + transferCount * 5 + rideHopCount * 1.5 + microRidePenalty

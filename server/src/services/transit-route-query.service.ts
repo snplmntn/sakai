@@ -28,6 +28,7 @@ import {
   buildRuntimeManualInterchangeEdges,
   getStopFamily,
   getTransitEdgeTraversalWeight,
+  listAllManualInterchangeStopNames,
   listRuntimeManualInterchangeCounterpartQueries
 } from "./route-planner-rules.js";
 import { attachRelevantIncidentsToOptions } from "./route-incident.service.js";
@@ -117,11 +118,11 @@ interface TransitRideLegBlueprint {
 const WALKING_METERS_PER_MINUTE = 80;
 const MAX_ACCESS_DISTANCE_METERS = 800;
 const MAX_ACCESS_STOPS = 4;
-const MAX_TRANSIT_QUEUE_SIZE = 500;
-const MAX_TRANSIT_CANDIDATES = 8;
+const MAX_TRANSIT_QUEUE_SIZE = 2000;
+const MAX_TRANSIT_CANDIDATES = 30;
 const MAX_TRANSIT_RIDE_BOARDINGS = 4;
 const MAX_TRANSIT_EDGES = 18;
-const SUPPORTED_TRANSIT_MODES = new Set(["jeep", "jeepney", "uv", "mrt3", "lrt1", "lrt2"]);
+const SUPPORTED_TRANSIT_MODES = new Set(["jeep", "jeepney", "uv", "mrt3", "lrt1", "lrt2", "lrt", "mrt", "transfer"]);
 const fallbackWarningKeys = new Set<string>();
 
 const roundMinutes = (value: number) => Math.max(1, Math.ceil(value));
@@ -192,9 +193,23 @@ const createWalkFareBreakdown = () => ({
   assumptionText: null
 });
 
-const mapTransitModeToRideMode = (mode: string, line: string) => {
-  const normalizedMode = mode.trim().toLowerCase();
-  const normalizedLine = line.trim().toLowerCase();
+const normalizeTransitText = (value: string | null | undefined) => value?.trim().toLowerCase() ?? "";
+
+export const mapTransitModeToRideMode = (input: {
+  mode: string;
+  line?: string | null;
+  routeShortName?: string | null;
+  routeLongName?: string | null;
+}) => {
+  const normalizedMode = normalizeTransitText(input.mode);
+  const normalizedLine = normalizeTransitText(input.line);
+  const routeText = [
+    normalizeTransitText(input.routeShortName),
+    normalizeTransitText(input.routeLongName),
+    normalizedLine
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   if (normalizedMode === "jeep" || normalizedMode === "jeepney") {
     return "jeepney" as const;
@@ -204,16 +219,43 @@ const mapTransitModeToRideMode = (mode: string, line: string) => {
     return "uv" as const;
   }
 
-  if (normalizedMode === "mrt3" || normalizedLine.includes("mrt3")) {
+  if (
+    normalizedMode === "mrt3" ||
+    normalizedLine.includes("mrt3") ||
+    routeText.includes("mrt-3") ||
+    routeText.includes("mrt 3")
+  ) {
     return "mrt3" as const;
   }
 
-  if (normalizedMode === "lrt1" || normalizedLine.includes("lrt1")) {
+  if (
+    normalizedMode === "lrt2" ||
+    normalizedLine.includes("lrt2") ||
+    routeText.includes("lrt-2") ||
+    routeText.includes("lrt 2")
+  ) {
+    return "lrt2" as const;
+  }
+
+  if (
+    normalizedMode === "lrt1" ||
+    normalizedLine.includes("lrt1") ||
+    routeText.includes("lrt-1") ||
+    routeText.includes("lrt 1")
+  ) {
     return "lrt1" as const;
   }
 
-  if (normalizedMode === "lrt2" || normalizedLine.includes("lrt2")) {
-    return "lrt2" as const;
+  if (routeText.includes("pnr") || routeText.includes("metro commuter")) {
+    return null;
+  }
+
+  if (normalizedMode === "mrt") {
+    return "mrt3" as const;
+  }
+
+  if (normalizedMode === "lrt") {
+    return "lrt1" as const;
   }
 
   return null;
@@ -327,7 +369,10 @@ const toRouteStop = (
   placeId: clusterId,
   externalStopCode: stop.stopId,
   stopName: stop.stopName,
-  mode: mapTransitModeToRideMode(stop.mode, stop.line) ?? "walk_anchor",
+  mode: mapTransitModeToRideMode({
+    mode: stop.mode,
+    line: stop.line
+  }) ?? "walk_anchor",
   area: stop.stopName.split(",").slice(1).join(",").trim() || "Metro Manila",
   latitude: stop.latitude,
   longitude: stop.longitude,
@@ -812,7 +857,12 @@ const buildTransitRouteOption = async (input: {
       return null;
     }
 
-    const rideMode = mapTransitModeToRideMode(firstEdge.mode, firstEdge.line);
+    const rideMode = mapTransitModeToRideMode({
+      mode: firstEdge.mode,
+      line: firstEdge.line,
+      routeShortName: firstEdge.routeShortName,
+      routeLongName: firstEdge.routeLongName
+    });
 
     if (!rideMode || !SUPPORTED_TRANSIT_MODES.has(firstEdge.mode.toLowerCase())) {
       return null;
@@ -854,8 +904,14 @@ const buildTransitRouteOption = async (input: {
       corridorTags: [placeModel.normalizePlaceSearchText(firstEdge.line)],
       distanceKm,
       durationMinutes,
-      fromStop: toRouteStop(fromTransitStop, input.normalizedQuery.origin.placeId),
-      toStop: toRouteStop(toTransitStop, input.normalizedQuery.destination.placeId),
+      fromStop: {
+        ...toRouteStop(fromTransitStop, input.normalizedQuery.origin.placeId),
+        mode: rideMode
+      },
+      toStop: {
+        ...toRouteStop(toTransitStop, input.normalizedQuery.destination.placeId),
+        mode: rideMode
+      },
       fareProductCode,
       pathCoordinates: await resolveRidePathCoordinates({
         rideMode,
@@ -1049,8 +1105,63 @@ export const queryTransitRoutesIfPossible = async (input: {
     lastServiceKey: null
   }));
   const outgoingEdgeCache = new Map<string, transitGraphModel.TransitStopEdge[]>();
+  const preloadedManualInterchangeEdgeCache = new Map<string, transitGraphModel.TransitStopEdge[]>();
   const manualInterchangeStopCache = new Map<string, transitGraphModel.TransitStop[]>();
   const candidates: TransitCandidate[] = [];
+  const bestWeightToStop = new Map<string, number>();
+
+  for (const accessStop of originResolution.accessStops) {
+    bestWeightToStop.set(accessStop.stop.stopId, accessStop.durationMinutes);
+  }
+
+  // Pre-resolve all manual interchange stops before the main loop
+  // (matches the simulator's add_manual_interchanges approach)
+  for (const interchangeName of listAllManualInterchangeStopNames()) {
+    if (manualInterchangeStopCache.has(interchangeName)) {
+      continue;
+    }
+
+    let resolution:
+      | Awaited<ReturnType<typeof placeModel.resolvePlaceReference>>
+      | null = null;
+
+    try {
+      resolution = await placeModel.resolvePlaceReference({
+        query: interchangeName
+      });
+    } catch {
+      resolution = null;
+    }
+
+    if (resolution?.status === "resolved" && resolution.place.id.startsWith("cluster:")) {
+      const counterpartStops = await transitGraphModel
+        .listTransitStopsByClusterId(resolution.place.id)
+        .catch(() => [] as transitGraphModel.TransitStop[]);
+
+      manualInterchangeStopCache.set(interchangeName, counterpartStops);
+
+      for (const stop of counterpartStops) {
+        knownTransitStops.set(stop.stopId, stop);
+      }
+    } else {
+      manualInterchangeStopCache.set(interchangeName, []);
+    }
+  }
+
+  // Preload manual interchange edges separately so normal edge fetches still happen.
+  for (const stop of knownTransitStops.values()) {
+    const interchangeEdges = buildRuntimeManualInterchangeEdges(stop.stopId, knownTransitStops);
+
+    if (interchangeEdges.length > 0) {
+      preloadedManualInterchangeEdgeCache.set(stop.stopId, interchangeEdges);
+      trace.manualInterchangeEdgeCount += interchangeEdges.length;
+    }
+  }
+
+  logTransitTrace("Transit planner preloaded manual interchange edges", trace, {
+    interchangeEdgeCount: trace.manualInterchangeEdgeCount,
+    knownStopCount: knownTransitStops.size
+  });
 
   let processedStateCount = 0;
 
@@ -1129,7 +1240,24 @@ export const queryTransitRoutesIfPossible = async (input: {
         };
       }
 
-      outgoingEdges = fetchedOutgoingEdges;
+      const preloadedManualEdges = preloadedManualInterchangeEdgeCache.get(state.currentStopId) ?? [];
+
+      outgoingEdges = [...fetchedOutgoingEdges];
+
+      for (const manualEdge of preloadedManualEdges) {
+        if (
+          !outgoingEdges.some(
+            (existingEdge) =>
+              existingEdge.sourceStopId === manualEdge.sourceStopId &&
+              existingEdge.targetStopId === manualEdge.targetStopId &&
+              existingEdge.line === manualEdge.line &&
+              existingEdge.mode === manualEdge.mode
+          )
+        ) {
+          outgoingEdges.push(manualEdge);
+        }
+      }
+
       outgoingEdgeCache.set(state.currentStopId, outgoingEdges);
       trace.edgeLookupCount += 1;
       logTransitTrace("Transit planner fetched outgoing edges", trace, {
@@ -1236,9 +1364,7 @@ export const queryTransitRoutesIfPossible = async (input: {
         continue;
       }
 
-      queue.push({
-        currentStopId: nextStopId,
-        totalWeight:
+      const nextWeight =
           state.totalWeight +
           getTransitEdgeTraversalWeight({
             edge,
@@ -1248,7 +1374,19 @@ export const queryTransitRoutesIfPossible = async (input: {
             modifiers: normalizedQuery.modifiers,
             originFamily,
             destinationFamily
-          }),
+          });
+
+      const existingBest = bestWeightToStop.get(nextStopId);
+
+      if (existingBest !== undefined && nextWeight >= existingBest) {
+        continue;
+      }
+
+      bestWeightToStop.set(nextStopId, nextWeight);
+
+      queue.push({
+        currentStopId: nextStopId,
+        totalWeight: nextWeight,
         totalDistanceMeters: state.totalDistanceMeters + edge.distanceMeters,
         rideBoardings: nextRideBoardings,
         rawEdges: [...state.rawEdges, edge],
