@@ -79,9 +79,9 @@ export default function HowItWorks() {
           backgroundColor,
         }}
       >
-        <div className="h-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-20 px-4 sm:px-6 max-w-6xl mx-auto">
+        <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,44rem)_minmax(0,34rem)] items-center justify-center gap-12 lg:gap-20 px-4 sm:px-6 max-w-7xl mx-auto">
           {/* Left: giant step number */}
-          <div className="flex-shrink-0 flex flex-col items-center lg:items-start">
+          <div className="flex flex-col items-center lg:items-start lg:w-[44rem]">
             <p
               className="text-base sm:text-lg lg:text-xl uppercase tracking-[0.28em] mb-3"
               style={{ color: "#007AFF", fontFamily: "var(--font-mono)" }}
@@ -110,7 +110,7 @@ export default function HowItWorks() {
           </div>
 
           {/* Right: step content */}
-          <div className="flex-1 relative" style={{ minHeight: "300px" }}>
+          <div className="relative w-full lg:w-[34rem]" style={{ minHeight: "300px" }}>
             {steps.map((step, i) => (
               <motion.div
                 key={step.number}
@@ -120,7 +120,7 @@ export default function HowItWorks() {
                   opacity: stepOpacities[i],
                   x: stepXs[i],
                 }}
-                className="flex flex-col justify-center"
+                className="flex flex-col justify-center w-full"
               >
                 <div
                   className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6"
