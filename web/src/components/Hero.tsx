@@ -6,7 +6,7 @@ import Image from "next/image";
 
 function PhoneMockup() {
   return (
-    <div className="relative w-56 mx-auto">
+    <div className="relative mx-auto w-full max-w-[20rem] px-4 sm:max-w-56 sm:px-0">
       <svg
         viewBox="0 0 224 460"
         fill="none"
@@ -58,11 +58,12 @@ function PhoneMockup() {
         initial={{ opacity: 0, x: 24, y: -8 }}
         animate={{ opacity: 1, x: 0, y: 0 }}
         transition={{ delay: 0.9, duration: 0.6, ease: "easeOut" }}
-        className="absolute -right-10 top-16 rounded-xl p-3 shadow-xl"
+        className="absolute right-4 top-16 rounded-xl p-3 shadow-xl sm:-right-10"
         style={{
           background: "var(--card-surface)",
           border: "1px solid var(--card-border)",
           minWidth: "120px",
+          maxWidth: "10rem",
         }}
       >
         <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -77,11 +78,12 @@ function PhoneMockup() {
         initial={{ opacity: 0, x: -24, y: 8 }}
         animate={{ opacity: 1, x: 0, y: 0 }}
         transition={{ delay: 1.2, duration: 0.6, ease: "easeOut" }}
-        className="absolute -left-10 bottom-24 rounded-xl p-3 shadow-xl"
+        className="absolute bottom-24 left-4 rounded-xl p-3 shadow-xl sm:-left-10"
         style={{
           background: "var(--card-surface)",
           border: "1px solid var(--card-border)",
           minWidth: "130px",
+          maxWidth: "10rem",
         }}
       >
         <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
