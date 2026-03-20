@@ -13,6 +13,7 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1).optional(),
   GOOGLE_API_KEY: z.string().min(1).optional(),
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
+  ORS_API_KEY: z.string().min(1).optional(),
   VERTEX_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL_PRIMARY: z.string().min(1).optional(),
   GEMINI_MODEL_LIGHT: z.string().min(1).optional(),

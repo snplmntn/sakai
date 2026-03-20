@@ -1,4 +1,13 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import SafeScreen from '../components/SafeScreen';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
@@ -13,8 +22,9 @@ import { useToast } from '../toast/ToastContext';
 import { VOICE_LANGUAGE_OPTIONS, type VoiceLanguagePreference } from '../voice/languages';
 
 export default function PreferencesScreen() {
-  const { preferences, updatePreferences, isUpdating } = usePreferences();
+  const { preferences, updatePreferences, isUpdating, refreshPreferences } = usePreferences();
   const { showToast } = useToast();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handlePreferenceSelect = async (defaultPreference: RoutePreference) => {
     try {
@@ -88,9 +98,30 @@ export default function PreferencesScreen() {
     }
   };
 
+  const handlePullRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+
+    try {
+      await refreshPreferences();
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to refresh your preferences.',
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refreshPreferences, showToast]);
+
   return (
     <SafeScreen backgroundColor={COLORS.white} topInsetBackgroundColor={COLORS.white} statusBarStyle="dark">
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={() => void handlePullRefresh()} />
+        }
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Preferences</Text>
           <Text style={styles.subtitle}>
