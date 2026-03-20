@@ -39,6 +39,26 @@ const parseNullableString = (value: unknown, field: string): string | null => {
   return parseString(value, field);
 };
 
+const parsePathCoordinates = (
+  value: unknown,
+  field: string
+): Array<{ latitude: number; longitude: number }> | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.map((coordinate, index) => {
+    if (!isRecord(coordinate)) {
+      throw new Error(`Invalid ${field}[${index}] in route response`);
+    }
+
+    return {
+      latitude: parseNumber(coordinate.latitude, `${field}[${index}].latitude`),
+      longitude: parseNumber(coordinate.longitude, `${field}[${index}].longitude`),
+    };
+  });
+};
+
 const parseStop = (value: unknown): RouteStop => {
   if (!isRecord(value)) {
     throw new Error('Invalid route stop');
@@ -88,6 +108,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       distanceMeters: parseNumber(value.distanceMeters, 'walk.distanceMeters'),
       durationMinutes: parseNumber(value.durationMinutes, 'walk.durationMinutes'),
       fare: parseFareBreakdown(value.fare),
+      pathCoordinates: parsePathCoordinates(value.pathCoordinates, 'walk.pathCoordinates'),
     };
   }
 
@@ -101,6 +122,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       distanceKm: parseNumber(value.distanceKm, 'drive.distanceKm'),
       durationMinutes: parseNumber(value.durationMinutes, 'drive.durationMinutes'),
       fare: parseFareBreakdown(value.fare),
+      pathCoordinates: parsePathCoordinates(value.pathCoordinates, 'drive.pathCoordinates'),
     };
   }
 
@@ -122,6 +144,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       ? value.corridorTags.map((tag) => parseString(tag, 'ride.corridorTags'))
       : [],
     fare: parseFareBreakdown(value.fare),
+    pathCoordinates: parsePathCoordinates(value.pathCoordinates, 'ride.pathCoordinates'),
   };
 };
 
@@ -147,6 +170,14 @@ const parseIncident = (value: unknown): RouteQueryIncident => {
     scrapedAt: parseString(value.scrapedAt, 'incident.scrapedAt'),
     sourceUrl: parseString(value.sourceUrl, 'incident.sourceUrl'),
   };
+};
+
+const parseNullableNumber = (value: unknown, field: string): number | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return parseNumber(value, field);
 };
 
 const parseNavigationTarget = (value: unknown): RouteNavigationTarget => {
@@ -181,7 +212,7 @@ const parseRouteOption = (value: unknown): RouteQueryOption => {
       ? value.highlights.map((item) => parseString(item, 'option.highlights'))
       : [],
     totalDurationMinutes: parseNumber(value.totalDurationMinutes, 'option.totalDurationMinutes'),
-    totalFare: parseNumber(value.totalFare, 'option.totalFare'),
+    totalFare: parseNullableNumber(value.totalFare, 'option.totalFare'),
     fareConfidence: parseString(value.fareConfidence, 'option.fareConfidence') as RouteQueryOption['fareConfidence'],
     transferCount: parseNumber(value.transferCount, 'option.transferCount'),
     corridorTags: Array.isArray(value.corridorTags)
@@ -195,6 +226,34 @@ const parseRouteOption = (value: unknown): RouteQueryOption => {
       ? value.relevantIncidents.map(parseIncident)
       : [],
     navigationTarget: parseNavigationTarget(value.navigationTarget),
+    source: parseString(value.source, 'option.source') as RouteQueryOption['source'],
+    providerLabel:
+      typeof value.providerLabel === 'string' ? value.providerLabel : undefined,
+    providerNotice:
+      typeof value.providerNotice === 'string' ? value.providerNotice : undefined,
+  };
+};
+
+const parseFallbackResult = (value: unknown): RouteQueryResult['googleFallback'] => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid google fallback response');
+  }
+
+  const status = parseString(value.status, 'googleFallback.status');
+
+  if (
+    status !== 'available' &&
+    status !== 'no_results' &&
+    status !== 'unavailable' &&
+    status !== 'skipped'
+  ) {
+    throw new Error('Invalid google fallback status');
+  }
+
+  return {
+    status,
+    options: Array.isArray(value.options) ? value.options.map(parseRouteOption) : [],
+    message: typeof value.message === 'string' ? value.message : undefined,
   };
 };
 
@@ -233,6 +292,7 @@ const parseRouteQueryResult = (value: unknown): RouteQueryResult => {
       modifierSource: parseString(value.normalizedQuery.modifierSource, 'normalized.modifierSource'),
     },
     options: Array.isArray(value.options) ? value.options.map(parseRouteOption) : [],
+    googleFallback: parseFallbackResult(value.googleFallback),
     message: typeof value.message === 'string' ? value.message : undefined,
   };
 };

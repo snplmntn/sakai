@@ -47,19 +47,27 @@ export interface RouteQueryNormalizedInput {
 export interface RouteQueryRideLeg {
   type: "ride";
   id: string;
-  mode: RideMode;
+  mode: RideMode | "bus" | "rail";
   routeId: string;
   routeVariantId: string;
   routeCode: string;
   routeName: string;
   directionLabel: string;
-  fromStop: Stop;
-  toStop: Stop;
+  fromStop: Omit<Stop, "mode"> & {
+    mode: Stop["mode"] | "bus" | "rail";
+  };
+  toStop: Omit<Stop, "mode"> & {
+    mode: Stop["mode"] | "bus" | "rail";
+  };
   routeLabel: string;
   distanceKm: number;
   durationMinutes: number;
   corridorTags: string[];
   fare: FareBreakdown;
+  pathCoordinates?: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 export interface RouteQueryWalkLeg {
@@ -70,6 +78,10 @@ export interface RouteQueryWalkLeg {
   distanceMeters: number;
   durationMinutes: number;
   fare: FareBreakdown;
+  pathCoordinates?: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 export interface RouteQueryDriveLeg {
@@ -81,6 +93,10 @@ export interface RouteQueryDriveLeg {
   distanceKm: number;
   durationMinutes: number;
   fare: FareBreakdown;
+  pathCoordinates?: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 export type RouteQueryLeg = RouteQueryRideLeg | RouteQueryWalkLeg | RouteQueryDriveLeg;
@@ -103,7 +119,7 @@ export interface RouteQueryOption {
   recommendationLabel: string;
   highlights: string[];
   totalDurationMinutes: number;
-  totalFare: number;
+  totalFare: number | null;
   fareConfidence: FareConfidence;
   transferCount: number;
   corridorTags: string[];
@@ -111,10 +127,20 @@ export interface RouteQueryOption {
   legs: RouteQueryLeg[];
   relevantIncidents: RouteQueryIncident[];
   navigationTarget: RouteNavigationTarget;
+  source: "sakai" | "google_fallback";
+  providerLabel?: string;
+  providerNotice?: string;
+}
+
+export interface RouteQueryFallbackResult {
+  status: "available" | "no_results" | "unavailable" | "skipped";
+  options: RouteQueryOption[];
+  message?: string;
 }
 
 export interface RouteQueryResult {
   normalizedQuery: RouteQueryNormalizedInput;
   options: RouteQueryOption[];
+  googleFallback: RouteQueryFallbackResult;
   message?: string;
 }

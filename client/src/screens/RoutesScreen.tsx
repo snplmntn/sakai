@@ -62,6 +62,7 @@ const MODE_LABELS: Record<string, string> = {
   mrt3: 'MRT3',
   lrt1: 'LRT1',
   lrt2: 'LRT2',
+  rail: 'Rail',
   car: 'Car',
   bus: 'Bus',
 };
@@ -79,7 +80,9 @@ const ROUTE_LINE_COLORS: Record<string, string> = {
   mrt3: '#FF9500',
   lrt1: '#FF3B30',
   lrt2: '#AF52DE',
+  rail: '#FF9500',
   car: '#102033',
+  bus: '#0A84FF',
   walk: '#5D7286',
 };
 
@@ -90,7 +93,13 @@ type AudioRecordingRef = {
 
 // â”€â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function LegRow({ leg }: { leg: RouteQueryLeg }) {
+function LegRow({
+  leg,
+  optionSource,
+}: {
+  leg: RouteQueryLeg;
+  optionSource: RouteQueryOption['source'];
+}) {
   if (leg.type === 'walk') {
     return (
       <View style={styles.legRow}>
@@ -120,7 +129,11 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
           <Text style={styles.legMeta}>
             {leg.distanceKm.toFixed(1)} km Â· {formatDuration(leg.durationMinutes)}
           </Text>
-          <Text style={styles.legFare}>{formatFare(leg.fare.amount)}</Text>
+          <Text style={styles.legFare}>
+            {optionSource === 'google_fallback'
+              ? 'Estimated in total only'
+              : formatFare(leg.fare.amount)}
+          </Text>
         </View>
       </View>
     );
@@ -137,7 +150,11 @@ function LegRow({ leg }: { leg: RouteQueryLeg }) {
         <Text style={styles.legMeta}>
           {leg.fromStop.stopName} â†’ {leg.toStop.stopName}
         </Text>
-        <Text style={styles.legFare}>{formatFare(leg.fare.amount)}</Text>
+        <Text style={styles.legFare}>
+          {optionSource === 'google_fallback'
+            ? 'Estimated in total only'
+            : formatFare(leg.fare.amount)}
+        </Text>
       </View>
     </View>
   );
@@ -161,6 +178,7 @@ function RouteCard({
   const isEstimated =
     option.fareConfidence === 'estimated' || option.fareConfidence === 'partially_estimated';
   const fareBadgeLabel = option.fareConfidence === 'partially_estimated' ? 'Part. Est.' : 'Est. Fare';
+  const isGoogleFallback = option.source === 'google_fallback';
 
   return (
     <TouchableOpacity
@@ -178,6 +196,8 @@ function RouteCard({
       </View>
 
       <Text style={styles.routeSummary}>{option.summary}</Text>
+      {option.providerLabel ? <Text style={styles.routeProviderLabel}>{option.providerLabel}</Text> : null}
+      {option.providerNotice ? <Text style={styles.routeProviderNote}>{option.providerNotice}</Text> : null}
 
       <View style={styles.statsRow}>
         <View style={styles.statBlock}>
@@ -206,7 +226,7 @@ function RouteCard({
         </View>
       )}
 
-      {option.relevantIncidents.length > 0 && (
+      {!isGoogleFallback && option.relevantIncidents.length > 0 && (
         <RelevantIncidentsSection
           incidents={option.relevantIncidents}
           compact
@@ -221,7 +241,7 @@ function RouteCard({
 
       {expanded && (
         <View style={styles.legList}>
-          {option.relevantIncidents.length > 0 && (
+          {!isGoogleFallback && option.relevantIncidents.length > 0 && (
             <RelevantIncidentsSection
               incidents={option.relevantIncidents}
               title="Route impact"
@@ -229,7 +249,7 @@ function RouteCard({
             />
           )}
           {option.legs.map((leg) => (
-            <LegRow key={leg.id} leg={leg} />
+            <LegRow key={leg.id} leg={leg} optionSource={option.source} />
           ))}
           {option.fareAssumptions.length > 0 && (
             <Text style={styles.fareNote}>* {option.fareAssumptions.join(' ')}</Text>
@@ -358,7 +378,11 @@ export default function RoutesScreen() {
   const accessToken = session?.accessToken;
   const isGoogleMapsConfigured = hasGoogleMapsApiKey();
   const canUseGooglePlaces = hasGooglePlacesApiKey();
-  const selectedOption = routeResult?.options.find((o) => o.id === selectedOptionId) ?? null;
+  const allRouteOptions = useMemo(
+    () => (routeResult ? [...routeResult.options, ...routeResult.googleFallback.options] : []),
+    [routeResult]
+  );
+  const selectedOption = allRouteOptions.find((o) => o.id === selectedOptionId) ?? null;
   const mapMarkers = useMemo(
     () => buildRouteMarkers({ origin, destination, routeResult, option: selectedOption }),
     [destination, origin, routeResult, selectedOption]
@@ -620,9 +644,10 @@ export default function RoutesScreen() {
           accessToken,
         });
 
+        const initialOption = result.options[0] ?? result.googleFallback.options[0] ?? null;
         setRouteResult(result);
-        setSelectedOptionId(result.options[0]?.id ?? null);
-        setExpandedOptions(result.options[0] ? new Set([result.options[0].id]) : new Set());
+        setSelectedOptionId(initialOption?.id ?? null);
+        setExpandedOptions(initialOption ? new Set([initialOption.id]) : new Set());
         setOriginText(result.normalizedQuery.origin.label);
         setDestText(result.normalizedQuery.destination.label);
       } finally {
@@ -908,8 +933,9 @@ export default function RoutesScreen() {
           accessToken,
         });
       }
+      const initialOption = result.options[0] ?? result.googleFallback.options[0] ?? null;
       setRouteResult(result);
-      if (result.options[0]) setSelectedOptionId(result.options[0].id);
+      setSelectedOptionId(initialOption?.id ?? null);
     } catch (err: unknown) {
       if (err instanceof ApiError && err.statusCode === 400) {
         const details = err.details;
@@ -1330,6 +1356,15 @@ export default function RoutesScreen() {
               </View>
             )}
 
+            {routeResult &&
+              routeResult.options.length === 0 &&
+              routeResult.googleFallback.options.length === 0 &&
+              routeResult.googleFallback.message && (
+                <View style={styles.messageCard}>
+                  <Text style={styles.messageText}>{routeResult.googleFallback.message}</Text>
+                </View>
+              )}
+
             {routeResult && routeResult.options.length > 0 && (coordinateFallbackNote || driveContextNote) && (
               <View style={styles.messageCard}>
                 {coordinateFallbackNote && <Text style={styles.fallbackNoteText}>{coordinateFallbackNote}</Text>}
@@ -1337,30 +1372,62 @@ export default function RoutesScreen() {
               </View>
             )}
 
-            {/* Route cards */}
-            {routeResult?.options.map((option) => (
-              <View key={option.id}>
-                <RouteCard
-                  option={option}
-                  compactIncidentMeta="Shown because this route may be affected."
-                  selected={option.id === selectedOptionId}
-                  onSelect={() => setSelectedOptionId(option.id)}
-                  expanded={expandedOptions.has(option.id)}
-                  onToggleLegs={() => toggleExpanded(option.id)}
-                />
-                {option.id === selectedOptionId && (
-                  <TouchableOpacity
-                    style={styles.searchBtn}
-                    onPress={() => {
-                      void startNavigation();
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.searchBtnText}>Start route</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+            {routeResult?.options.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Sakai routes</Text>
+                {routeResult.options.map((option) => (
+                  <View key={option.id}>
+                    <RouteCard
+                      option={option}
+                      compactIncidentMeta="Shown because this route may be affected."
+                      selected={option.id === selectedOptionId}
+                      onSelect={() => setSelectedOptionId(option.id)}
+                      expanded={expandedOptions.has(option.id)}
+                      onToggleLegs={() => toggleExpanded(option.id)}
+                    />
+                    {option.id === selectedOptionId && (
+                      <TouchableOpacity
+                        style={styles.searchBtn}
+                        onPress={() => {
+                          void startNavigation();
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.searchBtnText}>Start route</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </>
+            ) : null}
+
+            {routeResult?.googleFallback.options.length ? (
+              <>
+                <Text style={styles.sectionTitle}>Also from Google Maps</Text>
+                {routeResult.googleFallback.options.map((option) => (
+                  <View key={option.id}>
+                    <RouteCard
+                      option={option}
+                      selected={option.id === selectedOptionId}
+                      onSelect={() => setSelectedOptionId(option.id)}
+                      expanded={expandedOptions.has(option.id)}
+                      onToggleLegs={() => toggleExpanded(option.id)}
+                    />
+                    {option.id === selectedOptionId && (
+                      <TouchableOpacity
+                        style={styles.searchBtn}
+                        onPress={() => {
+                          void startNavigation();
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.searchBtnText}>Start route</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1704,6 +1771,17 @@ const styles = StyleSheet.create({
   },
   routeSummary: {
     fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: '#5D7286',
+    lineHeight: 18,
+  },
+  routeProviderLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.primary,
+  },
+  routeProviderNote: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
     color: '#5D7286',
     lineHeight: 18,

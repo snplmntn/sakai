@@ -105,6 +105,7 @@ const routeOption: RouteQueryOption = {
     }
   ],
   relevantIncidents: [],
+  source: "sakai",
   navigationTarget: {
     latitude: 14.6,
     longitude: 121.01,

@@ -40,7 +40,8 @@ export const formatDuration = (minutes: number) => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
-export const formatFare = (value: number) => formatCurrency(value);
+export const formatFare = (value: number | null) =>
+  value === null ? 'Fare unavailable' : formatCurrency(value);
 
 const isRideLeg = (leg: RouteQueryLeg): leg is Extract<RouteQueryLeg, { type: 'ride' }> =>
   leg.type === 'ride';
@@ -191,8 +192,12 @@ export const buildRouteSegments = (input: {
         id: leg.id,
         type: leg.type,
         mode: leg.mode,
-        coordinates: [fromCoordinate, toCoordinateValue],
-        isFallbackGeometry: false,
+        coordinates:
+          Array.isArray(leg.pathCoordinates) && leg.pathCoordinates.length >= 2
+            ? leg.pathCoordinates
+            : [fromCoordinate, toCoordinateValue],
+        isFallbackGeometry:
+          !(Array.isArray(leg.pathCoordinates) && leg.pathCoordinates.length >= 2),
       });
 
       previousAnchor = toCoordinateValue;
@@ -213,8 +218,12 @@ export const buildRouteSegments = (input: {
       id: leg.id,
       type: leg.type,
       mode: leg.type === 'drive' ? 'car' : 'walk',
-      coordinates: [startCoordinate, endCoordinate],
-      isFallbackGeometry: true,
+      coordinates:
+        Array.isArray(leg.pathCoordinates) && leg.pathCoordinates.length >= 2
+          ? leg.pathCoordinates
+          : [startCoordinate, endCoordinate],
+      isFallbackGeometry:
+        !(Array.isArray(leg.pathCoordinates) && leg.pathCoordinates.length >= 2),
     });
 
     previousAnchor = endCoordinate;

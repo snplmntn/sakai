@@ -93,6 +93,7 @@ const createOption = (input: {
       : []),
   ],
   relevantIncidents: [],
+  source: "sakai",
   navigationTarget: {
     latitude: 14.61,
     longitude: 121.01,

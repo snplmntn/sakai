@@ -37,6 +37,8 @@ const getWalkingMetrics = (option: RouteQueryOption) =>
 const getJeepneyRideCount = (option: RouteQueryOption) =>
   option.legs.filter((leg) => leg.type === "ride" && leg.mode === "jeepney").length;
 
+const getComparableFare = (option: RouteQueryOption) => option.totalFare ?? Number.MAX_SAFE_INTEGER;
+
 const compareByModifiers = (
   left: RouteQueryOption,
   right: RouteQueryOption,
@@ -100,7 +102,7 @@ export const rankRouteOptions = (
               right,
               (leftOption, rightOption) =>
                 leftOption.totalDurationMinutes - rightOption.totalDurationMinutes ||
-                leftOption.totalFare - rightOption.totalFare ||
+                getComparableFare(leftOption) - getComparableFare(rightOption) ||
                 leftOption.transferCount - rightOption.transferCount
             )
         )
@@ -109,17 +111,17 @@ export const rankRouteOptions = (
             options,
             (left, right) =>
               compareWithModifiers(
-                left,
-                right,
-                (leftOption, rightOption) =>
-                  leftOption.totalFare - rightOption.totalFare ||
+              left,
+              right,
+              (leftOption, rightOption) =>
+                  getComparableFare(leftOption) - getComparableFare(rightOption) ||
                   leftOption.totalDurationMinutes - rightOption.totalDurationMinutes ||
                   leftOption.transferCount - rightOption.transferCount
               )
           )
         : (() => {
             const durations = options.map((option) => option.totalDurationMinutes);
-            const fares = options.map((option) => option.totalFare);
+            const fares = options.map((option) => getComparableFare(option));
             const transferCounts = options.map((option) => option.transferCount);
             const durationMinimum = Math.min(...durations);
             const durationMaximum = Math.max(...durations);
@@ -137,7 +139,7 @@ export const rankRouteOptions = (
                     durationMaximum
                   ) *
                     0.45 +
-                  getBalancedMetricScore(leftOption.totalFare, fareMinimum, fareMaximum) * 0.35 +
+                  getBalancedMetricScore(getComparableFare(leftOption), fareMinimum, fareMaximum) * 0.35 +
                   getBalancedMetricScore(
                     leftOption.transferCount,
                     transferMinimum,
@@ -151,7 +153,7 @@ export const rankRouteOptions = (
                     durationMaximum
                   ) *
                     0.45 +
-                  getBalancedMetricScore(rightOption.totalFare, fareMinimum, fareMaximum) * 0.35 +
+                  getBalancedMetricScore(getComparableFare(rightOption), fareMinimum, fareMaximum) * 0.35 +
                   getBalancedMetricScore(
                     rightOption.transferCount,
                     transferMinimum,
@@ -162,7 +164,7 @@ export const rankRouteOptions = (
                 return (
                   leftScore - rightScore ||
                   leftOption.totalDurationMinutes - rightOption.totalDurationMinutes ||
-                  leftOption.totalFare - rightOption.totalFare ||
+                  getComparableFare(leftOption) - getComparableFare(rightOption) ||
                   leftOption.transferCount - rightOption.transferCount
                 );
               });
@@ -177,8 +179,10 @@ export const rankRouteOptions = (
   const fastestOptions = rankedOptions.filter(
     (option) => option.totalDurationMinutes === minimumDuration
   );
-  const minimumFare = Math.min(...rankedOptions.map((option) => option.totalFare));
-  const cheapestOptions = rankedOptions.filter((option) => option.totalFare === minimumFare);
+  const minimumFare = Math.min(...rankedOptions.map((option) => getComparableFare(option)));
+  const cheapestOptions = rankedOptions.filter(
+    (option) => getComparableFare(option) === minimumFare
+  );
   const jeepneyLegCounts = rankedOptions.map((option) => ({
     id: option.id,
     count: option.legs.filter((leg) => leg.type === "ride" && leg.mode === "jeepney").length
@@ -197,7 +201,7 @@ export const rankRouteOptions = (
       highlights.push("Fastest option");
     }
 
-    if (cheapestOptions.length === 1 && option.totalFare === minimumFare) {
+    if (cheapestOptions.length === 1 && getComparableFare(option) === minimumFare) {
       highlights.push("Cheapest option");
     }
 

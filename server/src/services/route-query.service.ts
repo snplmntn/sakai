@@ -33,6 +33,7 @@ import { priceRideLegsWithCatalog, type FareRideLegInput } from "./fare-engine.s
 import { attachRelevantIncidentsToOptions } from "./route-incident.service.js";
 import { rankRouteOptions } from "./route-ranking.service.js";
 import { queryTransitRoutesIfPossible } from "./transit-route-query.service.js";
+import { queryGoogleFallbackRoutes } from "./google-route-fallback.service.js";
 
 const DEFAULT_ROUTE_PREFERENCE: RoutePreference = "balanced";
 const DEFAULT_PASSENGER_TYPE: PassengerType = "regular";
@@ -1206,6 +1207,7 @@ const buildRouteOption = (
     fareAssumptions: [...new Set(fareAssumptions)],
     legs,
     relevantIncidents: [],
+    source: "sakai",
     navigationTarget: buildNavigationTarget({
       normalizedQuery,
       legs
@@ -1294,19 +1296,7 @@ export const queryRoutes = async (input: {
       queryText: input.request.queryText
     })
   ]);
-  const transitResult = await queryTransitRoutesIfPossible({
-    origin: parsedContext.origin,
-    destination: parsedContext.destination,
-    preference: effectiveValues.preference,
-    passengerType: effectiveValues.passengerType,
-    modifiers: effectiveValues.modifiers
-  });
-
-  if (transitResult) {
-    return transitResult;
-  }
-
-  const normalizedQuery: RouteQueryNormalizedInput = {
+  const fallbackNormalizedQuery: RouteQueryNormalizedInput = {
     origin: {
       placeId: originResolution.place.id,
       label: originResolution.place.canonicalName,
@@ -1329,10 +1319,46 @@ export const queryRoutes = async (input: {
     modifierSource: effectiveValues.modifiers.source
   };
 
+  const [transitResult, googleFallback] = await Promise.all([
+    queryTransitRoutesIfPossible({
+      origin: parsedContext.origin,
+      destination: parsedContext.destination,
+      preference: effectiveValues.preference,
+      passengerType: effectiveValues.passengerType,
+      modifiers: effectiveValues.modifiers
+    }),
+    queryGoogleFallbackRoutes({
+      normalizedQuery: fallbackNormalizedQuery,
+      modifiers: effectiveValues.modifiers.value,
+      passengerType: effectiveValues.passengerType.value
+    }).catch((error: unknown) => {
+      console.warn("Google fallback route lookup failed", {
+        operation: "google_fallback_route_lookup",
+        reason: error instanceof Error ? error.message : "unknown error"
+      });
+
+      return {
+        status: "unavailable",
+        options: [],
+        message: "Google Maps fallback is unavailable right now."
+      } satisfies RouteQueryResult["googleFallback"];
+    })
+  ]);
+
+  if (transitResult) {
+    return {
+      ...transitResult,
+      googleFallback
+    };
+  }
+
+  const normalizedQuery = fallbackNormalizedQuery;
+
   if (originResolution.accessStops.length === 0 || destinationResolution.accessStops.length === 0) {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1343,6 +1369,7 @@ export const queryRoutes = async (input: {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1371,6 +1398,7 @@ export const queryRoutes = async (input: {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1414,6 +1442,7 @@ export const queryRoutes = async (input: {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1441,6 +1470,7 @@ export const queryRoutes = async (input: {
 
   return {
     normalizedQuery,
-    options: summarizedOptions
+    options: summarizedOptions,
+    googleFallback
   };
 };
