@@ -39,8 +39,19 @@ const getRequestOrigin = (req: Request): string => {
 };
 
 const getGoogleCallbackUrl = (req: Request): string => {
-  const callbackUrl = new URL("/api/auth/google/callback", getRequestOrigin(req));
-  return callbackUrl.toString();
+  const configuredCallbackUrl = process.env.AUTH_GOOGLE_REDIRECT_URI?.trim();
+
+  if (configuredCallbackUrl) {
+    return configuredCallbackUrl;
+  }
+
+  return new URL("/api/auth/google/callback", getRequestOrigin(req)).toString();
+};
+
+const prefersJsonResponse = (req: Request): boolean => {
+  const acceptHeader = req.get("accept");
+
+  return typeof acceptHeader === "string" && acceptHeader.includes("application/json");
 };
 
 export const signUp: RequestHandler = async (req, res) => {
@@ -102,6 +113,11 @@ export const startGoogleSignIn: RequestHandler = async (req, res) => {
     appRedirectUri:
       typeof req.query.appRedirectUri === "string" ? req.query.appRedirectUri : undefined
   });
+
+  if (!prefersJsonResponse(req)) {
+    res.redirect(302, authPayload.url);
+    return;
+  }
 
   res.status(200).json({
     success: true,

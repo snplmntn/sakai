@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  NativeModules,
   NativeScrollEvent,
   NativeSyntheticEvent,
   PanResponder,
@@ -22,6 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import SafeScreen from '../components/SafeScreen';
+import { useAuth } from '../auth/AuthContext';
 import { hasGooglePlacesApiKey } from '../config/env';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import type { MainTabParamList } from '../navigation/MainTabNavigator';
@@ -37,7 +39,15 @@ import {
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import { useToast } from '../toast/ToastContext';
 import { useVoiceInput } from '../hooks/useVoiceInput';
+import { usePreferences } from '../preferences/PreferencesContext';
+import { transcribeSpeechRecording } from '../speech/api';
+import { createFallbackSpeechTranscription } from '../speech/fallback';
 import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
+import {
+  getVoiceLanguageLabel,
+  getVoiceRecognitionLocale,
+  getVoiceTranscriptionOverride,
+} from '../voice/languages';
 
 const SEARCH_EXAMPLES = ['Pasay', 'Magallanes', 'Gate 3'];
 const DEMO_RESULT_DELAY_MS = 450;
@@ -51,6 +61,10 @@ const IDLE_TOP_COLOR_SCROLL_DISTANCE = 220;
 type ActiveField = 'origin' | 'destination' | null;
 type ResultPhase = 'idle' | 'loading' | 'ready';
 type SheetSnap = 'collapsed' | 'expanded';
+type AudioRecordingRef = {
+  stopAndUnloadAsync: () => Promise<unknown>;
+  getURI: () => string | null;
+};
 type SuggestedRouteCard = {
   id: string;
   eyebrow: string;
@@ -220,6 +234,8 @@ function DemoMapBackground() {
 }
 
 export default function TripMapScreen() {
+  const { session } = useAuth();
+  const { preferences } = usePreferences();
   const { showToast } = useToast();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
   const insets = useSafeAreaInsets();
@@ -231,6 +247,9 @@ export default function TripMapScreen() {
     destination: createGooglePlacesSessionToken(),
   });
   const demoSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingRef = useRef<AudioRecordingRef | null>(null);
+  const finalizingRecordingRef = useRef(false);
+  const lastVoiceTriggerRef = useRef(0);
 
   const [originQuery, setOriginQuery] = useState('');
   const [destinationQuery, setDestinationQuery] = useState('');
@@ -246,6 +265,9 @@ export default function TripMapScreen() {
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('expanded');
   const [idleTopInsetColor, setIdleTopInsetColor] = useState(IDLE_TOP_COLOR_START);
   const [voiceQuery, setVoiceQuery] = useState('');
+  const [voiceTranscriptNotice, setVoiceTranscriptNotice] = useState<string | null>(null);
+  const [speechPhase, setSpeechPhase] = useState<'idle' | 'listening' | 'transcribing'>('idle');
+  const [recordingAvailable, setRecordingAvailable] = useState<boolean | null>(null);
   const {
     isListening,
     transcript,
@@ -255,9 +277,12 @@ export default function TripMapScreen() {
     startListening,
     stopListening,
     resetTranscript,
-  } = useVoiceInput();
+  } = useVoiceInput({
+    locale: getVoiceRecognitionLocale(preferences.voiceLanguage),
+  });
 
   const activeQuery = activeField === 'origin' ? originQuery : destinationQuery;
+  const accessToken = session?.accessToken;
   const canUseGooglePlaces = hasGooglePlacesApiKey();
   const selectedRoute =
     DEMO_ROUTE_CARDS.find((card) => card.id === selectedRouteId) ?? DEMO_ROUTE_CARDS[0] ?? null;
@@ -273,6 +298,21 @@ export default function TripMapScreen() {
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const sheetTranslateValueRef = useRef(0);
   const sheetDragStartRef = useRef(0);
+
+  useEffect(() => {
+    setRecordingAvailable(Boolean(NativeModules.ExponentAV));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const recording = recordingRef.current;
+      recordingRef.current = null;
+
+      if (recording) {
+        void recording.stopAndUnloadAsync().catch(() => undefined);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     navigation.setOptions({
@@ -372,63 +412,183 @@ export default function TripMapScreen() {
     });
   }, [showToast, voiceError]);
 
-  useEffect(() => {
-    if (triggerToken === 0 || resultPhase !== 'idle') {
+  const finalizeVoiceSearch = async () => {
+    if (finalizingRecordingRef.current) {
       return;
     }
 
-    void (async () => {
-      if (!voiceAvailable) {
-        showToast({
-          tone: 'info',
-          title: 'Voice search unavailable',
-          message: 'Voice input is not available in this build.',
+    finalizingRecordingRef.current = true;
+
+    try {
+      const recording = recordingRef.current;
+      recordingRef.current = null;
+
+      if (!recording) {
+        const fallbackTranscript = transcript.trim();
+
+        if (fallbackTranscript.length === 0) {
+          return;
+        }
+
+        setVoiceTranscriptNotice(
+          'Using the device transcript because multilingual server transcription is unavailable right now.'
+        );
+        setVoiceQuery(fallbackTranscript);
+        await handleSearchFromVoice(fallbackTranscript);
+        return;
+      }
+
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+
+      if (!uri) {
+        throw new Error('Voice recording could not be saved. Try again.');
+      }
+
+      setSpeechPhase('transcribing');
+      const speechResult = await transcribeSpeechRecording({
+        uri,
+        mimeType: 'audio/aac',
+        accessToken,
+        languageOverride: getVoiceTranscriptionOverride(preferences.voiceLanguage),
+      }).catch((error: unknown) => {
+        const fallbackTranscript = transcript.trim();
+
+        if (fallbackTranscript.length === 0) {
+          throw error;
+        }
+
+        setVoiceTranscriptNotice(
+          'Using the device transcript because multilingual server transcription is unavailable right now.'
+        );
+
+        return createFallbackSpeechTranscription({
+          transcript: fallbackTranscript,
+          voiceLanguage: preferences.voiceLanguage,
         });
-        return;
-      }
+      });
 
-      if (isListening) {
-        await stopListening();
-        return;
-      }
+      setVoiceQuery(speechResult.transcript);
+      await handleSearchFromVoice(speechResult.transcript);
+    } finally {
+      finalizingRecordingRef.current = false;
+      setSpeechPhase('idle');
+      setTabBarVoiceListening(false);
+    }
+  };
 
+  const startSpeechCapture = async () => {
+    if (speechPhase !== 'idle') {
+      return;
+    }
+
+    if (!voiceAvailable) {
+      showToast({
+        tone: 'info',
+        title: 'Voice search unavailable',
+        message: 'Voice input is not available in this build.',
+      });
+      return;
+    }
+
+    try {
       resetDemoResults();
       setActiveField(null);
       setSuggestions([]);
       setVoiceQuery('');
+      setVoiceTranscriptNotice(null);
       resetTranscript();
-      await startListening();
-    })().catch(() => undefined);
-  }, [
-    isListening,
-    resetTranscript,
-    resultPhase,
-    startListening,
-    stopListening,
-    triggerToken,
-    voiceAvailable,
-    showToast,
-  ]);
+      setSpeechPhase('listening');
 
-  useEffect(() => {
-    if (isListening || voiceQuery.trim().length === 0 || resultPhase !== 'idle') {
+      if (recordingAvailable) {
+        const expoAv = await import('expo-av');
+        const permission = await expoAv.Audio.requestPermissionsAsync();
+
+        if (!permission.granted) {
+          setSpeechPhase('idle');
+          showToast({
+            tone: 'info',
+            title: 'Microphone unavailable',
+            message: 'Allow microphone access to speak your destination.',
+          });
+          return;
+        }
+
+        await expoAv.Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          interruptionModeIOS: expoAv.InterruptionModeIOS.DoNotMix,
+          interruptionModeAndroid: expoAv.InterruptionModeAndroid.DoNotMix,
+          shouldDuckAndroid: true,
+          staysActiveInBackground: false,
+        });
+
+        const { recording } = await expoAv.Audio.Recording.createAsync(
+          expoAv.Audio.RecordingOptionsPresets.HIGH_QUALITY
+        );
+        recordingRef.current = recording;
+      }
+
+      await startListening();
+    } catch (error) {
+      const recording = recordingRef.current;
+      recordingRef.current = null;
+      if (recording) {
+        await recording.stopAndUnloadAsync().catch(() => undefined);
+      }
+      setSpeechPhase('idle');
+      showToast({
+        tone: 'info',
+        title: 'Voice search unavailable',
+        message:
+          error instanceof Error ? error.message : 'Unable to start voice capture right now.',
+      });
+    }
+  };
+
+  const stopSpeechCapture = async () => {
+    if (speechPhase !== 'listening') {
       return;
     }
 
-    const timer = setTimeout(() => {
-      const nextDestination = voiceQuery.trim();
-      resetDemoResults();
-      setDestinationQuery(nextDestination);
-      setDestinationSelection(buildDemoSelectedPlace(nextDestination));
-      setActiveField(null);
-      setSuggestions([]);
-      void handleSearchFromVoice(nextDestination);
-    }, 260);
+    await stopListening();
+    await finalizeVoiceSearch();
+  };
 
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [handleSearchFromVoice, isListening, resultPhase, voiceQuery]);
+  useEffect(() => {
+    if (
+      triggerToken === 0 ||
+      resultPhase !== 'idle' ||
+      triggerToken === lastVoiceTriggerRef.current
+    ) {
+      return;
+    }
+
+    lastVoiceTriggerRef.current = triggerToken;
+
+    void (async () => {
+      if (speechPhase === 'listening') {
+        await stopSpeechCapture();
+        return;
+      }
+
+      await startSpeechCapture();
+    })().catch(() => undefined);
+  }, [
+    resultPhase,
+    speechPhase,
+    startSpeechCapture,
+    stopSpeechCapture,
+    triggerToken,
+  ]);
+
+  useEffect(() => {
+    if (speechPhase !== 'listening' || isListening || !recordingRef.current) {
+      return;
+    }
+
+    void finalizeVoiceSearch();
+  }, [isListening, speechPhase, transcript]);
 
   const clearDemoSearchTimer = () => {
     if (!demoSearchTimerRef.current) {
@@ -492,6 +652,7 @@ export default function TripMapScreen() {
     setSheetSnap('expanded');
     setStatusMessage('Choose a routeable stop or Google place.');
     setVoiceQuery('');
+    setVoiceTranscriptNotice(null);
     setNavigationCandidate(null);
   };
 
@@ -942,14 +1103,27 @@ export default function TripMapScreen() {
                 <Text style={styles.searchButtonText}>Search</Text>
               </Pressable>
 
-              {(isListening || partialTranscript.trim().length > 0 || voiceQuery.trim().length > 0) && (
+              {(speechPhase === 'transcribing' ||
+                isListening ||
+                partialTranscript.trim().length > 0 ||
+                voiceQuery.trim().length > 0) && (
                 <View style={styles.voiceStatusCard}>
                   <Text style={styles.voiceStatusLabel}>
-                    {isListening ? 'Listening now' : 'Voice search captured'}
+                    {speechPhase === 'transcribing'
+                      ? 'Transcribing now'
+                      : isListening
+                        ? 'Listening now'
+                        : 'Voice search captured'}
                   </Text>
                   <Text style={styles.voiceStatusText}>
                     {partialTranscript.trim() || voiceQuery.trim() || 'Say your destination.'}
                   </Text>
+                  <Text style={styles.voiceStatusMeta}>
+                    Voice language: {getVoiceLanguageLabel(preferences.voiceLanguage)}
+                  </Text>
+                  {voiceTranscriptNotice !== null && (
+                    <Text style={styles.voiceStatusMeta}>{voiceTranscriptNotice}</Text>
+                  )}
                 </View>
               )}
 
@@ -1130,6 +1304,12 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.regular,
     color: 'rgba(239,246,252,0.88)',
+    lineHeight: 18,
+  },
+  voiceStatusMeta: {
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: 'rgba(239,246,252,0.72)',
     lineHeight: 18,
   },
   suggestionPanel: {

@@ -52,12 +52,17 @@ vi.mock("../src/services/mmda-alert.service.js", () => ({
   refreshMmdaAlerts: vi.fn()
 }));
 
+vi.mock("../src/services/speech.service.js", () => ({
+  transcribeSpeech: vi.fn()
+}));
+
 import app from "../src/app.js";
 import * as areaUpdateModel from "../src/models/area-update.model.js";
 import * as authModel from "../src/models/auth.model.js";
 import * as mmdaAlertService from "../src/services/mmda-alert.service.js";
 import * as placeModel from "../src/models/place.model.js";
 import * as routeQueryService from "../src/services/route-query.service.js";
+import * as speechService from "../src/services/speech.service.js";
 import * as userPreferenceModel from "../src/models/user-preference.model.js";
 
 const mockedAreaUpdateModel = vi.mocked(areaUpdateModel);
@@ -65,6 +70,7 @@ const mockedAuthModel = vi.mocked(authModel);
 const mockedMmdaAlertService = vi.mocked(mmdaAlertService);
 const mockedPlaceModel = vi.mocked(placeModel);
 const mockedRouteQueryService = vi.mocked(routeQueryService);
+const mockedSpeechService = vi.mocked(speechService);
 const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
 const appHandler = app as unknown as {
   handle: (
@@ -110,6 +116,13 @@ const invokeApp = async (options: {
 describe("app routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon-key";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+    process.env.AUTH_APP_REDIRECT_URI = "sakai://auth/callback";
+    process.env.AUTH_STATE_SIGNING_SECRET =
+      "test-signing-secret-12345678901234567890";
+    delete process.env.AUTH_GOOGLE_REDIRECT_URI;
   });
 
   it("returns health status", async () => {
@@ -151,7 +164,7 @@ describe("app routes", () => {
     expect(response._getJSONData().message).toBe("Validation failed");
   });
 
-  it("returns a google sign-in url from the auth controller", async () => {
+  it("redirects browser google start requests to the provider url", async () => {
     mockedAuthModel.getGoogleSignInUrl.mockResolvedValue({
       url: "https://supabase.example.com/auth/v1/authorize?provider=google"
     });
@@ -161,6 +174,29 @@ describe("app routes", () => {
       url: "/api/auth/google/start"
     });
 
+    expect(response.statusCode).toBe(302);
+    expect(response._getRedirectUrl()).toBe(
+      "https://supabase.example.com/auth/v1/authorize?provider=google"
+    );
+    expect(mockedAuthModel.getGoogleSignInUrl).toHaveBeenCalledWith({
+      callbackUrl: "http://localhost/api/auth/google/callback",
+      appRedirectUri: undefined
+    });
+  });
+
+  it("returns json for api google start requests", async () => {
+    mockedAuthModel.getGoogleSignInUrl.mockResolvedValue({
+      url: "https://supabase.example.com/auth/v1/authorize?provider=google"
+    });
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/google/start",
+      headers: {
+        accept: "application/json"
+      }
+    });
+
     expect(response.statusCode).toBe(200);
     expect(response._getJSONData()).toEqual({
       success: true,
@@ -168,8 +204,25 @@ describe("app routes", () => {
         url: "https://supabase.example.com/auth/v1/authorize?provider=google"
       }
     });
+  });
+
+  it("prefers AUTH_GOOGLE_REDIRECT_URI for google start", async () => {
+    process.env.AUTH_GOOGLE_REDIRECT_URI = "https://api.example.com/api/auth/google/callback";
+    mockedAuthModel.getGoogleSignInUrl.mockResolvedValue({
+      url: "https://supabase.example.com/auth/v1/authorize?provider=google"
+    });
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/google/start",
+      headers: {
+        accept: "application/json"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
     expect(mockedAuthModel.getGoogleSignInUrl).toHaveBeenCalledWith({
-      callbackUrl: "http://localhost/api/auth/google/callback",
+      callbackUrl: "https://api.example.com/api/auth/google/callback",
       appRedirectUri: undefined
     });
   });
@@ -181,7 +234,10 @@ describe("app routes", () => {
 
     const response = await invokeApp({
       method: "GET",
-      url: "/api/auth/google/start?appRedirectUri=sakai%3A%2F%2Fauth%2Fcallback"
+      url: "/api/auth/google/start?appRedirectUri=sakai%3A%2F%2Fauth%2Fcallback",
+      headers: {
+        accept: "application/json"
+      }
     });
 
     expect(response.statusCode).toBe(200);
@@ -370,6 +426,43 @@ describe("app routes", () => {
     expect(response._getJSONData().data).toHaveLength(1);
     expect(mockedPlaceModel.searchPlaces).toHaveBeenCalledWith("pasay", {
       limit: 5
+    });
+  });
+
+  it("returns speech transcription metadata from the mounted route", async () => {
+    mockedSpeechService.transcribeSpeech.mockResolvedValue({
+      transcript: "Papunta sa Cubao",
+      confidence: null,
+      detectedLanguageCode: "fil-PH",
+      detectedLanguageLabel: "Filipino / Tagalog",
+      detectionMode: "auto"
+    });
+
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/speech/transcribe",
+      body: {
+        audioBase64: "YQ==",
+        mimeType: "audio/aac",
+        languageOverride: "fil-PH"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: {
+        transcript: "Papunta sa Cubao",
+        confidence: null,
+        detectedLanguageCode: "fil-PH",
+        detectedLanguageLabel: "Filipino / Tagalog",
+        detectionMode: "auto"
+      }
+    });
+    expect(mockedSpeechService.transcribeSpeech).toHaveBeenCalledWith({
+      audioBase64: "YQ==",
+      mimeType: "audio/aac",
+      languageOverride: "fil-PH"
     });
   });
 
