@@ -6,10 +6,12 @@ import {
   type UserPreferences,
 } from './types';
 
+type PersistedPreferenceDraft = Pick<PreferenceDraft, 'defaultPreference' | 'passengerType'>;
+
 const requestPreferences = async (
   accessToken: string,
   method: 'GET' | 'PUT',
-  body?: PreferenceDraft
+  body?: PersistedPreferenceDraft
 ): Promise<UserPreferences> =>
   requestData(
     {
@@ -27,7 +29,7 @@ export const getUserPreferences = async (
 
 export const updateUserPreferences = async (
   accessToken: string,
-  input: PreferenceDraft
+  input: PersistedPreferenceDraft
 ): Promise<UserPreferences> => requestPreferences(accessToken, 'PUT', input);
 
 export const getMyPreferences = async (accessToken: string): Promise<UserPreferences> =>
@@ -35,5 +37,5 @@ export const getMyPreferences = async (accessToken: string): Promise<UserPrefere
 
 export const upsertMyPreferences = async (
   accessToken: string,
-  draft: PreferenceDraft
+  draft: PersistedPreferenceDraft
 ): Promise<UserPreferences> => updateUserPreferences(accessToken, draft);

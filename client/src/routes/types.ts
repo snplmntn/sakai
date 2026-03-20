@@ -90,6 +90,13 @@ export interface RouteQueryIncident {
   sourceUrl: string;
 }
 
+export interface RouteNavigationTarget {
+  latitude: number;
+  longitude: number;
+  label: string;
+  kind: 'destination' | 'dropoff_stop';
+}
+
 export interface RouteQueryOption {
   id: string;
   summary: string;
@@ -103,6 +110,7 @@ export interface RouteQueryOption {
   fareAssumptions: string[];
   legs: RouteQueryLeg[];
   relevantIncidents: RouteQueryIncident[];
+  navigationTarget: RouteNavigationTarget;
 }
 
 export interface RouteQueryResult {
@@ -111,11 +119,15 @@ export interface RouteQueryResult {
       placeId: string;
       label: string;
       matchedBy: PlaceMatchSource;
+      latitude: number;
+      longitude: number;
     };
     destination: {
       placeId: string;
       label: string;
       matchedBy: PlaceMatchSource;
+      latitude: number;
+      longitude: number;
     };
     preference: RoutePreference;
     passengerType: PassengerType;

@@ -1,5 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import TripMapScreen from '../screens/TripMapScreen';
+import RoutesScreen from '../screens/RoutesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import CustomTabBar from '../components/CustomTabBar';
 
@@ -20,7 +20,7 @@ export default function MainTabNavigator() {
     >
       <Tab.Screen 
         name="Home" 
-        component={TripMapScreen} 
+        component={RoutesScreen} 
         options={{ title: 'Home' }}
       />
       <Tab.Screen 

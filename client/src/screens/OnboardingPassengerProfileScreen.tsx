@@ -42,6 +42,7 @@ export default function OnboardingPassengerProfileScreen({
       await writeStoredPreferenceDraft({
         defaultPreference,
         passengerType,
+        routeModifiers: [],
       });
 
       navigation.navigate(destination);

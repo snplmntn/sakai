@@ -8,6 +8,7 @@ import type {
   RoutePreference,
   RouteQueryIncident,
   RouteQueryLeg,
+  RouteNavigationTarget,
   RouteQueryOption,
   RouteQueryPointInput,
   RouteQueryResult,
@@ -148,6 +149,25 @@ const parseIncident = (value: unknown): RouteQueryIncident => {
   };
 };
 
+const parseNavigationTarget = (value: unknown): RouteNavigationTarget => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid route navigation target');
+  }
+
+  const kind = parseString(value.kind, 'navigationTarget.kind');
+
+  if (kind !== 'destination' && kind !== 'dropoff_stop') {
+    throw new Error('Invalid route navigation target kind');
+  }
+
+  return {
+    latitude: parseNumber(value.latitude, 'navigationTarget.latitude'),
+    longitude: parseNumber(value.longitude, 'navigationTarget.longitude'),
+    label: parseString(value.label, 'navigationTarget.label'),
+    kind,
+  };
+};
+
 const parseRouteOption = (value: unknown): RouteQueryOption => {
   if (!isRecord(value)) {
     throw new Error('Invalid route option');
@@ -174,6 +194,7 @@ const parseRouteOption = (value: unknown): RouteQueryOption => {
     relevantIncidents: Array.isArray(value.relevantIncidents)
       ? value.relevantIncidents.map(parseIncident)
       : [],
+    navigationTarget: parseNavigationTarget(value.navigationTarget),
   };
 };
 
@@ -186,6 +207,8 @@ const parseNormalizedPoint = (value: unknown) => {
     placeId: parseString(value.placeId, 'normalized.placeId'),
     label: parseString(value.label, 'normalized.label'),
     matchedBy: parseString(value.matchedBy, 'normalized.matchedBy') as PlaceMatchSource,
+    latitude: parseNumber(value.latitude, 'normalized.latitude'),
+    longitude: parseNumber(value.longitude, 'normalized.longitude'),
   };
 };
 
@@ -248,6 +271,7 @@ export const queryRoutes = async (input: {
 
 export const queryRoutesByText = async (input: {
   queryText: string;
+  originFallback?: SelectedPlace;
   preference: RoutePreference;
   passengerType?: PassengerType;
   modifiers?: RouteModifier[];
@@ -260,10 +284,31 @@ export const queryRoutesByText = async (input: {
       accessToken: input.accessToken,
       body: {
         queryText: input.queryText,
+        originFallback: input.originFallback ? toPointInput(input.originFallback) : undefined,
         preference: input.preference,
         passengerType: input.passengerType ?? 'regular',
         modifiers: input.modifiers,
       },
     },
     parseRouteQueryResult
+  );
+
+export const queryRelevantAreaUpdates = async (input: {
+  corridorTags: string[];
+  originLabel: string;
+  destinationLabel: string;
+  limit?: number;
+}): Promise<RouteQueryIncident[]> =>
+  requestData(
+    {
+      method: 'POST',
+      path: '/api/area-updates/relevant',
+      body: {
+        corridorTags: input.corridorTags,
+        originLabel: input.originLabel,
+        destinationLabel: input.destinationLabel,
+        limit: input.limit,
+      },
+    },
+    (value) => (Array.isArray(value) ? value.map(parseIncident) : [])
   );

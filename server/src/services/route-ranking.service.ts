@@ -12,17 +12,7 @@ const getBalancedMetricScore = (value: number, minimum: number, maximum: number)
 const sortRouteOptions = (options: RouteQueryOption[], compare: (left: RouteQueryOption, right: RouteQueryOption) => number) =>
   [...options].sort((left, right) => compare(left, right) || left.id.localeCompare(right.id));
 
-const getRecommendationLabel = (preference: RoutePreference) => {
-  if (preference === "fastest") {
-    return "Fastest option";
-  }
-
-  if (preference === "cheapest") {
-    return "Cheapest option";
-  }
-
-  return "Balanced option";
-};
+const getRecommendationLabel = (_preference: RoutePreference) => "Best for your preference";
 
 const getModifierSet = (modifiers: RouteModifier[]) => new Set(modifiers);
 
@@ -183,6 +173,12 @@ export const rankRouteOptions = (
   const fewestTransferOptions = rankedOptions.filter(
     (option) => option.transferCount === minimumTransferCount
   );
+  const minimumDuration = Math.min(...rankedOptions.map((option) => option.totalDurationMinutes));
+  const fastestOptions = rankedOptions.filter(
+    (option) => option.totalDurationMinutes === minimumDuration
+  );
+  const minimumFare = Math.min(...rankedOptions.map((option) => option.totalFare));
+  const cheapestOptions = rankedOptions.filter((option) => option.totalFare === minimumFare);
   const jeepneyLegCounts = rankedOptions.map((option) => ({
     id: option.id,
     count: option.legs.filter((leg) => leg.type === "ride" && leg.mode === "jeepney").length
@@ -196,6 +192,14 @@ export const rankRouteOptions = (
     const highlights: string[] = [];
     const firstLeg = option.legs[0];
     const lastLeg = option.legs.at(-1);
+
+    if (fastestOptions.length === 1 && option.totalDurationMinutes === minimumDuration) {
+      highlights.push("Fastest option");
+    }
+
+    if (cheapestOptions.length === 1 && option.totalFare === minimumFare) {
+      highlights.push("Cheapest option");
+    }
 
     if (fewestTransferOptions.length === 1 && option.transferCount === minimumTransferCount) {
       highlights.push("Fewest transfers");

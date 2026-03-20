@@ -7,6 +7,7 @@ import healthRoutes from "./health.routes.js";
 import meRoutes from "./me.routes.js";
 import placeRoutes from "./place.routes.js";
 import routeRoutes from "./route.routes.js";
+import speechRoutes from "./speech.routes.js";
 
 const router = Router();
 
@@ -17,5 +18,6 @@ router.use("/health", healthRoutes);
 router.use("/me", meRoutes);
 router.use("/places", placeRoutes);
 router.use("/routes", routeRoutes);
+router.use("/speech", speechRoutes);
 
 export default router;

@@ -104,7 +104,13 @@ const routeOption: RouteQueryOption = {
       }
     }
   ],
-  relevantIncidents: []
+  relevantIncidents: [],
+  navigationTarget: {
+    latitude: 14.6,
+    longitude: 121.01,
+    label: "PUP Main Gate",
+    kind: "dropoff_stop"
+  }
 };
 
 describe("route summary", () => {
@@ -130,12 +136,16 @@ describe("route summary", () => {
         origin: {
           placeId: "place-1",
           label: "Cubao",
-          matchedBy: "alias"
+          matchedBy: "alias",
+          latitude: 14.62,
+          longitude: 121.05
         },
         destination: {
           placeId: "place-2",
           label: "PUP Sta. Mesa",
-          matchedBy: "canonicalName"
+          matchedBy: "canonicalName",
+          latitude: 14.6,
+          longitude: 121.01
         },
         preference: "balanced",
         passengerType: "regular",
@@ -160,12 +170,16 @@ describe("route summary", () => {
         origin: {
           placeId: "place-1",
           label: "Cubao",
-          matchedBy: "alias"
+          matchedBy: "alias",
+          latitude: 14.62,
+          longitude: 121.05
         },
         destination: {
           placeId: "place-2",
           label: "PUP Sta. Mesa",
-          matchedBy: "canonicalName"
+          matchedBy: "canonicalName",
+          latitude: 14.6,
+          longitude: 121.01
         },
         preference: "balanced",
         passengerType: "regular",
@@ -190,12 +204,16 @@ describe("route summary", () => {
         origin: {
           placeId: "place-1",
           label: "Cubao",
-          matchedBy: "alias"
+          matchedBy: "alias",
+          latitude: 14.62,
+          longitude: 121.05
         },
         destination: {
           placeId: "place-2",
           label: "PUP Sta. Mesa",
-          matchedBy: "canonicalName"
+          matchedBy: "canonicalName",
+          latitude: 14.6,
+          longitude: 121.01
         },
         preference: "balanced",
         passengerType: "regular",

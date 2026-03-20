@@ -131,7 +131,7 @@ function ThreadCard({
             <Text style={styles.threadAuthor}>
               {question.userId === currentUserId ? 'You' : 'Community rider'}
             </Text>
-            <Text style={styles.threadDot}>·</Text>
+            <Text style={styles.threadDot}>Â·</Text>
             <Text style={styles.threadMeta}>{formatDate(question.createdAt)}</Text>
           </View>
           <Text style={styles.threadRouteMeta}>
@@ -162,7 +162,7 @@ export default function CommunityHubScreen({
   navigation,
   route,
 }: CommunityHubScreenProps) {
-  const { session, user } = useAuth();
+  const { session, status, user } = useAuth();
   const draft = route.params?.draft;
   const accessToken = session?.accessToken;
   const [composerMode, setComposerMode] = useState<ComposerMode>(draft?.defaultMode ?? 'question');
@@ -313,6 +313,27 @@ export default function CommunityHubScreen({
 
   return (
     <SafeScreen backgroundColor={COLORS.surface} topInsetBackgroundColor={COLORS.surface}>
+      {status !== 'authenticated' || !accessToken ? (
+        <View style={styles.signedOutState}>
+          <View style={styles.signedOutCard}>
+            <Text style={styles.eyebrow}>Community</Text>
+            <Text style={styles.signedOutTitle}>Sign in to view community activity.</Text>
+            <Text style={styles.signedOutSubtitle}>
+              Ask riders, answer commute threads, and track the route or fare updates you shared.
+            </Text>
+            <Pressable
+              style={styles.primaryButton}
+              onPress={() =>
+                navigation.navigate('Login', {
+                  successMessage: 'Sign in to open Community.',
+                })
+              }
+            >
+              <Text style={styles.primaryButtonText}>Go to login</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
           <Text style={styles.eyebrow}>Community</Text>
@@ -574,11 +595,37 @@ export default function CommunityHubScreen({
           ) : null}
         </View>
       </ScrollView>
+      )}
     </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  signedOutState: {
+    flex: 1,
+    padding: SPACING.lg,
+    justifyContent: 'center',
+  },
+  signedOutCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+    borderWidth: 1,
+    borderColor: '#D8E4EC',
+  },
+  signedOutTitle: {
+    color: COLORS.midnight,
+    fontFamily: FONTS.bold,
+    fontSize: TYPOGRAPHY.fontSizes.xlarge,
+    lineHeight: 30,
+  },
+  signedOutSubtitle: {
+    color: '#5A6B79',
+    fontFamily: FONTS.regular,
+    fontSize: TYPOGRAPHY.fontSizes.body,
+    lineHeight: 22,
+  },
   content: {
     padding: SPACING.lg,
     gap: SPACING.lg,

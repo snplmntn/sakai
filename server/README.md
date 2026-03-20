@@ -16,6 +16,7 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
    Optional AI envs:
    - `AI_PROVIDER=vertex_express` with `VERTEX_API_KEY`
    - `AI_PROVIDER=gemini_developer` with `GEMINI_API_KEY`
+   - `GOOGLE_API_KEY` for Gemini-based speech transcription
    - optional shared model envs: `GEMINI_MODEL_PRIMARY` and `GEMINI_MODEL_LIGHT`
    Optional MMDA refresh envs:
    - `MMDA_REFRESH_ENABLED=true` to run background refreshes automatically
@@ -99,8 +100,10 @@ tests/
 
 - `GET /api/health`
 - `GET /api/area-updates`
+- `POST /api/area-updates/relevant`
 - `POST /api/area-updates/refresh` (auth required)
 - `GET /api/places/search`
+- `POST /api/speech/transcribe`
 - `POST /api/auth/sign-up`
 - `POST /api/auth/sign-in`
 - `POST /api/auth/refresh`
@@ -129,11 +132,11 @@ The separate seed pipeline should write directly into these normalized tables in
 
 ## Route Query Notes
 
-- `POST /api/routes/query` accepts structured origin and destination input, optional `queryText`, or both
+- `POST /api/routes/query` accepts structured origin and destination input, optional `queryText`, optional `originFallback`, or both
 - if `queryText` is used without explicit points, an AI provider must be configured so the backend can parse origin and destination hints first
 - `GET /api/places/search` returns Sakai-known searchable places so the client can show routeable suggestions before Google Places results
 - route points may include `placeId`, `googlePlaceId`, `label`, and optional coordinates
-- coordinates are optional and are used to find nearby boarding or alighting stops within `500m`
+- coordinates are optional and are used to find nearby boarding or alighting stops with walk access within `500m` and drive access within `3km`
 - route resolution prefers `placeId`, then `googlePlaceId`, then Sakai alias/canonical-name search, then nearby coordinate fallback
 - auth is optional; when a valid bearer token is present, the backend uses saved preferences if request overrides are absent
 - queryText ambiguity returns `400` clarification details instead of guessing
@@ -141,6 +144,7 @@ The separate seed pipeline should write directly into these normalized tables in
 - valid but unsupported trips return `200` with `options: []` and a coverage message
 - v1 route composition supports direct routes and routes with one explicit transfer point
 - Google Maps remains place and map infrastructure only; the backend does not delegate route generation to Google
+- `POST /api/speech/transcribe` uses `GOOGLE_API_KEY` for backend speech-to-text and feeds the same route-query flow as typed search
 
 ## Internal Fare Engine Foundation
 

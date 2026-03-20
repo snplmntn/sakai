@@ -545,6 +545,96 @@ export interface Database {
         };
         Relationships: [];
       };
+      transit_stops: {
+        Row: {
+          stop_id: string;
+          stop_name: string;
+          normalized_name: string;
+          lat: number;
+          lon: number;
+          mode: string;
+          line: string;
+          all_modes: string;
+          all_lines: string;
+          is_multimodal: boolean;
+          line_count: number;
+          created_at: string;
+        };
+        Insert: {
+          stop_id: string;
+          stop_name: string;
+          normalized_name: string;
+          lat: number;
+          lon: number;
+          mode: string;
+          line: string;
+          all_modes: string;
+          all_lines: string;
+          is_multimodal?: boolean;
+          line_count?: number;
+          created_at?: string;
+        };
+        Update: {
+          stop_id?: string;
+          stop_name?: string;
+          normalized_name?: string;
+          lat?: number;
+          lon?: number;
+          mode?: string;
+          line?: string;
+          all_modes?: string;
+          all_lines?: string;
+          is_multimodal?: boolean;
+          line_count?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      transit_stop_edges: {
+        Row: {
+          source_stop_id: string;
+          target_stop_id: string;
+          weight: number;
+          mode: string;
+          line: string;
+          route_short_name: string | null;
+          route_long_name: string | null;
+          transfer: boolean;
+          distance_meters: number;
+          estimated_time_min: number;
+          data_source: string;
+          created_at: string;
+        };
+        Insert: {
+          source_stop_id: string;
+          target_stop_id: string;
+          weight: number;
+          mode: string;
+          line: string;
+          route_short_name?: string | null;
+          route_long_name?: string | null;
+          transfer?: boolean;
+          distance_meters: number;
+          estimated_time_min: number;
+          data_source: string;
+          created_at?: string;
+        };
+        Update: {
+          source_stop_id?: string;
+          target_stop_id?: string;
+          weight?: number;
+          mode?: string;
+          line?: string;
+          route_short_name?: string | null;
+          route_long_name?: string | null;
+          transfer?: boolean;
+          distance_meters?: number;
+          estimated_time_min?: number;
+          data_source?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       fare_rule_versions: {
         Row: {
           id: string;

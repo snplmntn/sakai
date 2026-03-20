@@ -24,6 +24,7 @@ vi.mock("../src/models/auth.model.js", () => ({
 
 vi.mock("../src/models/area-update.model.js", () => ({
   listAreaUpdates: vi.fn(),
+  listActiveAreaUpdates: vi.fn(),
   upsertAreaUpdates: vi.fn()
 }));
 
@@ -33,7 +34,14 @@ vi.mock("../src/models/user-preference.model.js", () => ({
 }));
 
 vi.mock("../src/models/place.model.js", () => ({
-  searchPlaces: vi.fn()
+  searchPlaces: vi.fn(),
+  normalizePlaceSearchText: vi.fn((value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+  )
 }));
 
 vi.mock("../src/services/route-query.service.js", () => ({
@@ -291,6 +299,52 @@ describe("app routes", () => {
     });
   });
 
+  it("returns route-relevant area updates from the mounted route", async () => {
+    mockedAreaUpdateModel.listActiveAreaUpdates.mockResolvedValue([
+      {
+        id: "update-1",
+        externalId: "external-1",
+        source: "mmda",
+        sourceUrl: "https://x.com/MMDA",
+        alertType: "Road crash incident",
+        location: "Cubao corridor",
+        direction: "EB",
+        involved: "2 vehicles",
+        reportedTimeText: "5:29 PM",
+        laneStatus: "One lane occupied",
+        trafficStatus: "MMDA enforcers are on site managing traffic",
+        severity: "medium",
+        summary: "Crash along the Cubao corridor may slow this route.",
+        corridorTags: ["cubao"],
+        normalizedLocation: "cubao corridor",
+        displayUntil: "2026-03-19T13:05:00.000Z",
+        rawText: "MMDA ALERT: Road crash incident at Cubao corridor...",
+        scrapedAt: "2026-03-19T10:05:00.000Z",
+        createdAt: "2026-03-19T10:05:00.000Z"
+      }
+    ]);
+
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/area-updates/relevant",
+      body: {
+        corridorTags: ["cubao"],
+        originLabel: "Cubao",
+        destinationLabel: "PUP Sta. Mesa",
+        limit: 3
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData().data).toEqual([
+      expect.objectContaining({
+        id: "update-1",
+        alertType: "Road crash incident",
+        severity: "medium"
+      })
+    ]);
+  });
+
   it("returns place suggestions from the mounted route", async () => {
     mockedPlaceModel.searchPlaces.mockResolvedValue([
       {
@@ -509,12 +563,16 @@ describe("app routes", () => {
         origin: {
           placeId: "place-1",
           label: "Cubao",
-          matchedBy: "alias"
+          matchedBy: "alias",
+          latitude: 14.62,
+          longitude: 121.05
         },
         destination: {
           placeId: "place-2",
           label: "PUP Sta. Mesa",
-          matchedBy: "canonicalName"
+          matchedBy: "canonicalName",
+          latitude: 14.6,
+          longitude: 121.01
         },
         preference: "cheapest",
         passengerType: "student",
@@ -548,12 +606,16 @@ describe("app routes", () => {
           origin: {
             placeId: "place-1",
             label: "Cubao",
-            matchedBy: "alias"
+            matchedBy: "alias",
+            latitude: 14.62,
+            longitude: 121.05
           },
           destination: {
             placeId: "place-2",
             label: "PUP Sta. Mesa",
-            matchedBy: "canonicalName"
+            matchedBy: "canonicalName",
+            latitude: 14.6,
+            longitude: 121.01
           },
           preference: "cheapest",
           passengerType: "student",
@@ -586,12 +648,16 @@ describe("app routes", () => {
         origin: {
           placeId: "place-1",
           label: "Cubao",
-          matchedBy: "alias"
+          matchedBy: "alias",
+          latitude: 14.62,
+          longitude: 121.05
         },
         destination: {
           placeId: "place-2",
           label: "PUP Sta. Mesa",
-          matchedBy: "canonicalName"
+          matchedBy: "canonicalName",
+          latitude: 14.6,
+          longitude: 121.01
         },
         preference: "cheapest",
         passengerType: "regular",

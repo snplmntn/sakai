@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const routeQueryPointSchema = z
   .object({
-    placeId: z.string().uuid().optional(),
+    placeId: z.string().trim().min(1).max(255).optional(),
     googlePlaceId: z.string().trim().min(1).max(255).optional(),
     label: z.string().trim().min(1).max(160).optional(),
     latitude: z.number().min(-90).max(90).optional(),
@@ -34,6 +34,7 @@ const routeQueryPointSchema = z
 export const routeQuerySchema = z
   .object({
     origin: routeQueryPointSchema.optional(),
+    originFallback: routeQueryPointSchema.optional(),
     destination: routeQueryPointSchema.optional(),
     queryText: z.string().trim().min(1).max(500).optional(),
     preference: z.enum(["fastest", "cheapest", "balanced"]).optional(),

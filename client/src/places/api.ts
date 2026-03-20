@@ -248,6 +248,95 @@ export const reverseGeocodeCurrentLocation = async (input: {
   };
 };
 
+export interface GoogleDirectionsCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+const decodeGooglePolyline = (encoded: string): GoogleDirectionsCoordinate[] => {
+  const coordinates: GoogleDirectionsCoordinate[] = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte: number;
+
+    do {
+      byte = encoded.charCodeAt(index) - 63;
+      index += 1;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    latitude += (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+
+    result = 0;
+    shift = 0;
+
+    do {
+      byte = encoded.charCodeAt(index) - 63;
+      index += 1;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    longitude += (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+
+    coordinates.push({
+      latitude: latitude / 1e5,
+      longitude: longitude / 1e5,
+    });
+  }
+
+  return coordinates;
+};
+
+export const getGoogleDirectionsPath = async (input: {
+  origin: GoogleDirectionsCoordinate;
+  destination: GoogleDirectionsCoordinate;
+  mode: 'walking' | 'driving';
+}): Promise<GoogleDirectionsCoordinate[] | null> => {
+  const response = await fetch(
+    buildGoogleUrl('https://maps.googleapis.com/maps/api/directions/json', {
+      origin: `${input.origin.latitude},${input.origin.longitude}`,
+      destination: `${input.destination.latitude},${input.destination.longitude}`,
+      mode: input.mode,
+      key: readGooglePlacesApiKey(),
+      language: 'en',
+      region: 'ph',
+    })
+  );
+  const body = (await response.json()) as unknown;
+
+  const status = parseGoogleResponseStatus(
+    body,
+    ['OK', 'ZERO_RESULTS'],
+    'Google Maps directions are unavailable right now.'
+  );
+
+  if (status === 'ZERO_RESULTS') {
+    return null;
+  }
+
+  if (!isRecord(body) || !Array.isArray(body.routes) || body.routes.length === 0) {
+    throw new Error('Invalid Google directions response');
+  }
+
+  const firstRoute = body.routes[0];
+
+  if (!isRecord(firstRoute) || !isRecord(firstRoute.overview_polyline)) {
+    throw new Error('Invalid Google directions polyline response');
+  }
+
+  const encodedPolyline = parseString(firstRoute.overview_polyline.points, 'overview_polyline.points');
+  const coordinates = decodeGooglePolyline(encodedPolyline);
+
+  return coordinates.length > 0 ? coordinates : null;
+};
+
 export const toSelectedPlace = (suggestion: PlaceSuggestion): SelectedPlace => {
   if (suggestion.source === 'sakai') {
     return {
