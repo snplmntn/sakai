@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,6 +30,7 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 
 type CommunityHubScreenProps = NativeStackScreenProps<RootStackParamList, 'CommunityHub'>;
 type ComposerMode = 'question' | 'submission';
+type CommunityLoadMode = 'initial' | 'refresh' | 'background';
 
 const SUBMISSION_TYPES: Array<{ value: CommunitySubmissionType; label: string }> = [
   { value: 'missing_route', label: 'Missing route' },
@@ -168,6 +170,7 @@ export default function CommunityHubScreen({
   const [composerMode, setComposerMode] = useState<ComposerMode>(draft?.defaultMode ?? 'question');
   const [showComposer, setShowComposer] = useState(Boolean(draft));
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mySubmissions, setMySubmissions] = useState<CommunitySubmission[]>([]);
@@ -191,36 +194,54 @@ export default function CommunityHubScreen({
     [draft]
   );
 
-  const loadCommunityData = async () => {
-    if (!accessToken) {
-      return;
-    }
+  const loadCommunityData = useCallback(
+    async (mode: CommunityLoadMode) => {
+      if (!accessToken) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
 
-    setIsLoading(true);
-    setErrorMessage(null);
+      if (mode === 'initial') {
+        setIsLoading(true);
+      }
 
-    try {
-      const [submissions, questions, recent] = await Promise.all([
-        getMyCommunitySubmissions(accessToken),
-        getMyCommunityQuestions(accessToken),
-        getRecentCommunityQuestions(accessToken),
-      ]);
+      if (mode === 'refresh') {
+        setIsRefreshing(true);
+      }
 
-      setMySubmissions(submissions);
-      setMyQuestions(questions);
-      setRecentQuestions(recent);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Unable to load community activity right now.'
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      setErrorMessage(null);
+
+      try {
+        const [submissions, questions, recent] = await Promise.all([
+          getMyCommunitySubmissions(accessToken),
+          getMyCommunityQuestions(accessToken),
+          getRecentCommunityQuestions(accessToken),
+        ]);
+
+        setMySubmissions(submissions);
+        setMyQuestions(questions);
+        setRecentQuestions(recent);
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Unable to load community activity right now.'
+        );
+      } finally {
+        if (mode === 'initial') {
+          setIsLoading(false);
+        }
+
+        if (mode === 'refresh') {
+          setIsRefreshing(false);
+        }
+      }
+    },
+    [accessToken]
+  );
 
   useEffect(() => {
-    void loadCommunityData();
-  }, [accessToken]);
+    void loadCommunityData('initial');
+  }, [loadCommunityData]);
 
   useEffect(() => {
     if (!draft) {
@@ -262,7 +283,7 @@ export default function CommunityHubScreen({
       setQuestionTitle('');
       setQuestionBody('');
       setShowComposer(false);
-      await loadCommunityData();
+      await loadCommunityData('background');
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Unable to post your community question.'
@@ -301,7 +322,7 @@ export default function CommunityHubScreen({
       setAffectedModeOrProduct('');
       setProposedAmount('');
       setShowComposer(false);
-      await loadCommunityData();
+      await loadCommunityData('background');
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Unable to submit your community update.'
@@ -334,7 +355,13 @@ export default function CommunityHubScreen({
           </View>
         </View>
       ) : (
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={() => void loadCommunityData('refresh')} />
+        }
+      >
         <View style={styles.heroCard}>
           <Text style={styles.eyebrow}>Community</Text>
           <Text style={styles.heroTitle}>Ask riders. Answer threads. Share route fixes.</Text>
