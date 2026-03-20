@@ -42,7 +42,13 @@ import {
 } from '../routes/view-models';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { transcribeSpeechRecording } from '../speech/api';
+import { createFallbackSpeechTranscription } from '../speech/fallback';
 import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
+import {
+  getVoiceLanguageLabel,
+  getVoiceRecognitionLocale,
+  getVoiceTranscriptionOverride,
+} from '../voice/languages';
 import { extractVoiceDestinationHint, normalizeVoiceRouteQuery } from '../voice/route-query';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import type {
@@ -348,6 +354,7 @@ export default function RoutesScreen() {
   // Voice input
   const [voiceMode, setVoiceMode] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
+  const [voiceTranscriptNotice, setVoiceTranscriptNotice] = useState<string | null>(null);
   const [speechPhase, setSpeechPhase] = useState<'idle' | 'listening' | 'transcribing' | 'searching'>('idle');
   const [recordingAvailable, setRecordingAvailable] = useState<boolean | null>(null);
   const {
@@ -359,7 +366,9 @@ export default function RoutesScreen() {
     startListening,
     stopListening,
     resetTranscript,
-  } = useVoiceInput();
+  } = useVoiceInput({
+    locale: getVoiceRecognitionLocale(savedPreferences.voiceLanguage),
+  });
 
   const mapRef = useRef<MapView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -621,6 +630,7 @@ export default function RoutesScreen() {
 
       setVoiceMode(false);
       setVoiceQuery(normalizedQuery);
+      setVoiceTranscriptNotice(null);
       const destinationHint = extractVoiceDestinationHint(normalizedQuery);
       if (destinationHint.length > 0) {
         setDestText(destinationHint);
@@ -692,7 +702,24 @@ export default function RoutesScreen() {
         uri,
         mimeType: 'audio/aac',
         accessToken,
+        languageOverride: getVoiceTranscriptionOverride(savedPreferences.voiceLanguage),
+      }).catch((error: unknown) => {
+        const fallbackTranscript = transcript.trim();
+
+        if (fallbackTranscript.length === 0) {
+          throw error;
+        }
+
+        setVoiceTranscriptNotice(
+          'Using the device transcript because multilingual server transcription is unavailable right now.'
+        );
+
+        return createFallbackSpeechTranscription({
+          transcript: fallbackTranscript,
+          voiceLanguage: savedPreferences.voiceLanguage,
+        });
       });
+      setVoiceQuery(speechResult.transcript);
       const fallbackOrigin = origin ?? (await resolveCurrentOrigin());
       if (fallbackOrigin) {
         setOrigin(fallbackOrigin);
@@ -707,7 +734,15 @@ export default function RoutesScreen() {
       finalizingRecordingRef.current = false;
       setVoiceTriggerListening(false);
     }
-  }, [accessToken, origin, resolveCurrentOrigin, runVoiceSearch, setVoiceTriggerListening, transcript]);
+  }, [
+    accessToken,
+    origin,
+    resolveCurrentOrigin,
+    runVoiceSearch,
+    savedPreferences.voiceLanguage,
+    setVoiceTriggerListening,
+    transcript,
+  ]);
 
   const startSpeechCapture = useCallback(async () => {
     if (speechPhase !== 'idle') {
@@ -724,6 +759,7 @@ export default function RoutesScreen() {
       setSuggestions([]);
       setVoiceMode(true);
       setQueryError(null);
+      setVoiceTranscriptNotice(null);
       resetTranscript();
       setVoiceQuery('');
       setSpeechPhase('listening');
@@ -1120,8 +1156,15 @@ export default function RoutesScreen() {
                     </TouchableOpacity>
                   </View>
 
+                  <Text style={styles.voiceMetaText}>
+                    Voice language: {getVoiceLanguageLabel(savedPreferences.voiceLanguage)}
+                  </Text>
+
                   {voiceError !== null && (
                     <Text style={styles.voiceErrorText}>{voiceError}</Text>
+                  )}
+                  {voiceTranscriptNotice !== null && (
+                    <Text style={styles.voiceInfoText}>{voiceTranscriptNotice}</Text>
                   )}
                 </View>
               ) : (
@@ -1949,10 +1992,20 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.medium,
     color: 'rgba(255,255,255,0.55)',
   },
+  voiceMetaText: {
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.72)',
+  },
   voiceErrorText: {
     fontSize: 12,
     fontFamily: FONTS.regular,
     color: COLORS.danger,
+  },
+  voiceInfoText: {
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: 'rgba(255,255,255,0.72)',
   },
 });
 

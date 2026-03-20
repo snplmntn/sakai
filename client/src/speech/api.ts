@@ -1,4 +1,5 @@
-import { requestData } from '../api/base';
+import { isRecord, requestData } from '../api/base';
+import type { VoiceLanguagePreference } from '../voice/languages';
 
 const blobToBase64 = async (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -21,21 +22,41 @@ const blobToBase64 = async (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob);
   });
 
-const parseSpeechTranscript = (value: unknown): { transcript: string; confidence: number | null } => {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    typeof (value as { transcript?: unknown }).transcript !== 'string'
-  ) {
+export interface SpeechTranscriptionResult {
+  transcript: string;
+  confidence: number | null;
+  detectedLanguageCode: string | null;
+  detectedLanguageLabel: string | null;
+  detectionMode: 'auto' | 'override' | 'fallback';
+}
+
+const readNullableString = (value: unknown): string | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error('Invalid speech transcription response');
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const parseSpeechTranscript = (value: unknown): SpeechTranscriptionResult => {
+  if (!isRecord(value) || typeof value.transcript !== 'string') {
     throw new Error('Invalid speech transcription response');
   }
 
   return {
-    transcript: (value as { transcript: string }).transcript,
-    confidence:
-      typeof (value as { confidence?: unknown }).confidence === 'number'
-        ? (value as { confidence: number }).confidence
-        : null,
+    transcript: value.transcript,
+    confidence: typeof value.confidence === 'number' ? value.confidence : null,
+    detectedLanguageCode: readNullableString(value.detectedLanguageCode),
+    detectedLanguageLabel: readNullableString(value.detectedLanguageLabel),
+    detectionMode:
+      value.detectionMode === 'override' || value.detectionMode === 'fallback'
+        ? value.detectionMode
+        : 'auto',
   };
 };
 
@@ -43,7 +64,8 @@ export const transcribeSpeechRecording = async (input: {
   uri: string;
   mimeType: string;
   accessToken?: string;
-}): Promise<{ transcript: string; confidence: number | null }> => {
+  languageOverride?: Exclude<VoiceLanguagePreference, 'auto'> | null;
+}): Promise<SpeechTranscriptionResult> => {
   const fileResponse = await fetch(input.uri);
   const blob = await fileResponse.blob();
   const audioBase64 = await blobToBase64(blob);
@@ -56,9 +78,9 @@ export const transcribeSpeechRecording = async (input: {
       body: {
         audioBase64,
         mimeType: input.mimeType,
+        languageOverride: input.languageOverride ?? null,
       },
     },
     parseSpeechTranscript
   );
 };
-

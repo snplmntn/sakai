@@ -19,6 +19,10 @@ export interface VoiceInputActions {
   resetTranscript: () => void;
 }
 
+interface UseVoiceInputOptions {
+  locale?: string;
+}
+
 type NativeVoiceModule = {
   destroySpeech: (callback: (error: string) => void) => void;
   isSpeechAvailable: (callback: (isAvailable: 0 | 1, error: string) => void) => void;
@@ -47,7 +51,9 @@ const hasNativeVoiceSupport = (): boolean => {
   );
 };
 
-export const useVoiceInput = (): VoiceInputState & VoiceInputActions => {
+export const useVoiceInput = (
+  options: UseVoiceInputOptions = {}
+): VoiceInputState & VoiceInputActions => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [partialTranscript, setPartialTranscript] = useState('');
@@ -159,7 +165,7 @@ export const useVoiceInput = (): VoiceInputState & VoiceInputActions => {
     setPartialTranscript('');
 
     try {
-      await Voice.start('en-PH');
+      await Voice.start(options.locale ?? Intl.DateTimeFormat().resolvedOptions().locale ?? 'en-US');
     } catch (err: unknown) {
       if (activeVoiceOwner === ownerRef.current) {
         activeVoiceOwner = null;

@@ -10,6 +10,7 @@ import {
 import type { PassengerType, RouteModifier, RoutePreference } from '../preferences/types';
 import { usePreferences } from '../preferences/PreferencesContext';
 import { useToast } from '../toast/ToastContext';
+import { VOICE_LANGUAGE_OPTIONS, type VoiceLanguagePreference } from '../voice/languages';
 
 export default function PreferencesScreen() {
   const { preferences, updatePreferences, isUpdating } = usePreferences();
@@ -21,6 +22,7 @@ export default function PreferencesScreen() {
         defaultPreference,
         passengerType: preferences.passengerType,
         routeModifiers: preferences.routeModifiers,
+        voiceLanguage: preferences.voiceLanguage,
       });
       showToast({ tone: 'success', message: 'Preferences updated.' });
     } catch (error) {
@@ -37,6 +39,7 @@ export default function PreferencesScreen() {
         defaultPreference: preferences.defaultPreference,
         passengerType,
         routeModifiers: preferences.routeModifiers,
+        voiceLanguage: preferences.voiceLanguage,
       });
       showToast({ tone: 'success', message: 'Preferences updated.' });
     } catch (error) {
@@ -57,6 +60,24 @@ export default function PreferencesScreen() {
         defaultPreference: preferences.defaultPreference,
         passengerType: preferences.passengerType,
         routeModifiers,
+        voiceLanguage: preferences.voiceLanguage,
+      });
+      showToast({ tone: 'success', message: 'Preferences updated.' });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to update your preferences.',
+      });
+    }
+  };
+
+  const handleVoiceLanguageSelect = async (voiceLanguage: VoiceLanguagePreference) => {
+    try {
+      await updatePreferences({
+        defaultPreference: preferences.defaultPreference,
+        passengerType: preferences.passengerType,
+        routeModifiers: preferences.routeModifiers,
+        voiceLanguage,
       });
       showToast({ tone: 'success', message: 'Preferences updated.' });
     } catch (error) {
@@ -167,6 +188,40 @@ export default function PreferencesScreen() {
                   >
                     {option.description}
                   </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Voice language</Text>
+          <View style={styles.list}>
+            {VOICE_LANGUAGE_OPTIONS.map((option) => {
+              const selected = preferences.voiceLanguage === option.value;
+
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[styles.card, selected && styles.cardSelected]}
+                  onPress={() => {
+                    void handleVoiceLanguageSelect(option.value);
+                  }}
+                  disabled={isUpdating}
+                >
+                  <View style={styles.cardCopy}>
+                    <Text style={styles.cardTitle}>{option.label}</Text>
+                    <Text style={styles.cardDescription}>{option.description}</Text>
+                  </View>
+                  {isUpdating && selected ? (
+                    <ActivityIndicator color={COLORS.primary} />
+                  ) : (
+                    <View style={[styles.pill, selected && styles.pillSelected]}>
+                      <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                        {selected ? 'Selected' : 'Choose'}
+                      </Text>
+                    </View>
+                  )}
                 </Pressable>
               );
             })}

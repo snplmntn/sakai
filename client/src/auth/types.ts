@@ -21,10 +21,6 @@ export interface AuthPayload {
   requiresEmailConfirmation: boolean;
 }
 
-export interface GoogleAuthUrlPayload {
-  url: string;
-}
-
 export type GoogleAuthOrigin = 'login' | 'signup';
 
 export interface GoogleAuthCallbackSuccess {
@@ -176,16 +172,6 @@ export const parseAuthPayload = (value: unknown): AuthPayload => {
       value.requiresEmailConfirmation,
       'requiresEmailConfirmation'
     ),
-  };
-};
-
-export const parseGoogleAuthUrlPayload = (value: unknown): GoogleAuthUrlPayload => {
-  if (!isRecord(value)) {
-    throw new Error('Expected Google auth URL payload to be an object');
-  }
-
-  return {
-    url: readString(value.url, 'url'),
   };
 };
 
