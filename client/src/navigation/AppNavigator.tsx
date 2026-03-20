@@ -10,6 +10,8 @@ import CommunityHubScreen from '../screens/CommunityHubScreen';
 import CommunityQuestionDetailScreen from '../screens/CommunityQuestionDetailScreen';
 import NavigationAlarmScreen from '../screens/NavigationAlarmScreen';
 import PreferencesScreen from '../screens/PreferencesScreen';
+import SavedPlaceEditorScreen from '../screens/SavedPlaceEditorScreen';
+import SavedPlacesScreen from '../screens/SavedPlacesScreen';
 import MainTabNavigator from './MainTabNavigator';
 import type { CommunityLaunchDraft } from '../community/types';
 import type { RoutePreference } from '../preferences/types';
@@ -23,6 +25,10 @@ export type RootStackParamList = {
   MainTabs: undefined;
   Preferences: undefined;
   NavigationAlarm: undefined;
+  SavedPlaces: undefined;
+  SavedPlaceEditor:
+    | { mode: 'create' }
+    | { mode: 'edit'; savedPlaceId: string };
   CommunityHub: { draft?: CommunityLaunchDraft } | undefined;
   CommunityQuestionDetail: { questionId: string };
 };
@@ -52,6 +58,16 @@ export default function AppNavigator() {
         <Stack.Screen
           name="NavigationAlarm"
           component={NavigationAlarmScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SavedPlaces"
+          component={SavedPlacesScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SavedPlaceEditor"
+          component={SavedPlaceEditorScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen
@@ -111,6 +127,16 @@ export default function AppNavigator() {
       <Stack.Screen
         name="NavigationAlarm"
         component={NavigationAlarmScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="SavedPlaces"
+        component={SavedPlacesScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="SavedPlaceEditor"
+        component={SavedPlaceEditorScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

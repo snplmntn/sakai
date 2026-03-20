@@ -10,6 +10,8 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -337,6 +339,14 @@ export default function CommunityHubScreen({
       {status !== 'authenticated' || !accessToken ? (
         <View style={styles.signedOutState}>
           <View style={styles.signedOutCard}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <HugeiconsIcon icon={ArrowLeft01Icon} size={20} color={COLORS.midnight} />
+            </Pressable>
             <Text style={styles.signedOutTitle}>Sign in to view community activity.</Text>
             <Text style={styles.signedOutSubtitle}>
               Ask riders, answer commute threads, and track the route or fare updates you shared.
@@ -362,7 +372,15 @@ export default function CommunityHubScreen({
         }
       >
         <View style={styles.pageHeader}>
-          <Text style={styles.pageTitle}>Community</Text>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} size={20} color={COLORS.midnight} />
+          </Pressable>
+          <Text style={styles.pageTitle}>Community activity</Text>
           <Text style={styles.pageSubtitle}>
             Ask riders, answer commute threads, and share route fixes with less noise.
           </Text>
@@ -652,6 +670,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E4EBF2',
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: '#E3EBF2',
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   signedOutTitle: {
     color: COLORS.midnight,
     fontFamily: FONTS.bold,
@@ -666,7 +695,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.lg,
+    paddingTop: SPACING.md,
     gap: SPACING.md,
     paddingBottom: SPACING.xxl,
   },
