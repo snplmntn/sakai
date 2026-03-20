@@ -28,7 +28,7 @@ export default function Navbar() {
         {/* Wordmark */}
         <Link href="/" className="flex items-center gap-2">
           <Image
-            src="/icon.png"
+            src="/sakai-icon.png"
             alt="Sakai icon"
             width={28}
             height={28}
