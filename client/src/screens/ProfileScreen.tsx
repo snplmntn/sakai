@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
-import NavigationAlarmCard from '../components/NavigationAlarmCard';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONTS } from '../constants/theme';
 import SafeScreen from '../components/SafeScreen';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useToast } from '../toast/ToastContext';
 
 type ProfileRow = {
+  route?: 'Preferences' | 'NavigationAlarm' | 'CommunityHub';
   title: string;
   description: string;
   badge?: string;
@@ -14,12 +17,14 @@ type ProfileRow = {
 
 const PROFILE_ROWS: ProfileRow[] = [
   {
-    title: 'Route preferences',
+    title: 'Preferences',
     description: 'Saved time, fare, and passenger defaults for each trip search.',
+    route: 'Preferences',
   },
   {
-    title: 'Passenger profile',
-    description: 'Authenticated rider with saved commute defaults.',
+    title: 'Navigation alarm',
+    description: 'Manage your near-destination alert and live navigation settings.',
+    route: 'NavigationAlarm',
   },
   {
     title: 'Saved places',
@@ -27,8 +32,8 @@ const PROFILE_ROWS: ProfileRow[] = [
   },
   {
     title: 'Community activity',
-    description: 'Reports and route improvements you shared with other riders.',
-    badge: 'New',
+    description: 'Your rider threads, submissions, and route updates.',
+    route: 'CommunityHub',
   },
 ];
 
@@ -77,7 +82,8 @@ const getErrorMessage = (error: unknown): string =>
     : 'Unable to refresh your profile right now.';
 
 export default function ProfileScreen() {
-  const { user, refreshUser, signOut } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { status, user, refreshUser, signOut } = useAuth();
   const { showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -107,7 +113,7 @@ export default function ProfileScreen() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [refreshUser, showToast]);
 
   const handleLogout = async () => {
     if (isSigningOut) {
@@ -161,10 +167,6 @@ export default function ProfileScreen() {
           ) : null}
 
           <View style={styles.section}>
-            <NavigationAlarmCard />
-          </View>
-
-          <View style={styles.section}>
             <View style={styles.list}>
               {PROFILE_ROWS.map((item, index) => (
                 <TouchableOpacity
@@ -172,12 +174,16 @@ export default function ProfileScreen() {
                   style={[styles.listRow, index !== PROFILE_ROWS.length - 1 && styles.listDivider]}
                   activeOpacity={0.85}
                   onPress={() => {
-                    if (item.title === 'Community activity') {
-                      showToast({
-                        tone: 'info',
-                        title: 'Coming soon',
-                        message: 'Community activity is not available in this build yet.',
+                    if (item.route === 'CommunityHub' && status !== 'authenticated') {
+                      navigation.navigate('Login', {
+                        successMessage: 'Sign in to view your community activity and post updates.',
                       });
+                      return;
+                    }
+
+                    if (item.route) {
+                      navigation.navigate(item.route);
+                      return;
                     }
                   }}
                 >

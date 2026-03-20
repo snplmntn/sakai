@@ -22,6 +22,15 @@ export interface RouteQueryNormalizedPoint {
   placeId: string;
   label: string;
   matchedBy: PlaceMatch["matchedBy"];
+  latitude: number;
+  longitude: number;
+}
+
+export interface RouteNavigationTarget {
+  latitude: number;
+  longitude: number;
+  label: string;
+  kind: "destination" | "dropoff_stop";
 }
 
 export interface RouteQueryNormalizedInput {
@@ -101,6 +110,7 @@ export interface RouteQueryOption {
   fareAssumptions: string[];
   legs: RouteQueryLeg[];
   relevantIncidents: RouteQueryIncident[];
+  navigationTarget: RouteNavigationTarget;
 }
 
 export interface RouteQueryResult {

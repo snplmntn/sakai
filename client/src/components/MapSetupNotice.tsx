@@ -14,7 +14,8 @@ export default function MapSetupNotice({
       <Text style={styles.title}>Google Maps is not configured</Text>
       <Text style={styles.body}>
         Add `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` to `client/.env`, then rebuild the native app to
-        load map tiles.
+        load map tiles. Place lookup and route-path rendering also depend on Google APIs being
+        enabled for the same project.
       </Text>
     </View>
   );

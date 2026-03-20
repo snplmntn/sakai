@@ -10,6 +10,19 @@ export interface MapMarkerViewModel {
   role: 'origin' | 'destination' | 'stop' | 'transfer';
 }
 
+export interface MapCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+export interface MapRouteSegmentViewModel {
+  id: string;
+  type: RouteQueryLeg['type'];
+  mode: string;
+  coordinates: MapCoordinate[];
+  isFallbackGeometry: boolean;
+}
+
 const formatCurrency = (value: number) => `PHP ${value.toFixed(value % 1 === 0 ? 0 : 2)}`;
 
 export const formatDuration = (minutes: number) => {
@@ -52,20 +65,47 @@ const addStopMarker = (
   });
 };
 
+const toCoordinate = (latitude: number, longitude: number): MapCoordinate => ({
+  latitude,
+  longitude,
+});
+
+const resolvePointCoordinate = (
+  selectedPlace: SelectedPlace | null,
+  fallback: RouteQueryResult['normalizedQuery']['origin'] | RouteQueryResult['normalizedQuery']['destination']
+): MapCoordinate | null => {
+  if (selectedPlace?.latitude !== undefined && selectedPlace.longitude !== undefined) {
+    return toCoordinate(selectedPlace.latitude, selectedPlace.longitude);
+  }
+
+  if (typeof fallback.latitude === 'number' && typeof fallback.longitude === 'number') {
+    return toCoordinate(fallback.latitude, fallback.longitude);
+  }
+
+  return null;
+};
+
 export const buildRouteMarkers = (input: {
   origin: SelectedPlace | null;
   destination: SelectedPlace | null;
+  routeResult: RouteQueryResult | null;
   option: RouteQueryOption | null;
 }): MapMarkerViewModel[] => {
   const markerMap = new Map<string, MapMarkerViewModel>();
   const rideLegs = input.option?.legs.filter(isRideLeg) ?? [];
+  const originCoordinate = input.routeResult
+    ? resolvePointCoordinate(input.origin, input.routeResult.normalizedQuery.origin)
+    : null;
+  const destinationCoordinate = input.routeResult
+    ? resolvePointCoordinate(input.destination, input.routeResult.normalizedQuery.destination)
+    : null;
 
-  if (input.origin?.latitude !== undefined && input.origin.longitude !== undefined) {
+  if (originCoordinate) {
     markerMap.set('origin', {
       id: 'origin',
-      latitude: input.origin.latitude,
-      longitude: input.origin.longitude,
-      title: input.origin.label,
+      latitude: originCoordinate.latitude,
+      longitude: originCoordinate.longitude,
+      title: input.origin?.label ?? input.routeResult?.normalizedQuery.origin.label ?? 'Origin',
       subtitle: 'Origin',
       role: 'origin',
     });
@@ -80,12 +120,13 @@ export const buildRouteMarkers = (input: {
     });
   }
 
-  if (input.destination?.latitude !== undefined && input.destination.longitude !== undefined) {
+  if (destinationCoordinate) {
     markerMap.set('destination', {
       id: 'destination',
-      latitude: input.destination.latitude,
-      longitude: input.destination.longitude,
-      title: input.destination.label,
+      latitude: destinationCoordinate.latitude,
+      longitude: destinationCoordinate.longitude,
+      title:
+        input.destination?.label ?? input.routeResult?.normalizedQuery.destination.label ?? 'Destination',
       subtitle: 'Destination',
       role: 'destination',
     });
@@ -120,6 +161,66 @@ export const buildRouteMarkers = (input: {
   });
 
   return [...markerMap.values()];
+};
+
+export const buildRouteSegments = (input: {
+  origin: SelectedPlace | null;
+  destination: SelectedPlace | null;
+  routeResult: RouteQueryResult | null;
+  option: RouteQueryOption | null;
+}): MapRouteSegmentViewModel[] => {
+  if (!input.option || !input.routeResult) {
+    return [];
+  }
+
+  const option = input.option;
+  const originCoordinate = resolvePointCoordinate(input.origin, input.routeResult.normalizedQuery.origin);
+  const destinationCoordinate = resolvePointCoordinate(
+    input.destination,
+    input.routeResult.normalizedQuery.destination
+  );
+  const segments: MapRouteSegmentViewModel[] = [];
+  let previousAnchor = originCoordinate;
+
+  option.legs.forEach((leg, index) => {
+    if (leg.type === 'ride') {
+      const fromCoordinate = toCoordinate(leg.fromStop.latitude, leg.fromStop.longitude);
+      const toCoordinateValue = toCoordinate(leg.toStop.latitude, leg.toStop.longitude);
+
+      segments.push({
+        id: leg.id,
+        type: leg.type,
+        mode: leg.mode,
+        coordinates: [fromCoordinate, toCoordinateValue],
+        isFallbackGeometry: false,
+      });
+
+      previousAnchor = toCoordinateValue;
+      return;
+    }
+
+    const nextRideLeg = option.legs.slice(index + 1).find(isRideLeg);
+    const startCoordinate = previousAnchor ?? originCoordinate;
+    const endCoordinate = nextRideLeg
+      ? toCoordinate(nextRideLeg.fromStop.latitude, nextRideLeg.fromStop.longitude)
+      : destinationCoordinate;
+
+    if (!startCoordinate || !endCoordinate) {
+      return;
+    }
+
+    segments.push({
+      id: leg.id,
+      type: leg.type,
+      mode: leg.type === 'drive' ? 'car' : 'walk',
+      coordinates: [startCoordinate, endCoordinate],
+      isFallbackGeometry: true,
+    });
+
+    previousAnchor = endCoordinate;
+  });
+
+  return segments;
 };
 
 const buildCoordinateFallbackMessage = (

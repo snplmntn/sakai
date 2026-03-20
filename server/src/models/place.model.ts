@@ -6,10 +6,21 @@ import {
   type PlaceMatch,
   type PlaceResolutionResult
 } from "../types/route-network.js";
+import * as transitGraphModel from "./transit-graph.model.js";
 import type { Database } from "../types/database.js";
 
 type PlaceRow = Database["public"]["Tables"]["places"]["Row"];
 type PlaceAliasRow = Database["public"]["Tables"]["place_aliases"]["Row"];
+const fallbackWarningKeys = new Set<string>();
+
+const warnOnce = (key: string, message: string, details: Record<string, unknown>) => {
+  if (fallbackWarningKeys.has(key)) {
+    return;
+  }
+
+  fallbackWarningKeys.add(key);
+  console.warn(message, details);
+};
 
 export interface ResolvePlaceReferenceOptions {
   placeId?: string;
@@ -49,6 +60,20 @@ const dedupePlaceMatches = (matches: PlaceMatch[]) => {
   for (const match of matches) {
     if (!matchMap.has(match.id)) {
       matchMap.set(match.id, match);
+    }
+  }
+
+  return sortPlaceMatches([...matchMap.values()]);
+};
+
+const dedupeMergedMatches = (matches: PlaceMatch[]) => {
+  const matchMap = new Map<string, PlaceMatch>();
+
+  for (const match of matches) {
+    const key = `${normalizePlaceSearchText(match.canonicalName)}::${normalizePlaceSearchText(match.city)}`;
+
+    if (!matchMap.has(key)) {
+      matchMap.set(key, match);
     }
   }
 
@@ -225,17 +250,67 @@ export const searchPlaces = async (
   }
 
   const limit = Math.max(1, Math.min(options.limit ?? 8, 20));
-  const [aliasMatches, canonicalMatches] = await Promise.all([
+  const [aliasMatches, canonicalMatches, transitMatches] = await Promise.all([
     listSearchMatchesByNormalizedAlias(normalizedQuery, limit),
-    listSearchMatchesByCanonicalName(normalizedQuery, limit)
+    listSearchMatchesByCanonicalName(normalizedQuery, limit),
+    transitGraphModel
+      .searchTransitStopClusters(query, {
+        limit
+      })
+      .catch((error) => {
+        warnOnce("place_search_transit_fallback", "Transit-backed place search unavailable; falling back to legacy place search", {
+          operation: "place_search_transit_fallback",
+          reason: error instanceof Error ? error.message : "unknown error"
+        });
+        return [];
+      })
   ]);
 
-  return dedupePlaceMatches([...aliasMatches, ...canonicalMatches]).slice(0, limit);
+  return dedupeMergedMatches([...transitMatches, ...aliasMatches, ...canonicalMatches]).slice(0, limit);
 };
 
 export const resolvePlaceReference = async (
   options: ResolvePlaceReferenceOptions
 ): Promise<PlaceResolutionResult> => {
+  if (options.placeId?.startsWith("cluster:")) {
+    const clusterResult = await transitGraphModel
+      .resolveTransitStopCluster({
+        clusterId: options.placeId
+      })
+      .catch((error) => {
+        warnOnce("place_resolution_transit_fallback", "Transit-backed place resolution unavailable; falling back to legacy places", {
+          operation: "place_resolution_transit_fallback",
+          reason: error instanceof Error ? error.message : "unknown error"
+        });
+
+        return {
+          status: "unresolved" as const
+        };
+      });
+
+    if (clusterResult.status === "resolved") {
+      return {
+        status: "resolved",
+        place: {
+          ...clusterResult.cluster,
+          matchedBy: "placeId",
+          matchedText: options.placeId
+        }
+      };
+    }
+
+    if (clusterResult.status === "ambiguous") {
+      return {
+        status: "ambiguous",
+        matches: clusterResult.matches
+      };
+    }
+
+    return {
+      status: "unresolved"
+    };
+  }
+
   if (options.placeId) {
     const place = await getPlaceById(options.placeId);
 
@@ -276,6 +351,31 @@ export const resolvePlaceReference = async (
     return {
       status: "unresolved"
     };
+  }
+
+  try {
+    const transitResolution = await transitGraphModel.resolveTransitStopCluster({
+      query: options.query
+    });
+
+    if (transitResolution.status === "resolved") {
+      return {
+        status: "resolved",
+        place: transitResolution.cluster
+      };
+    }
+
+    if (transitResolution.status === "ambiguous") {
+      return {
+        status: "ambiguous",
+        matches: transitResolution.matches
+      };
+    }
+  } catch (error) {
+    warnOnce("place_resolution_transit_fallback", "Transit-backed place resolution unavailable; falling back to legacy places", {
+      operation: "place_resolution_transit_fallback",
+      reason: error instanceof Error ? error.message : "unknown error"
+    });
   }
 
   const aliasMatches = await listPlaceMatchesByNormalizedAlias(normalizedQuery);

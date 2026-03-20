@@ -1,11 +1,12 @@
 import { isRecord } from '../api/base';
-import type { PassengerType, RoutePreference } from '../routes/types';
+import type { PassengerType, RouteModifier, RoutePreference } from '../routes/types';
 
-export type { PassengerType, RoutePreference } from '../routes/types';
+export type { PassengerType, RouteModifier, RoutePreference } from '../routes/types';
 
 export interface PreferenceDraft {
   defaultPreference: RoutePreference;
   passengerType: PassengerType;
+  routeModifiers: RouteModifier[];
 }
 
 export interface UserPreferences extends PreferenceDraft {
@@ -26,6 +27,7 @@ export const createDefaultUserPreferences = (): UserPreferences => ({
   userId: null,
   defaultPreference: DEFAULT_ROUTE_PREFERENCE,
   passengerType: DEFAULT_PASSENGER_TYPE,
+  routeModifiers: [],
   isPersisted: false,
   createdAt: null,
   updatedAt: null,
@@ -80,11 +82,49 @@ export const PASSENGER_TYPE_OPTIONS: Array<{
   },
 ];
 
+export const ROUTE_MODIFIER_OPTIONS: Array<{
+  value: RouteModifier;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'jeep_if_possible',
+    label: 'Jeep if possible',
+    description: 'Prefer routes that keep jeepney legs when practical.',
+  },
+  {
+    value: 'less_walking',
+    label: 'Less walking',
+    description: 'Prefer options with shorter walking segments.',
+  },
+];
+
 const isRoutePreference = (value: unknown): value is RoutePreference =>
   value === 'balanced' || value === 'cheapest' || value === 'fastest';
 
 const isPassengerType = (value: unknown): value is PassengerType =>
   value === 'regular' || value === 'student' || value === 'senior' || value === 'pwd';
+
+const isRouteModifier = (value: unknown): value is RouteModifier =>
+  value === 'jeep_if_possible' || value === 'less_walking';
+
+const readRouteModifiers = (value: unknown): RouteModifier[] => {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('Expected routeModifiers to be an array');
+  }
+
+  const modifiers = value.filter(isRouteModifier);
+
+  if (modifiers.length !== value.length) {
+    throw new Error('Expected routeModifiers to contain valid route modifiers');
+  }
+
+  return [...new Set(modifiers)];
+};
 
 const readBoolean = (value: unknown, fieldName: string): boolean => {
   if (typeof value !== 'boolean') {
@@ -122,6 +162,7 @@ export const parsePreferenceDraft = (value: unknown): PreferenceDraft => {
   return {
     defaultPreference: value.defaultPreference,
     passengerType: value.passengerType,
+    routeModifiers: readRouteModifiers(value.routeModifiers),
   };
 };
 

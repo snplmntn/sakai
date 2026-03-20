@@ -1,8 +1,13 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { COLORS, FONTS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useNavigationAlarm } from '../navigation-alert/NavigationAlarmContext';
 import { ALERT_RADIUS_OPTIONS, formatDistanceAway } from '../navigation-alert/utils';
+import RelevantIncidentsSection from './RelevantIncidentsSection';
+import { queryRelevantAreaUpdates } from '../routes/api';
+import type { RouteQueryIncident } from '../routes/types';
 
 const ALARM_MODES = [
   { label: 'Sound', value: 'sound' as const },
@@ -28,6 +33,48 @@ export default function NavigationAlarmCard() {
     startNavigation,
     stopNavigation,
   } = useNavigationAlarm();
+  const [incidents, setIncidents] = useState<RouteQueryIncident[]>(navigationRoute?.relevantIncidents ?? []);
+  const [isRefreshingIncidents, setIsRefreshingIncidents] = useState(false);
+  const [incidentRefreshFailed, setIncidentRefreshFailed] = useState(false);
+
+  useEffect(() => {
+    setIncidents(navigationRoute?.relevantIncidents ?? []);
+    setIncidentRefreshFailed(false);
+  }, [navigationRoute]);
+
+  const refreshIncidents = useCallback(async () => {
+    if (
+      !navigationRoute ||
+      navigationRoute.originLabel.length === 0 ||
+      navigationRoute.destinationLabel.length === 0
+    ) {
+      return;
+    }
+
+    setIsRefreshingIncidents(true);
+
+    try {
+      const latestIncidents = await queryRelevantAreaUpdates({
+        corridorTags: navigationRoute.corridorTags,
+        originLabel: navigationRoute.originLabel,
+        destinationLabel: navigationRoute.destinationLabel,
+        limit: 3,
+      });
+
+      setIncidents(latestIncidents);
+      setIncidentRefreshFailed(false);
+    } catch {
+      setIncidentRefreshFailed(true);
+    } finally {
+      setIsRefreshingIncidents(false);
+    }
+  }, [navigationRoute]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshIncidents();
+    }, [refreshIncidents])
+  );
 
   const statusMessage = isNavigationActive
     ? hasTriggeredArrivalAlert
@@ -71,6 +118,21 @@ export default function NavigationAlarmCard() {
             </Text>
           ) : null}
         </View>
+      ) : null}
+
+      {navigationRoute ? (
+        <RelevantIncidentsSection
+          incidents={incidents}
+          title="Route area updates"
+          metaNotice={
+            isRefreshingIncidents
+              ? 'Refreshing MMDA updates for this route...'
+              : incidentRefreshFailed
+                ? 'Showing the latest saved route snapshot because refresh is unavailable right now.'
+                : 'Only MMDA updates relevant to this route are shown here.'
+          }
+          emptyText="No active MMDA area updates are affecting this route right now."
+        />
       ) : null}
 
       <View style={styles.navigationSettingCard}>

@@ -8,6 +8,8 @@ import SignupScreen from '../screens/auth/SignupScreen';
 import AuthLoadingScreen from '../screens/auth/AuthLoadingScreen';
 import CommunityHubScreen from '../screens/CommunityHubScreen';
 import CommunityQuestionDetailScreen from '../screens/CommunityQuestionDetailScreen';
+import NavigationAlarmScreen from '../screens/NavigationAlarmScreen';
+import PreferencesScreen from '../screens/PreferencesScreen';
 import MainTabNavigator from './MainTabNavigator';
 import type { CommunityLaunchDraft } from '../community/types';
 import type { RoutePreference } from '../preferences/types';
@@ -19,6 +21,8 @@ export type RootStackParamList = {
   Login: { successMessage?: string } | undefined;
   Signup: undefined;
   MainTabs: undefined;
+  Preferences: undefined;
+  NavigationAlarm: undefined;
   CommunityHub: { draft?: CommunityLaunchDraft } | undefined;
   CommunityQuestionDetail: { questionId: string };
 };
@@ -40,6 +44,8 @@ export default function AppNavigator() {
           component={MainTabNavigator}
           options={{ headerShown: false }}
         />
+        <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ title: 'Preferences' }} />
+        <Stack.Screen name="NavigationAlarm" component={NavigationAlarmScreen} options={{ title: 'Navigation alarm' }} />
         <Stack.Screen name="CommunityHub" component={CommunityHubScreen} options={{ title: 'Community' }} />
         <Stack.Screen
           name="CommunityQuestionDetail"
@@ -85,6 +91,9 @@ export default function AppNavigator() {
         component={MainTabNavigator}
         options={{ headerShown: false }}
       />
+      <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ title: 'Preferences' }} />
+      <Stack.Screen name="NavigationAlarm" component={NavigationAlarmScreen} options={{ title: 'Navigation alarm' }} />
+      <Stack.Screen name="CommunityHub" component={CommunityHubScreen} options={{ title: 'Community' }} />
     </Stack.Navigator>
   );
 }
