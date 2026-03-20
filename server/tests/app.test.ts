@@ -33,6 +33,13 @@ vi.mock("../src/models/user-preference.model.js", () => ({
   upsertUserPreference: vi.fn()
 }));
 
+vi.mock("../src/models/user-saved-place.model.js", () => ({
+  listUserSavedPlaces: vi.fn(),
+  createUserSavedPlace: vi.fn(),
+  updateUserSavedPlace: vi.fn(),
+  deleteUserSavedPlace: vi.fn()
+}));
+
 vi.mock("../src/models/place.model.js", () => ({
   searchPlaces: vi.fn(),
   normalizePlaceSearchText: vi.fn((value: string) =>
@@ -52,6 +59,14 @@ vi.mock("../src/services/mmda-alert.service.js", () => ({
   refreshMmdaAlerts: vi.fn()
 }));
 
+vi.mock("../src/services/psgc.service.js", () => ({
+  listRegions: vi.fn(),
+  listProvincesByRegion: vi.fn(),
+  listCitiesMunicipalitiesByRegion: vi.fn(),
+  listCitiesMunicipalitiesByProvince: vi.fn(),
+  listBarangaysByCityMunicipality: vi.fn()
+}));
+
 vi.mock("../src/services/speech.service.js", () => ({
   transcribeSpeech: vi.fn()
 }));
@@ -61,17 +76,21 @@ import * as areaUpdateModel from "../src/models/area-update.model.js";
 import * as authModel from "../src/models/auth.model.js";
 import * as mmdaAlertService from "../src/services/mmda-alert.service.js";
 import * as placeModel from "../src/models/place.model.js";
+import * as psgcService from "../src/services/psgc.service.js";
 import * as routeQueryService from "../src/services/route-query.service.js";
 import * as speechService from "../src/services/speech.service.js";
 import * as userPreferenceModel from "../src/models/user-preference.model.js";
+import * as userSavedPlaceModel from "../src/models/user-saved-place.model.js";
 
 const mockedAreaUpdateModel = vi.mocked(areaUpdateModel);
 const mockedAuthModel = vi.mocked(authModel);
 const mockedMmdaAlertService = vi.mocked(mmdaAlertService);
 const mockedPlaceModel = vi.mocked(placeModel);
+const mockedPsgcService = vi.mocked(psgcService);
 const mockedRouteQueryService = vi.mocked(routeQueryService);
 const mockedSpeechService = vi.mocked(speechService);
 const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
+const mockedUserSavedPlaceModel = vi.mocked(userSavedPlaceModel);
 const appHandler = app as unknown as {
   handle: (
     request: ReturnType<typeof createRequest>,
@@ -429,6 +448,33 @@ describe("app routes", () => {
     });
   });
 
+  it("returns PSGC regions from the mounted route", async () => {
+    mockedPsgcService.listRegions.mockResolvedValue([
+      {
+        code: "130000000",
+        name: "NCR",
+        regionName: "National Capital Region"
+      }
+    ]);
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/psgc/regions"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: [
+        {
+          code: "130000000",
+          name: "NCR",
+          regionName: "National Capital Region"
+        }
+      ]
+    });
+  });
+
   it("returns speech transcription metadata from the mounted route", async () => {
     mockedSpeechService.transcribeSpeech.mockResolvedValue({
       transcript: "Papunta sa Cubao",
@@ -615,6 +661,218 @@ describe("app routes", () => {
         userId: "user-1",
         defaultPreference: "cheapest",
         passengerType: "student"
+      },
+      "access-token"
+    );
+  });
+
+  it("lists saved places", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+    mockedUserSavedPlaceModel.listUserSavedPlaces.mockResolvedValue([
+      {
+        id: "saved-place-1",
+        userId: "user-1",
+        address: "123 Ayala Avenue, Makati City",
+        labelKind: "preset",
+        presetLabel: "office",
+        customLabel: null,
+        createdAt: "2026-03-20T09:00:00.000Z",
+        updatedAt: "2026-03-20T10:00:00.000Z"
+      }
+    ]);
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/me/saved-places",
+      headers: {
+        authorization: "Bearer access-token"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: [
+        {
+          id: "saved-place-1",
+          userId: "user-1",
+          address: "123 Ayala Avenue, Makati City",
+          labelKind: "preset",
+          presetLabel: "office",
+          customLabel: null,
+          createdAt: "2026-03-20T09:00:00.000Z",
+          updatedAt: "2026-03-20T10:00:00.000Z"
+        }
+      ]
+    });
+    expect(mockedUserSavedPlaceModel.listUserSavedPlaces).toHaveBeenCalledWith(
+      "user-1",
+      "access-token"
+    );
+  });
+
+  it("rejects invalid saved place payloads", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/me/saved-places",
+      headers: {
+        authorization: "Bearer access-token"
+      },
+      body: {
+        address: "123 Ayala Avenue, Makati City",
+        labelKind: "preset"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response._getJSONData().message).toBe("Validation failed");
+  });
+
+  it("creates a saved place", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+    mockedUserSavedPlaceModel.createUserSavedPlace.mockResolvedValue({
+      id: "saved-place-1",
+      userId: "user-1",
+      address: "123 Ayala Avenue, Makati City",
+      labelKind: "preset",
+      presetLabel: "office",
+      customLabel: null,
+      createdAt: "2026-03-20T09:00:00.000Z",
+      updatedAt: "2026-03-20T10:00:00.000Z"
+    });
+
+    const response = await invokeApp({
+      method: "POST",
+      url: "/api/me/saved-places",
+      headers: {
+        authorization: "Bearer access-token"
+      },
+      body: {
+        address: "123 Ayala Avenue, Makati City",
+        labelKind: "preset",
+        presetLabel: "office"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response._getJSONData()).toEqual({
+      success: true,
+      data: {
+        id: "saved-place-1",
+        userId: "user-1",
+        address: "123 Ayala Avenue, Makati City",
+        labelKind: "preset",
+        presetLabel: "office",
+        customLabel: null,
+        createdAt: "2026-03-20T09:00:00.000Z",
+        updatedAt: "2026-03-20T10:00:00.000Z"
+      }
+    });
+    expect(mockedUserSavedPlaceModel.createUserSavedPlace).toHaveBeenCalledWith(
+      {
+        userId: "user-1",
+        address: "123 Ayala Avenue, Makati City",
+        labelKind: "preset",
+        presetLabel: "office",
+        customLabel: null
+      },
+      "access-token"
+    );
+  });
+
+  it("updates a saved place", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+    mockedUserSavedPlaceModel.updateUserSavedPlace.mockResolvedValue({
+      id: "saved-place-1",
+      userId: "user-1",
+      address: "456 Katipunan Avenue, Quezon City",
+      labelKind: "custom",
+      presetLabel: null,
+      customLabel: "Tutor",
+      createdAt: "2026-03-20T09:00:00.000Z",
+      updatedAt: "2026-03-20T11:00:00.000Z"
+    });
+
+    const response = await invokeApp({
+      method: "PUT",
+      url: "/api/me/saved-places/3d8a2a5d-0a7c-4b32-b79b-f4b7e5ed9b30",
+      headers: {
+        authorization: "Bearer access-token"
+      },
+      body: {
+        address: "456 Katipunan Avenue, Quezon City",
+        labelKind: "custom",
+        customLabel: "Tutor"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response._getJSONData().data).toEqual({
+      id: "saved-place-1",
+      userId: "user-1",
+      address: "456 Katipunan Avenue, Quezon City",
+      labelKind: "custom",
+      presetLabel: null,
+      customLabel: "Tutor",
+      createdAt: "2026-03-20T09:00:00.000Z",
+      updatedAt: "2026-03-20T11:00:00.000Z"
+    });
+    expect(mockedUserSavedPlaceModel.updateUserSavedPlace).toHaveBeenCalledWith(
+      {
+        userId: "user-1",
+        savedPlaceId: "3d8a2a5d-0a7c-4b32-b79b-f4b7e5ed9b30",
+        address: "456 Katipunan Avenue, Quezon City",
+        labelKind: "custom",
+        presetLabel: null,
+        customLabel: "Tutor"
+      },
+      "access-token"
+    );
+  });
+
+  it("deletes a saved place", async () => {
+    mockedAuthModel.getCurrentUser.mockResolvedValue({
+      id: "user-1",
+      email: "user@example.com",
+      appMetadata: {},
+      userMetadata: {}
+    });
+
+    const response = await invokeApp({
+      method: "DELETE",
+      url: "/api/me/saved-places/3d8a2a5d-0a7c-4b32-b79b-f4b7e5ed9b30",
+      headers: {
+        authorization: "Bearer access-token"
+      }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(mockedUserSavedPlaceModel.deleteUserSavedPlace).toHaveBeenCalledWith(
+      {
+        userId: "user-1",
+        savedPlaceId: "3d8a2a5d-0a7c-4b32-b79b-f4b7e5ed9b30"
       },
       "access-token"
     );

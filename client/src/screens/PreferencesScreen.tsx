@@ -8,9 +8,13 @@ import {
   Text,
   View,
 } from 'react-native';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import SafeScreen from '../components/SafeScreen';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import {
   PASSENGER_TYPE_OPTIONS,
   ROUTE_MODIFIER_OPTIONS,
@@ -21,7 +25,9 @@ import { usePreferences } from '../preferences/PreferencesContext';
 import { useToast } from '../toast/ToastContext';
 import { VOICE_LANGUAGE_OPTIONS, type VoiceLanguagePreference } from '../voice/languages';
 
-export default function PreferencesScreen() {
+type PreferencesScreenProps = NativeStackScreenProps<RootStackParamList, 'Preferences'>;
+
+export default function PreferencesScreen({ navigation }: PreferencesScreenProps) {
   const { preferences, updatePreferences, isUpdating, refreshPreferences } = usePreferences();
   const { showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -123,6 +129,14 @@ export default function PreferencesScreen() {
         }
       >
         <View style={styles.header}>
+          <Pressable
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} size={20} color={COLORS.midnight} />
+          </Pressable>
           <Text style={styles.title}>Preferences</Text>
           <Text style={styles.subtitle}>
             Change the defaults Sakai uses for ranking and fare estimates.
@@ -266,11 +280,23 @@ export default function PreferencesScreen() {
 const styles = StyleSheet.create({
   content: {
     padding: SPACING.lg,
-    gap: SPACING.lg,
+    gap: SPACING.md,
     paddingBottom: SPACING.xl,
   },
   header: {
     gap: SPACING.xs,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: '#E3EBF2',
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.xs,
   },
   title: {
     fontSize: TYPOGRAPHY.fontSizes.xlarge,

@@ -2,7 +2,7 @@ import { getExpoGoProjectConfig } from 'expo';
 import { Platform } from 'react-native';
 
 export interface RequestOptions {
-  method: 'GET' | 'POST' | 'PUT';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
   accessToken?: string;
   body?: unknown;

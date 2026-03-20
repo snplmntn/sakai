@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import NavigationAlarmCard from '../components/NavigationAlarmCard';
 import SafeScreen from '../components/SafeScreen';
-import { COLORS, FONTS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useNavigationAlarm } from '../navigation-alert/NavigationAlarmContext';
 import { queryRelevantAreaUpdates } from '../routes/api';
 import type { RouteQueryIncident } from '../routes/types';
 
-export default function NavigationAlarmScreen() {
+type NavigationAlarmScreenProps = NativeStackScreenProps<RootStackParamList, 'NavigationAlarm'>;
+
+export default function NavigationAlarmScreen({ navigation }: NavigationAlarmScreenProps) {
   const { navigationRoute } = useNavigationAlarm();
   const [incidents, setIncidents] = useState<RouteQueryIncident[]>(navigationRoute?.relevantIncidents ?? []);
   const [isRefreshingIncidents, setIsRefreshingIncidents] = useState(false);
@@ -66,6 +72,14 @@ export default function NavigationAlarmScreen() {
       >
         <View style={styles.body}>
           <View style={styles.header}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <HugeiconsIcon icon={ArrowLeft01Icon} size={20} color={COLORS.midnight} />
+            </Pressable>
             <Text style={styles.title}>Navigation alarm</Text>
             <Text style={styles.subtitle}>
               Manage your near-destination alert with simple trip-ready defaults.
@@ -88,11 +102,22 @@ const styles = StyleSheet.create({
   },
   body: {
     padding: SPACING.lg,
-    gap: SPACING.lg,
+    gap: SPACING.md,
   },
   header: {
     gap: SPACING.xs,
     paddingTop: SPACING.xs,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: '#E3EBF2',
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     fontSize: TYPOGRAPHY.fontSizes.xlarge,

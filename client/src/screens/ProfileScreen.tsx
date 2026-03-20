@@ -17,7 +17,7 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useToast } from '../toast/ToastContext';
 
 type ProfileRow = {
-  route?: 'Preferences' | 'NavigationAlarm' | 'CommunityHub';
+  route?: 'Preferences' | 'NavigationAlarm' | 'SavedPlaces' | 'CommunityHub';
   title: string;
   description: string;
   badge?: string;
@@ -36,7 +36,8 @@ const PROFILE_ROWS: ProfileRow[] = [
   },
   {
     title: 'Saved places',
-    description: 'Home, work, and recent destinations for faster planning.',
+    description: 'Home, office, and other frequent addresses for faster planning.',
+    route: 'SavedPlaces',
   },
   {
     title: 'Community activity',
@@ -208,9 +209,15 @@ export default function ProfileScreen() {
                   style={[styles.listRow, index !== PROFILE_ROWS.length - 1 && styles.listDivider]}
                   activeOpacity={0.85}
                   onPress={() => {
-                    if (item.route === 'CommunityHub' && status !== 'authenticated') {
+                    if (
+                      (item.route === 'CommunityHub' || item.route === 'SavedPlaces') &&
+                      status !== 'authenticated'
+                    ) {
                       navigation.navigate('Login', {
-                        successMessage: 'Sign in to view your community activity and post updates.',
+                        successMessage:
+                          item.route === 'SavedPlaces'
+                            ? 'Sign in to manage your saved places.'
+                            : 'Sign in to view your community activity and post updates.',
                       });
                       return;
                     }

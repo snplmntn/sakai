@@ -558,34 +558,42 @@ export default function RoutesScreen() {
   const voicePreviewText = partialTranscript.trim() || voiceQuery.trim();
   const voiceMicDisabled =
     speechPhase === 'finishing' || speechPhase === 'transcribing' || speechPhase === 'searching' || queryLoading;
+  const voiceControlsUnavailable = !voiceAvailable;
+  const voiceButtonDisabled = voiceControlsUnavailable || (voiceMicDisabled && speechPhase !== 'listening');
   const voiceStatusTitle =
-    speechPhase === 'listening'
-      ? 'Listening now'
-      : speechPhase === 'finishing'
-        ? 'Finishing your voice request'
-        : speechPhase === 'transcribing'
-          ? 'Transcribing your route request'
-          : speechPhase === 'searching'
-            ? 'Searching from what you said'
-            : 'Hold the mic to talk';
+    voiceControlsUnavailable
+      ? 'Voice input unavailable'
+      : speechPhase === 'listening'
+        ? 'Listening now'
+        : speechPhase === 'finishing'
+          ? 'Finishing your voice request'
+          : speechPhase === 'transcribing'
+            ? 'Transcribing your route request'
+            : speechPhase === 'searching'
+              ? 'Searching from what you said'
+              : 'Hold the mic to talk';
   const voiceStatusBadge =
-    speechPhase === 'listening'
-      ? 'Release to send'
-      : speechPhase === 'finishing'
-        ? 'Waiting for speech end'
-        : speechPhase === 'idle'
-          ? 'Hold to talk'
-          : 'Working';
+    voiceControlsUnavailable
+      ? 'Unavailable'
+      : speechPhase === 'listening'
+        ? 'Release to send'
+        : speechPhase === 'finishing'
+          ? 'Waiting for speech end'
+          : speechPhase === 'idle'
+            ? 'Hold to talk'
+            : 'Working';
   const voiceStatusBody =
-    speechPhase === 'listening'
-      ? 'Sakai is listening. Keep holding and say your route naturally.'
-      : speechPhase === 'finishing'
-        ? 'You let go. Sakai will detect the end of speech, then send your request.'
-        : speechPhase === 'transcribing'
-          ? 'Turning your speech into a route request with multilingual transcription.'
-          : speechPhase === 'searching'
-            ? 'Matching your spoken request to route data and your saved commute preferences.'
-            : 'Say things like "BGC fastest route" or "Gate 3 from Espana."';
+    voiceControlsUnavailable
+      ? getVoiceInputUnavailableMessage()
+      : speechPhase === 'listening'
+        ? 'Sakai is listening. Keep holding and say your route naturally.'
+        : speechPhase === 'finishing'
+          ? 'You let go. Sakai will detect the end of speech, then send your request.'
+          : speechPhase === 'transcribing'
+            ? 'Turning your speech into a route request with multilingual transcription.'
+            : speechPhase === 'searching'
+              ? 'Matching your spoken request to route data and your saved commute preferences.'
+              : 'Say things like "BGC fastest route" or "Gate 3 from Espana."';
   const showResultsCanvas = queryLoading || routeResult !== null;
   const selectedRoute = selectedOption ?? allRouteOptions[0] ?? null;
   const expandedSheetHeight = Math.min(
@@ -1632,6 +1640,34 @@ export default function RoutesScreen() {
             <View style={styles.heroRule} />
             <View style={styles.heroTopRow}>
               <Text style={styles.heroLabel}>Routes</Text>
+              <TouchableOpacity
+                style={[
+                  styles.heroMicButton,
+                  speechPhase === 'listening' && styles.heroMicButtonActive,
+                  voiceButtonDisabled && styles.heroMicButtonDisabled,
+                ]}
+                onPress={() => {
+                  if (!voiceAvailable) {
+                    return;
+                  }
+
+                  if (speechPhase === 'idle') {
+                    void startSpeechCapture();
+                    return;
+                  }
+
+                  if (speechPhase === 'listening') {
+                    void stopSpeechCapture();
+                  }
+                }}
+                activeOpacity={0.85}
+                disabled={voiceButtonDisabled}
+              >
+                <HugeiconsIcon icon={Mic01Icon} size={16} color={COLORS.white} />
+                <Text style={styles.heroMicButtonText}>
+                  {voiceAvailable ? (speechPhase === 'listening' ? 'Stop' : 'Voice') : 'Voice off'}
+                </Text>
+              </TouchableOpacity>
             </View>
             <Text style={styles.heroTitle}>Where to Sakai today?</Text>
 
@@ -1649,7 +1685,13 @@ export default function RoutesScreen() {
                     </Pressable>
                   </View>
                 </View>
-                <View style={[styles.searchField, activeField === 'origin' && styles.searchFieldActive]}>
+                <View
+                  style={[
+                    styles.searchField,
+                    styles.searchInputRow,
+                    activeField === 'origin' && styles.searchFieldActive,
+                  ]}
+                >
                   <TextInput
                     style={styles.searchInput}
                     value={originText}
@@ -1707,10 +1749,15 @@ export default function RoutesScreen() {
                   style={[styles.searchField, activeField === 'destination' && styles.searchFieldActive]}
                 >
                   <Text style={styles.searchFieldLabel}>To</Text>
-                  {voiceAvailable ? <Text style={styles.searchFieldHint}>Hold mic to talk</Text> : null}
+                  <Text style={styles.searchFieldHint}>
+                    {voiceAvailable ? 'Hold mic to talk' : 'Mic unavailable'}
+                  </Text>
                 </View>
                 <View
-                  style={[styles.searchField, activeField === 'destination' && styles.searchFieldActive]}
+                  style={[
+                    styles.searchField,
+                    activeField === 'destination' && styles.searchFieldActive,
+                  ]}
                 >
                   <TextInput
                     style={styles.searchInput}
@@ -1737,24 +1784,33 @@ export default function RoutesScreen() {
                         <Text style={styles.clearBtn}>x</Text>
                       </TouchableOpacity>
                     ) : null}
-                    {voiceAvailable ? (
-                      <Pressable
-                        style={[
-                          styles.voiceHoldButton,
-                          speechPhase === 'listening' && styles.voiceHoldButtonActive,
-                          voiceMicDisabled && styles.voiceHoldButtonBusy,
-                        ]}
-                        onPressIn={() => {
-                          void startSpeechCapture();
-                        }}
-                        onPressOut={() => {
-                          void stopSpeechCapture();
-                        }}
-                        disabled={voiceMicDisabled}
-                      >
-                        <HugeiconsIcon icon={Mic01Icon} size={18} color={COLORS.white} />
-                      </Pressable>
-                    ) : null}
+                    <Pressable
+                      style={[
+                        styles.voiceHoldButton,
+                        speechPhase === 'listening' && styles.voiceHoldButtonActive,
+                        voiceMicDisabled && !voiceControlsUnavailable && styles.voiceHoldButtonBusy,
+                        voiceControlsUnavailable && styles.voiceHoldButtonDisabled,
+                      ]}
+                      onPressIn={() => {
+                        if (!voiceAvailable) {
+                          return;
+                        }
+                        void startSpeechCapture();
+                      }}
+                      onPressOut={() => {
+                        if (!voiceAvailable) {
+                          return;
+                        }
+                        void stopSpeechCapture();
+                      }}
+                      disabled={voiceControlsUnavailable || voiceMicDisabled}
+                    >
+                      <HugeiconsIcon
+                        icon={Mic01Icon}
+                        size={18}
+                        color={voiceControlsUnavailable ? 'rgba(255,255,255,0.72)' : COLORS.white}
+                      />
+                    </Pressable>
                   </View>
                 </View>
 
@@ -1790,12 +1846,23 @@ export default function RoutesScreen() {
                   ]}
                 >
                   <View style={styles.voiceStatusHeader}>
+                    <View
+                      style={[
+                        styles.voiceStatusIconWrap,
+                        speechPhase !== 'idle' && styles.voiceStatusIconWrapActive,
+                        voiceControlsUnavailable && styles.voiceStatusIconWrapDisabled,
+                      ]}
+                    >
+                      <HugeiconsIcon
+                        icon={Mic01Icon}
+                        size={18}
+                        color={voiceControlsUnavailable ? 'rgba(255,255,255,0.78)' : COLORS.white}
+                      />
+                    </View>
                     <Text style={styles.voiceStatusTitle}>{voiceStatusTitle}</Text>
-                    {voiceAvailable ? (
-                      <View style={styles.voiceStatusBadge}>
-                        <Text style={styles.voiceStatusBadgeText}>{voiceStatusBadge}</Text>
-                      </View>
-                    ) : null}
+                    <View style={styles.voiceStatusBadge}>
+                      <Text style={styles.voiceStatusBadgeText}>{voiceStatusBadge}</Text>
+                    </View>
                   </View>
                   <Text style={styles.voiceStatusBody}>{voiceStatusBody}</Text>
                   {voicePreviewText.length > 0 ? (
@@ -1895,17 +1962,27 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  heroBadge: {
+  heroMicButton: {
     paddingHorizontal: SPACING.sm + 2,
     paddingVertical: SPACING.xs + 2,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
   },
-  heroBadgeText: {
+  heroMicButtonActive: {
+    backgroundColor: 'rgba(0,122,255,0.28)',
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  heroMicButtonDisabled: {
+    opacity: 0.65,
+  },
+  heroMicButtonText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
+    fontFamily: FONTS.semibold,
     color: COLORS.white,
   },
   heroTitle: {
@@ -1953,6 +2030,17 @@ const styles = StyleSheet.create({
   searchFieldActive: {
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
+  searchInputRow: {
+    minHeight: 54,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: RADIUS.sm,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
   fieldHeaderActions: {
     flexDirection: 'row',
     gap: SPACING.xs,
@@ -1989,6 +2077,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.medium,
     color: COLORS.white,
     padding: 0,
+    minHeight: 24,
   },
   destinationActions: {
     flexDirection: 'row',
@@ -2372,6 +2461,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(69,123,157,0.72)',
     borderColor: 'rgba(255,255,255,0.18)',
   },
+  voiceHoldButtonDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
   voiceStatusCard: {
     margin: SPACING.md,
     marginTop: SPACING.sm,
@@ -2390,6 +2483,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
+  },
+  voiceStatusIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  voiceStatusIconWrapActive: {
+    backgroundColor: 'rgba(0,122,255,0.26)',
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  voiceStatusIconWrapDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   voiceStatusTitle: {
     flex: 1,
@@ -2570,6 +2680,3 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
 });
-
-
-

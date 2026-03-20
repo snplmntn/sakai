@@ -1,5 +1,7 @@
 type RoutePreference = "fastest" | "cheapest" | "balanced";
 type PassengerType = "regular" | "student" | "senior" | "pwd";
+type SavedPlaceLabelKind = "preset" | "custom";
+type SavedPlaceLabelPreset = "home" | "office" | "school";
 type PlaceKind = "landmark" | "station" | "area" | "campus" | "mall" | "terminal";
 type RideMode = "jeepney" | "uv" | "mrt3" | "lrt1" | "lrt2" | "car";
 type StopMode = RideMode | "walk_anchor";
@@ -187,6 +189,46 @@ export interface Database {
           updated_at?: string;
         };
         Relationships: [];
+      };
+      user_saved_places: {
+        Row: {
+          id: string;
+          user_id: string;
+          address: string;
+          label_kind: SavedPlaceLabelKind;
+          preset_label: SavedPlaceLabelPreset | null;
+          custom_label: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          address: string;
+          label_kind: SavedPlaceLabelKind;
+          preset_label?: SavedPlaceLabelPreset | null;
+          custom_label?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          address?: string;
+          label_kind?: SavedPlaceLabelKind;
+          preset_label?: SavedPlaceLabelPreset | null;
+          custom_label?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_saved_places_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       area_updates: {
         Row: {
