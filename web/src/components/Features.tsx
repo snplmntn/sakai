@@ -81,33 +81,28 @@ function FeatureCard({ feature, index }: { feature: Feature; index: number }) {
       }}
       className="relative card-surface rounded-2xl p-8 overflow-hidden"
     >
-      {/* Background large number */}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          top: "-0.15em",
-          right: isEven ? "0.75rem" : "auto",
-          left: isEven ? "auto" : "0.75rem",
-          fontFamily: "var(--font-display)",
-          fontSize: "clamp(5rem, 12vw, 9rem)",
-          fontWeight: 800,
-          color: "rgba(0,122,255,0.06)",
-          lineHeight: 1,
-          pointerEvents: "none",
-          userSelect: "none",
-        }}
-      >
-        {String(index + 1).padStart(2, "0")}
-      </div>
-
-      {/* Content */}
       <div className="relative z-10 flex flex-col gap-4">
-        <div
-          className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: "rgba(0,122,255,0.1)", color: "#007AFF" }}
-        >
-          {iconMap[feature.icon]}
+        <div className="flex items-start justify-between gap-4">
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: "rgba(0,122,255,0.1)", color: "#007AFF" }}
+          >
+            {iconMap[feature.icon]}
+          </div>
+          <div
+            aria-hidden
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "clamp(3.5rem, 10vw, 6rem)",
+              fontWeight: 800,
+              color: "rgba(0,122,255,0.34)",
+              lineHeight: 0.9,
+              pointerEvents: "none",
+              userSelect: "none",
+            }}
+          >
+            {String(index + 1).padStart(2, "0")}
+          </div>
         </div>
         <div>
           <h3 className="font-semibold text-base mb-1.5" style={{ color: "var(--text-primary)" }}>
