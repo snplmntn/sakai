@@ -32,6 +32,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
+    package: 'com.anonymous.sakaiapp',
     adaptiveIcon: {
       backgroundColor: '#E6F4FE',
       foregroundImage: './assets/android-icon-foreground.png',

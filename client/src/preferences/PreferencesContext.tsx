@@ -28,7 +28,7 @@ interface PreferencesContextValue {
   status: 'loading' | 'ready';
   isUpdating: boolean;
   updatePreferences: (
-    input: Pick<UserPreferences, 'defaultPreference' | 'passengerType'>
+    input: Pick<UserPreferences, 'defaultPreference' | 'passengerType' | 'routeModifiers'>
   ) => Promise<UserPreferences>;
   refreshPreferences: () => Promise<void>;
 }
@@ -71,12 +71,17 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         (storedPreferences.defaultPreference !== serverPreferences.defaultPreference ||
           storedPreferences.passengerType !== serverPreferences.passengerType);
 
-      const effectivePreferences = shouldSyncPendingPreferences
+      const persistedPreferences = shouldSyncPendingPreferences
         ? await updateUserPreferences(session.accessToken, {
             defaultPreference: storedPreferences.defaultPreference,
             passengerType: storedPreferences.passengerType,
           })
         : serverPreferences;
+
+      const effectivePreferences: UserPreferences = {
+        ...persistedPreferences,
+        routeModifiers: storedPreferences?.routeModifiers ?? [],
+      };
 
       await writeStoredPreferences(
         toStoredPreferences(effectivePreferences, 'synced')
@@ -125,13 +130,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [authStatus, session?.accessToken]);
 
   const updatePreferences = async (
-    input: Pick<UserPreferences, 'defaultPreference' | 'passengerType'>
+    input: Pick<UserPreferences, 'defaultPreference' | 'passengerType' | 'routeModifiers'>
   ): Promise<UserPreferences> => {
     if (authStatus !== 'authenticated' || !session?.accessToken) {
       const nextPreferences: UserPreferences = {
         ...createDefaultUserPreferences(),
         defaultPreference: input.defaultPreference,
         passengerType: input.passengerType,
+        routeModifiers: input.routeModifiers,
       };
 
       await writeStoredPreferences(toStoredPreferences(nextPreferences, 'pending'));
@@ -143,12 +149,20 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setIsUpdating(true);
 
     try {
-      const savedPreferences = await updateUserPreferences(session.accessToken, input);
+      const savedPreferences = await updateUserPreferences(session.accessToken, {
+        defaultPreference: input.defaultPreference,
+        passengerType: input.passengerType,
+      });
 
-      await writeStoredPreferences(toStoredPreferences(savedPreferences, 'synced'));
-      setPreferences(savedPreferences);
+      const nextPreferences: UserPreferences = {
+        ...savedPreferences,
+        routeModifiers: input.routeModifiers,
+      };
+
+      await writeStoredPreferences(toStoredPreferences(nextPreferences, 'synced'));
+      setPreferences(nextPreferences);
       setStatus('ready');
-      return savedPreferences;
+      return nextPreferences;
     } finally {
       setIsUpdating(false);
     }

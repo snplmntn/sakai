@@ -7,7 +7,6 @@ import {
 import { parseRouteIntent } from "../ai/intent-parser.js";
 import { generateRouteSummary } from "../ai/route-summary.js";
 import type { RouteIntent } from "../ai/types.js";
-import * as areaUpdateModel from "../models/area-update.model.js";
 import * as fareModel from "../models/fare.model.js";
 import * as placeModel from "../models/place.model.js";
 import * as routeModel from "../models/route.model.js";
@@ -31,7 +30,10 @@ import type {
 } from "../types/route-query.js";
 import type { RoutePreference } from "../models/user-preference.model.js";
 import { priceRideLegsWithCatalog, type FareRideLegInput } from "./fare-engine.service.js";
+import { attachRelevantIncidentsToOptions } from "./route-incident.service.js";
 import { rankRouteOptions } from "./route-ranking.service.js";
+import { queryTransitRoutesIfPossible } from "./transit-route-query.service.js";
+import { queryGoogleFallbackRoutes } from "./google-route-fallback.service.js";
 
 const DEFAULT_ROUTE_PREFERENCE: RoutePreference = "balanced";
 const DEFAULT_PASSENGER_TYPE: PassengerType = "regular";
@@ -47,11 +49,12 @@ const ROUTE_SUMMARY_CONCURRENCY = 3;
 const WALKING_METERS_PER_MINUTE = 80;
 const DRIVING_METERS_PER_MINUTE = 250;
 const RIDE_STOP_MODES: StopMode[] = ["jeepney", "uv", "mrt3", "lrt1", "lrt2", "car"];
-const MAX_RELEVANT_INCIDENTS = 3;
 const MAX_RIDE_LEGS_PER_OPTION = 4;
+const fallbackWarningKeys = new Set<string>();
 
 interface RouteQueryRequest {
   origin?: RouteQueryPointInput;
+  originFallback?: RouteQueryPointInput;
   destination?: RouteQueryPointInput;
   queryText?: string;
   preference?: RoutePreference;
@@ -114,6 +117,15 @@ interface MultimodalPathState {
   visitedStopIds: Set<string>;
 }
 
+const warnOnce = (key: string, message: string, details: Record<string, unknown>) => {
+  if (fallbackWarningKeys.has(key)) {
+    return;
+  }
+
+  fallbackWarningKeys.add(key);
+  console.warn(message, details);
+};
+
 const roundMinutes = (value: number) => Math.ceil(value);
 
 const createWalkFareBreakdown = (): FareBreakdown => ({
@@ -128,6 +140,32 @@ const createWalkFareBreakdown = (): FareBreakdown => ({
 
 const buildRouteOptionId = (signature: string) =>
   createHash("sha1").update(signature).digest("hex").slice(0, 16);
+
+const buildNavigationTarget = (input: {
+  normalizedQuery: RouteQueryNormalizedInput;
+  legs: RouteQueryLeg[];
+}) => {
+  const rideLegs = input.legs.filter(
+    (leg): leg is RouteQueryRideLeg => leg.type === "ride"
+  );
+  const lastRideLeg = rideLegs.at(-1);
+
+  if (lastRideLeg) {
+    return {
+      latitude: lastRideLeg.toStop.latitude,
+      longitude: lastRideLeg.toStop.longitude,
+      label: lastRideLeg.toStop.stopName,
+      kind: "dropoff_stop" as const
+    };
+  }
+
+  return {
+    latitude: input.normalizedQuery.destination.latitude,
+    longitude: input.normalizedQuery.destination.longitude,
+    label: input.normalizedQuery.destination.label,
+    kind: "destination" as const
+  };
+};
 
 const sortAccessStops = (accessStops: AccessStopCandidate[]) =>
   [...accessStops].sort(
@@ -175,26 +213,41 @@ const parseQueryText = async (
   if (!request.queryText) {
     return {
       intent: null,
-      origin: request.origin,
+      origin: request.origin ?? request.originFallback,
       destination: request.destination
     };
   }
 
   try {
     const intent = await parseRouteIntent(request.queryText);
+    const resolvedOrigin =
+      request.origin ??
+      (intent.originText ? { label: intent.originText } : undefined) ??
+      request.originFallback;
+    const resolvedDestination =
+      request.destination ??
+      (intent.destinationText ? { label: intent.destinationText } : undefined);
 
     if (intent.requiresClarification) {
-      throw buildClarificationError({
-        field: intent.clarificationField ?? "both"
-      });
+      const missingOrigin = !resolvedOrigin;
+      const missingDestination = !resolvedDestination;
+
+      if (missingOrigin || missingDestination) {
+        throw buildClarificationError({
+          field:
+            missingOrigin && missingDestination
+              ? "both"
+              : missingOrigin
+                ? "origin"
+                : "destination"
+        });
+      }
     }
 
     return {
       intent,
-      origin: request.origin ?? (intent.originText ? { label: intent.originText } : undefined),
-      destination:
-        request.destination ??
-        (intent.destinationText ? { label: intent.destinationText } : undefined)
+      origin: resolvedOrigin,
+      destination: resolvedDestination
     };
   } catch (error) {
     if (!isRecoverableIntentError(error)) {
@@ -206,10 +259,10 @@ const parseQueryText = async (
       reason: error.message
     });
 
-    if (request.origin && request.destination) {
+    if ((request.origin ?? request.originFallback) && request.destination) {
       return {
         intent: null,
-        origin: request.origin,
+        origin: request.origin ?? request.originFallback,
         destination: request.destination
       };
     }
@@ -336,6 +389,37 @@ const buildAccessStopCandidate = (
   accessMode
 });
 
+const buildCoordinateResolvedPlace = (
+  field: "origin" | "destination",
+  point: RouteQueryPointInput
+): PlaceMatch | null => {
+  const coordinates = getCoordinatesFromPoint(point);
+
+  if (!coordinates) {
+    return null;
+  }
+
+  const label =
+    point.label?.trim() ||
+    (field === "origin" ? "Selected origin" : "Selected destination");
+  const coordinateId = `coords:${field}:${coordinates.latitude.toFixed(6)}:${coordinates.longitude.toFixed(6)}`;
+
+  return {
+    id: coordinateId,
+    canonicalName: label,
+    city: "Metro Manila",
+    kind: "area",
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+    googlePlaceId: null,
+    createdAt: "1970-01-01T00:00:00.000Z",
+    matchedBy: "coordinates",
+    matchedText: label
+  };
+};
+
+const isSyntheticCoordinatePlaceId = (placeId: string) => placeId.startsWith("coords:");
+
 const listNearbyRideAccessStops = async (point: RouteQueryPointInput) => {
   const coordinates = getCoordinatesFromPoint(point);
 
@@ -343,12 +427,26 @@ const listNearbyRideAccessStops = async (point: RouteQueryPointInput) => {
     return [];
   }
 
-  const nearbyStops = await stopModel.findNearestStops({
-    coordinates,
-    limit: 40,
-    modes: RIDE_STOP_MODES,
-    maxDistanceMeters: MAX_DRIVE_ACCESS_DISTANCE_METERS
-  });
+  let nearbyStops;
+
+  try {
+    nearbyStops = await stopModel.findNearestStops({
+      coordinates,
+      limit: 40,
+      modes: RIDE_STOP_MODES,
+      maxDistanceMeters: MAX_DRIVE_ACCESS_DISTANCE_METERS
+    });
+  } catch (error) {
+    if (stopModel.isStopsAccessUnavailableError(error)) {
+      warnOnce("route_query_stop_access_fallback", "Stop access lookup unavailable during route query", {
+        operation: "route_query_stop_access_fallback",
+        reason: error instanceof Error ? error.message : "unknown error"
+      });
+      return [];
+    }
+
+    throw error;
+  }
 
   return nearbyStops
     .filter((nearbyStop) => nearbyStop.distanceMeters <= MAX_DRIVE_ACCESS_DISTANCE_METERS)
@@ -419,6 +517,17 @@ const resolveEndpoint = async (
   }
 
   if (resolution.status === "unresolved") {
+    const coordinateResolvedPlace = buildCoordinateResolvedPlace(field, point);
+
+    if (coordinateResolvedPlace) {
+      resolution = {
+        status: "resolved",
+        place: coordinateResolvedPlace
+      };
+    }
+  }
+
+  if (resolution.status === "unresolved") {
     if (options?.queryText) {
       throw buildClarificationError({
         field
@@ -448,8 +557,22 @@ const resolveEndpoint = async (
 
   const accessStopMap = new Map<string, AccessStopCandidate>();
 
-  for (const stop of await stopModel.listStopsByPlaceId(resolution.place.id)) {
-    accessStopMap.set(stop.id, buildAccessStopCandidate(stop, 0, "walk"));
+  if (!isSyntheticCoordinatePlaceId(resolution.place.id)) {
+    try {
+      for (const stop of await stopModel.listStopsByPlaceId(resolution.place.id)) {
+        accessStopMap.set(stop.id, buildAccessStopCandidate(stop, 0, "walk"));
+      }
+    } catch (error) {
+      if (stopModel.isStopsAccessUnavailableError(error)) {
+        warnOnce("route_query_place_stop_fallback", "Place-linked stop lookup unavailable during route query", {
+          operation: "route_query_place_stop_fallback",
+          reason: error instanceof Error ? error.message : "unknown error",
+          placeId: resolution.place.id
+        });
+      } else {
+        throw error;
+      }
+    }
   }
 
   const walkCandidates: AccessStopCandidate[] = [];
@@ -979,7 +1102,8 @@ const buildRouteOption = (
   draft: CandidateDraft,
   fareCatalog: fareModel.ActiveFareCatalog,
   passengerType: PassengerType,
-  initialRecommendationLabel: string
+  initialRecommendationLabel: string,
+  normalizedQuery: RouteQueryNormalizedInput
 ): RouteQueryOption => {
   const pricedRideLegs = priceRideLegsWithCatalog(
     fareCatalog,
@@ -1082,87 +1206,17 @@ const buildRouteOption = (
     corridorTags: [...new Set(draft.rideLegs.flatMap((rideLeg) => rideLeg.corridorTags))],
     fareAssumptions: [...new Set(fareAssumptions)],
     legs,
-    relevantIncidents: []
+    relevantIncidents: [],
+    source: "sakai",
+    navigationTarget: buildNavigationTarget({
+      normalizedQuery,
+      legs
+    })
   };
 };
 
 const buildRouteQueryMessage = (normalizedQuery: RouteQueryNormalizedInput) =>
   `No supported route found for ${normalizedQuery.origin.label} to ${normalizedQuery.destination.label} in the current coverage`;
-
-const getIncidentSeverityWeight = (severity: "low" | "medium" | "high") =>
-  severity === "high" ? 3 : severity === "medium" ? 2 : 1;
-
-const sortRelevantIncidents = (
-  incidents: areaUpdateModel.AreaUpdate[]
-) =>
-  [...incidents].sort(
-    (left, right) =>
-      getIncidentSeverityWeight(right.severity) - getIncidentSeverityWeight(left.severity) ||
-      right.scrapedAt.localeCompare(left.scrapedAt) ||
-      left.id.localeCompare(right.id)
-  );
-
-const attachRelevantIncidents = async (input: {
-  options: RouteQueryOption[];
-  normalizedQuery: RouteQueryNormalizedInput;
-}) => {
-  if (input.options.length === 0) {
-    return input.options;
-  }
-
-  let activeIncidents: areaUpdateModel.AreaUpdate[];
-
-  try {
-    activeIncidents = await areaUpdateModel.listActiveAreaUpdates(100);
-  } catch (error) {
-    console.warn("Unable to load active area updates for route query", {
-      operation: "route_query_incidents",
-      reason: error instanceof Error ? error.message : "unknown error"
-    });
-    return input.options;
-  }
-
-  if (activeIncidents.length === 0) {
-    return input.options;
-  }
-
-  const originLabel = placeModel.normalizePlaceSearchText(input.normalizedQuery.origin.label);
-  const destinationLabel = placeModel.normalizePlaceSearchText(
-    input.normalizedQuery.destination.label
-  );
-
-  return input.options.map((option) => {
-    const corridorTags = new Set(option.corridorTags.map((tag) => tag.toLowerCase()));
-    const relevantIncidents = sortRelevantIncidents(
-      activeIncidents.filter((incident) => {
-        const incidentLocation = placeModel.normalizePlaceSearchText(incident.normalizedLocation);
-
-        return (
-          incident.corridorTags.some((tag) => corridorTags.has(tag.toLowerCase())) ||
-          incidentLocation.includes(originLabel) ||
-          incidentLocation.includes(destinationLabel)
-        );
-      })
-    )
-      .slice(0, MAX_RELEVANT_INCIDENTS)
-      .map((incident) => ({
-        id: incident.id,
-        alertType: incident.alertType,
-        location: incident.location,
-        direction: incident.direction,
-        severity: incident.severity,
-        summary: incident.summary,
-        displayUntil: incident.displayUntil,
-        scrapedAt: incident.scrapedAt,
-        sourceUrl: incident.sourceUrl
-      }));
-
-    return {
-      ...option,
-      relevantIncidents
-    };
-  });
-};
 
 const dedupeCandidateDrafts = (drafts: CandidateDraft[]) => {
   const draftMap = new Map<string, CandidateDraft>();
@@ -1242,16 +1296,20 @@ export const queryRoutes = async (input: {
       queryText: input.request.queryText
     })
   ]);
-  const normalizedQuery: RouteQueryNormalizedInput = {
+  const fallbackNormalizedQuery: RouteQueryNormalizedInput = {
     origin: {
       placeId: originResolution.place.id,
       label: originResolution.place.canonicalName,
-      matchedBy: originResolution.place.matchedBy
+      matchedBy: originResolution.place.matchedBy,
+      latitude: originResolution.place.latitude,
+      longitude: originResolution.place.longitude
     },
     destination: {
       placeId: destinationResolution.place.id,
       label: destinationResolution.place.canonicalName,
-      matchedBy: destinationResolution.place.matchedBy
+      matchedBy: destinationResolution.place.matchedBy,
+      latitude: destinationResolution.place.latitude,
+      longitude: destinationResolution.place.longitude
     },
     preference: effectiveValues.preference.value,
     passengerType: effectiveValues.passengerType.value,
@@ -1261,10 +1319,46 @@ export const queryRoutes = async (input: {
     modifierSource: effectiveValues.modifiers.source
   };
 
+  const [transitResult, googleFallback] = await Promise.all([
+    queryTransitRoutesIfPossible({
+      origin: parsedContext.origin,
+      destination: parsedContext.destination,
+      preference: effectiveValues.preference,
+      passengerType: effectiveValues.passengerType,
+      modifiers: effectiveValues.modifiers
+    }),
+    queryGoogleFallbackRoutes({
+      normalizedQuery: fallbackNormalizedQuery,
+      modifiers: effectiveValues.modifiers.value,
+      passengerType: effectiveValues.passengerType.value
+    }).catch((error: unknown) => {
+      console.warn("Google fallback route lookup failed", {
+        operation: "google_fallback_route_lookup",
+        reason: error instanceof Error ? error.message : "unknown error"
+      });
+
+      return {
+        status: "unavailable",
+        options: [],
+        message: "Google Maps fallback is unavailable right now."
+      } satisfies RouteQueryResult["googleFallback"];
+    })
+  ]);
+
+  if (transitResult) {
+    return {
+      ...transitResult,
+      googleFallback
+    };
+  }
+
+  const normalizedQuery = fallbackNormalizedQuery;
+
   if (originResolution.accessStops.length === 0 || destinationResolution.accessStops.length === 0) {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1275,6 +1369,7 @@ export const queryRoutes = async (input: {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1303,6 +1398,7 @@ export const queryRoutes = async (input: {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1324,7 +1420,8 @@ export const queryRoutes = async (input: {
           draft,
           fareCatalog,
           normalizedQuery.passengerType,
-          "Alternative option"
+          "Alternative option",
+          normalizedQuery
         )
       ];
     } catch (error) {
@@ -1345,6 +1442,7 @@ export const queryRoutes = async (input: {
     return {
       normalizedQuery,
       options: [],
+      googleFallback,
       message: buildRouteQueryMessage(normalizedQuery)
     };
   }
@@ -1354,7 +1452,7 @@ export const queryRoutes = async (input: {
     normalizedQuery.preference,
     normalizedQuery.modifiers
   );
-  const optionsWithIncidents = await attachRelevantIncidents({
+  const optionsWithIncidents = await attachRelevantIncidentsToOptions({
     options: rankedOptions.slice(0, MAX_ROUTE_OPTIONS),
     normalizedQuery
   });
@@ -1372,6 +1470,7 @@ export const queryRoutes = async (input: {
 
   return {
     normalizedQuery,
-    options: summarizedOptions
+    options: summarizedOptions,
+    googleFallback
   };
 };

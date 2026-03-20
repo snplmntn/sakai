@@ -26,7 +26,14 @@ vi.mock("../src/models/route.model.js", () => ({
 
 vi.mock("../src/models/stop.model.js", () => ({
   findNearestStops: vi.fn(),
-  listStopsByPlaceId: vi.fn()
+  listStopsByPlaceId: vi.fn(),
+  isStopsAccessUnavailableError: vi.fn((error: unknown) => {
+    return (
+      error instanceof Error &&
+      error.message.toLowerCase().includes("permission denied") &&
+      error.message.toLowerCase().includes("table stops")
+    );
+  })
 }));
 
 vi.mock("../src/models/transfer-point.model.js", () => ({
@@ -45,6 +52,10 @@ vi.mock("../src/ai/route-summary.js", () => ({
   generateRouteSummary: vi.fn()
 }));
 
+vi.mock("../src/services/google-route-fallback.service.js", () => ({
+  queryGoogleFallbackRoutes: vi.fn()
+}));
+
 import { AiUnavailableError } from "../src/ai/client.js";
 import * as intentParser from "../src/ai/intent-parser.js";
 import * as areaUpdateModel from "../src/models/area-update.model.js";
@@ -55,7 +66,9 @@ import * as routeModel from "../src/models/route.model.js";
 import * as stopModel from "../src/models/stop.model.js";
 import * as transferPointModel from "../src/models/transfer-point.model.js";
 import * as userPreferenceModel from "../src/models/user-preference.model.js";
+import * as googleRouteFallbackService from "../src/services/google-route-fallback.service.js";
 import { queryRoutes } from "../src/services/route-query.service.js";
+import { HttpError } from "../src/types/http-error.js";
 
 const mockedFareModel = vi.mocked(fareModel);
 const mockedIntentParser = vi.mocked(intentParser);
@@ -66,6 +79,7 @@ const mockedRouteSummary = vi.mocked(routeSummary);
 const mockedStopModel = vi.mocked(stopModel);
 const mockedTransferPointModel = vi.mocked(transferPointModel);
 const mockedUserPreferenceModel = vi.mocked(userPreferenceModel);
+const mockedGoogleRouteFallbackService = vi.mocked(googleRouteFallbackService);
 
 const createStop = (id: string, stopName: string, mode: "jeepney" | "lrt2", placeId: string | null = null) => ({
   id,
@@ -166,6 +180,11 @@ describe("route query service", () => {
     mockedStopModel.findNearestStops.mockResolvedValue([]);
     mockedTransferPointModel.listTransferPointsByStopIds.mockResolvedValue([]);
     mockedFareModel.getActiveFareCatalog.mockResolvedValue(jeepneyFareCatalog);
+    mockedGoogleRouteFallbackService.queryGoogleFallbackRoutes.mockResolvedValue({
+      status: "no_results",
+      options: [],
+      message: "Google Maps did not return fallback transit routes."
+    });
   });
 
   it("uses saved preferences when request overrides are absent and returns a direct route", async () => {
@@ -287,7 +306,7 @@ describe("route query service", () => {
     expect(result.options).toHaveLength(1);
     expect(result.options[0]?.totalFare).toBe(15.88);
     expect(result.options[0]?.transferCount).toBe(0);
-    expect(result.options[0]?.recommendationLabel).toBe("Cheapest option");
+    expect(result.options[0]?.recommendationLabel).toBe("Best for your preference");
   });
 
   it("uses AI-parsed query text when explicit points are absent", async () => {
@@ -668,7 +687,7 @@ describe("route query service", () => {
     expect(result.options).toHaveLength(1);
     expect(result.options[0]?.transferCount).toBe(1);
     expect(result.options[0]?.legs.map((leg) => leg.type)).toEqual(["ride", "walk", "ride"]);
-    expect(result.options[0]?.recommendationLabel).toBe("Fastest option");
+    expect(result.options[0]?.recommendationLabel).toBe("Best for your preference");
   });
 
   it("builds a multi-transfer route when two transfers are needed", async () => {
@@ -1030,6 +1049,106 @@ describe("route query service", () => {
     expect(result.options).toEqual([]);
     expect(result.message).toBe(
       "No supported route found for Cubao to PUP Sta. Mesa in the current coverage"
+    );
+  });
+
+  it("treats a coordinate-backed origin as resolved when place lookup fails", async () => {
+    mockedUserPreferenceModel.getUserPreferenceByUserId.mockResolvedValue(null);
+    mockedPlaceModel.resolvePlaceReference
+      .mockResolvedValueOnce({
+        status: "unresolved"
+      })
+      .mockResolvedValueOnce({
+        status: "resolved",
+        place: {
+          id: "place-destination",
+          canonicalName: "PUP Sta. Mesa",
+          city: "Manila",
+          kind: "campus",
+          latitude: 14.6,
+          longitude: 121.01,
+          googlePlaceId: null,
+          createdAt: "2026-03-19T00:00:00.000Z",
+          matchedBy: "canonicalName",
+          matchedText: "PUP Sta. Mesa"
+        }
+      });
+    mockedStopModel.findNearestStops.mockRejectedValue(
+      new HttpError(500, "Failed to search stops: permission denied for table stops")
+    );
+    mockedStopModel.listStopsByPlaceId.mockRejectedValue(
+      new HttpError(500, "Failed to fetch stops: permission denied for table stops")
+    );
+    mockedRouteModel.listActiveRouteVariants.mockResolvedValue([]);
+
+    const result = await queryRoutes({
+      request: {
+        origin: {
+          label: "My location",
+          latitude: 14.5981,
+          longitude: 121.0356
+        },
+        destination: {
+          label: "PUP Sta. Mesa"
+        }
+      }
+    });
+
+    expect(result.normalizedQuery.origin.matchedBy).toBe("coordinates");
+    expect(result.normalizedQuery.origin.placeId).toBe("coords:origin:14.598100:121.035600");
+    expect(result.options).toEqual([]);
+    expect(result.message).toBe(
+      "No supported route found for My location to PUP Sta. Mesa in the current coverage"
+    );
+  });
+
+  it("treats a coordinate-backed destination as resolved when place lookup fails", async () => {
+    mockedUserPreferenceModel.getUserPreferenceByUserId.mockResolvedValue(null);
+    mockedPlaceModel.resolvePlaceReference
+      .mockResolvedValueOnce({
+        status: "resolved",
+        place: {
+          id: "place-origin",
+          canonicalName: "Cubao",
+          city: "Quezon City",
+          kind: "area",
+          latitude: 14.62,
+          longitude: 121.05,
+          googlePlaceId: null,
+          createdAt: "2026-03-19T00:00:00.000Z",
+          matchedBy: "alias",
+          matchedText: "Cubao"
+        }
+      })
+      .mockResolvedValueOnce({
+        status: "unresolved"
+      });
+    mockedStopModel.findNearestStops.mockRejectedValue(
+      new HttpError(500, "Failed to search stops: permission denied for table stops")
+    );
+    mockedStopModel.listStopsByPlaceId.mockRejectedValue(
+      new HttpError(500, "Failed to fetch stops: permission denied for table stops")
+    );
+    mockedRouteModel.listActiveRouteVariants.mockResolvedValue([]);
+
+    const result = await queryRoutes({
+      request: {
+        origin: {
+          label: "Cubao"
+        },
+        destination: {
+          label: "DLSU",
+          latitude: 14.5649,
+          longitude: 120.9943
+        }
+      }
+    });
+
+    expect(result.normalizedQuery.destination.matchedBy).toBe("coordinates");
+    expect(result.normalizedQuery.destination.placeId).toBe("coords:destination:14.564900:120.994300");
+    expect(result.options).toEqual([]);
+    expect(result.message).toBe(
+      "No supported route found for Cubao to DLSU in the current coverage"
     );
   });
 

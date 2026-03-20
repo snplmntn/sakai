@@ -57,16 +57,29 @@ const NavigationAlarmContext = createContext<NavigationAlarmContextValue | undef
 const ALERT_VIBRATION_PATTERN = getNotificationAlertPattern();
 
 const createSessionRouteCandidate = (
-  routeId: string,
-  routeLabel: string,
-  destination: NavigationTarget
+  session: {
+    routeId: string;
+    routeLabel: string;
+    summary: string;
+    durationLabel: string;
+    fareLabel: string;
+    originLabel: string;
+    destinationLabel: string;
+    corridorTags: string[];
+    relevantIncidents: NavigationRouteCandidate['relevantIncidents'];
+    destination: NavigationTarget;
+  }
 ): NavigationRouteCandidate => ({
-  routeId,
-  routeLabel,
-  summary: '',
-  durationLabel: '',
-  fareLabel: '',
-  destination,
+  routeId: session.routeId,
+  routeLabel: session.routeLabel,
+  summary: session.summary,
+  durationLabel: session.durationLabel,
+  fareLabel: session.fareLabel,
+  originLabel: session.originLabel,
+  destinationLabel: session.destinationLabel,
+  corridorTags: session.corridorTags,
+  relevantIncidents: session.relevantIncidents,
+  destination: session.destination,
 });
 
 export function NavigationAlarmProvider({ children }: { children: ReactNode }) {
@@ -112,13 +125,7 @@ export function NavigationAlarmProvider({ children }: { children: ReactNode }) {
         setHasTriggeredArrivalAlert(false);
         setIsNavigationActive(true);
         setActiveNavigationRouteId(storedSession.routeId);
-        setActiveNavigationRoute(
-          createSessionRouteCandidate(
-            storedSession.routeId,
-            storedSession.routeLabel,
-            storedSession.destination
-          )
-        );
+        setActiveNavigationRoute(createSessionRouteCandidate(storedSession));
         setNavigationTarget(storedSession.destination);
         setAlarmMode(storedSession.alarmMode);
         setAlertRadiusMeters(storedSession.alertRadiusMeters);
@@ -367,6 +374,13 @@ export function NavigationAlarmProvider({ children }: { children: ReactNode }) {
           await writeActiveNavigationSession({
             routeId: route.routeId,
             routeLabel: route.routeLabel,
+            summary: route.summary,
+            durationLabel: route.durationLabel,
+            fareLabel: route.fareLabel,
+            originLabel: route.originLabel,
+            destinationLabel: route.destinationLabel,
+            corridorTags: route.corridorTags,
+            relevantIncidents: route.relevantIncidents,
             destination: route.destination,
             alertRadiusMeters: selectedAlertRadiusMeters,
             alarmMode: selectedAlarmMode,

@@ -16,6 +16,9 @@ interface EmailPasswordCredentials {
 interface RefreshSessionInput {
   refreshToken: string;
 }
+
+const GOOGLE_AUTH_START_TIMEOUT_MS = 60000;
+
 export const signUp = async (
   credentials: EmailPasswordCredentials
 ): Promise<AuthPayload> =>
@@ -59,6 +62,7 @@ export const getGoogleAuthUrl = async (
     {
       method: 'GET',
       path: `/api/auth/google/start?appRedirectUri=${encodeURIComponent(appRedirectUri)}`,
+      timeoutMs: GOOGLE_AUTH_START_TIMEOUT_MS,
     },
     parseGoogleAuthUrlPayload
   );

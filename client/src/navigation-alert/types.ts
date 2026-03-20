@@ -1,3 +1,5 @@
+import type { RouteQueryIncident } from '../routes/types';
+
 export type AlarmMode = 'sound' | 'vibration' | 'both';
 
 export type AlertRadiusMeters = 150 | 300 | 500;
@@ -14,12 +16,23 @@ export interface NavigationRouteCandidate {
   summary: string;
   durationLabel: string;
   fareLabel: string;
+  originLabel: string;
+  destinationLabel: string;
+  corridorTags: string[];
+  relevantIncidents: RouteQueryIncident[];
   destination: NavigationTarget;
 }
 
 export interface ActiveNavigationSession {
   routeId: string;
   routeLabel: string;
+  summary: string;
+  durationLabel: string;
+  fareLabel: string;
+  originLabel: string;
+  destinationLabel: string;
+  corridorTags: string[];
+  relevantIncidents: RouteQueryIncident[];
   destination: NavigationTarget;
   alertRadiusMeters: AlertRadiusMeters;
   alarmMode: AlarmMode;

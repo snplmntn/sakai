@@ -3,7 +3,7 @@ import type { PlaceMatchSource } from '../places/types';
 export type RoutePreference = 'fastest' | 'cheapest' | 'balanced';
 export type PassengerType = 'regular' | 'student' | 'senior' | 'pwd';
 export type RouteModifier = 'jeep_if_possible' | 'less_walking';
-export type RideMode = 'jeepney' | 'uv' | 'mrt3' | 'lrt1' | 'lrt2' | 'car';
+export type RideMode = 'jeepney' | 'uv' | 'mrt3' | 'lrt1' | 'lrt2' | 'car' | 'bus' | 'rail';
 export type FareConfidence = 'official' | 'estimated' | 'partially_estimated';
 
 export interface RouteQueryPointInput {
@@ -53,6 +53,10 @@ export interface RouteQueryRideLeg {
   durationMinutes: number;
   corridorTags: string[];
   fare: FareBreakdown;
+  pathCoordinates?: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 export interface RouteQueryWalkLeg {
@@ -63,6 +67,10 @@ export interface RouteQueryWalkLeg {
   distanceMeters: number;
   durationMinutes: number;
   fare: FareBreakdown;
+  pathCoordinates?: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 export interface RouteQueryDriveLeg {
@@ -74,6 +82,10 @@ export interface RouteQueryDriveLeg {
   distanceKm: number;
   durationMinutes: number;
   fare: FareBreakdown;
+  pathCoordinates?: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
 }
 
 export type RouteQueryLeg = RouteQueryRideLeg | RouteQueryWalkLeg | RouteQueryDriveLeg;
@@ -90,19 +102,36 @@ export interface RouteQueryIncident {
   sourceUrl: string;
 }
 
+export interface RouteNavigationTarget {
+  latitude: number;
+  longitude: number;
+  label: string;
+  kind: 'destination' | 'dropoff_stop';
+}
+
 export interface RouteQueryOption {
   id: string;
   summary: string;
   recommendationLabel: string;
   highlights: string[];
   totalDurationMinutes: number;
-  totalFare: number;
+  totalFare: number | null;
   fareConfidence: FareConfidence;
   transferCount: number;
   corridorTags: string[];
   fareAssumptions: string[];
   legs: RouteQueryLeg[];
   relevantIncidents: RouteQueryIncident[];
+  navigationTarget: RouteNavigationTarget;
+  source: 'sakai' | 'google_fallback';
+  providerLabel?: string;
+  providerNotice?: string;
+}
+
+export interface RouteQueryFallbackResult {
+  status: 'available' | 'no_results' | 'unavailable' | 'skipped';
+  options: RouteQueryOption[];
+  message?: string;
 }
 
 export interface RouteQueryResult {
@@ -111,11 +140,15 @@ export interface RouteQueryResult {
       placeId: string;
       label: string;
       matchedBy: PlaceMatchSource;
+      latitude: number;
+      longitude: number;
     };
     destination: {
       placeId: string;
       label: string;
       matchedBy: PlaceMatchSource;
+      latitude: number;
+      longitude: number;
     };
     preference: RoutePreference;
     passengerType: PassengerType;
@@ -125,5 +158,6 @@ export interface RouteQueryResult {
     modifierSource: string;
   };
   options: RouteQueryOption[];
+  googleFallback: RouteQueryFallbackResult;
   message?: string;
 }

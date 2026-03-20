@@ -11,6 +11,20 @@ import type { Database } from "../types/database.js";
 
 type StopRow = Database["public"]["Tables"]["stops"]["Row"];
 
+const isStopsPermissionError = (message: string) => {
+  const normalizedMessage = message.toLowerCase();
+
+  return (
+    normalizedMessage.includes("permission denied") &&
+    normalizedMessage.includes("table stops")
+  );
+};
+
+export const isStopsAccessUnavailableError = (error: unknown) =>
+  error instanceof HttpError &&
+  typeof error.message === "string" &&
+  isStopsPermissionError(error.message);
+
 export interface FindNearestStopsOptions {
   coordinates: Coordinates;
   limit: number;
