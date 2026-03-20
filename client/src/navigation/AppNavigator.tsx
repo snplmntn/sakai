@@ -44,9 +44,21 @@ export default function AppNavigator() {
           component={MainTabNavigator}
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ title: 'Preferences' }} />
-        <Stack.Screen name="NavigationAlarm" component={NavigationAlarmScreen} options={{ title: 'Navigation alarm' }} />
-        <Stack.Screen name="CommunityHub" component={CommunityHubScreen} options={{ title: 'Community' }} />
+        <Stack.Screen
+          name="Preferences"
+          component={PreferencesScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="NavigationAlarm"
+          component={NavigationAlarmScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="CommunityHub"
+          component={CommunityHubScreen}
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="CommunityQuestionDetail"
           component={CommunityQuestionDetailScreen}
@@ -91,9 +103,21 @@ export default function AppNavigator() {
         component={MainTabNavigator}
         options={{ headerShown: false }}
       />
-      <Stack.Screen name="Preferences" component={PreferencesScreen} options={{ title: 'Preferences' }} />
-      <Stack.Screen name="NavigationAlarm" component={NavigationAlarmScreen} options={{ title: 'Navigation alarm' }} />
-      <Stack.Screen name="CommunityHub" component={CommunityHubScreen} options={{ title: 'Community' }} />
+      <Stack.Screen
+        name="Preferences"
+        component={PreferencesScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NavigationAlarm"
+        component={NavigationAlarmScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="CommunityHub"
+        component={CommunityHubScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }

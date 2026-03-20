@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 import NavigationAlarmCard from '../components/NavigationAlarmCard';
 import SafeScreen from '../components/SafeScreen';
-import { COLORS, SPACING } from '../constants/theme';
+import { COLORS, FONTS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useNavigationAlarm } from '../navigation-alert/NavigationAlarmContext';
 import { queryRelevantAreaUpdates } from '../routes/api';
 import type { RouteQueryIncident } from '../routes/types';
@@ -65,6 +65,12 @@ export default function NavigationAlarmScreen() {
         }
       >
         <View style={styles.body}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Navigation alarm</Text>
+            <Text style={styles.subtitle}>
+              Manage your near-destination alert with simple trip-ready defaults.
+            </Text>
+          </View>
           <NavigationAlarmCard
             incidents={incidents}
             isRefreshingIncidents={isRefreshingIncidents}
@@ -82,5 +88,21 @@ const styles = StyleSheet.create({
   },
   body: {
     padding: SPACING.lg,
+    gap: SPACING.lg,
+  },
+  header: {
+    gap: SPACING.xs,
+    paddingTop: SPACING.xs,
+  },
+  title: {
+    fontSize: TYPOGRAPHY.fontSizes.xlarge,
+    fontFamily: FONTS.bold,
+    color: COLORS.midnight,
+  },
+  subtitle: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: COLORS.subText,
+    lineHeight: 20,
   },
 });

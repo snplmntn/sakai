@@ -337,7 +337,6 @@ export default function CommunityHubScreen({
       {status !== 'authenticated' || !accessToken ? (
         <View style={styles.signedOutState}>
           <View style={styles.signedOutCard}>
-            <Text style={styles.eyebrow}>Community</Text>
             <Text style={styles.signedOutTitle}>Sign in to view community activity.</Text>
             <Text style={styles.signedOutSubtitle}>
               Ask riders, answer commute threads, and track the route or fare updates you shared.
@@ -362,9 +361,15 @@ export default function CommunityHubScreen({
           <RefreshControl refreshing={isRefreshing} onRefresh={() => void loadCommunityData('refresh')} />
         }
       >
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageTitle}>Community</Text>
+          <Text style={styles.pageSubtitle}>
+            Ask riders, answer commute threads, and share route fixes with less noise.
+          </Text>
+        </View>
+
         <View style={styles.heroCard}>
-          <Text style={styles.eyebrow}>Community</Text>
-          <Text style={styles.heroTitle}>Ask riders. Answer threads. Share route fixes.</Text>
+          <Text style={styles.heroTitle}>Ask riders. Share route fixes.</Text>
           <Text style={styles.heroSubtitle}>
             Community answers add local context without changing trusted route data.
           </Text>
@@ -553,73 +558,79 @@ export default function CommunityHubScreen({
           </View>
         ) : null}
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent rider threads</Text>
-          <Text style={styles.sectionSubtitle}>Answer live commute questions from the community.</Text>
-        </View>
-        <View style={styles.feedSection}>
-          {isLoading ? <ActivityIndicator color={COLORS.primary} /> : null}
-          {!isLoading && recentQuestions.length === 0 ? (
-            <Text style={styles.emptyText}>No rider threads yet.</Text>
-          ) : null}
-          {recentQuestions.map((question) => (
-            <ThreadCard
-              key={question.id}
-              question={question}
-              currentUserId={user?.id}
-              onOpen={() =>
-                navigation.navigate('CommunityQuestionDetail', {
-                  questionId: question.id,
-                })
-              }
-            />
-          ))}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>My questions</Text>
-          <Text style={styles.sectionSubtitle}>Threads you started and can revisit.</Text>
-        </View>
-        <View style={styles.feedSection}>
-          {!isLoading && myQuestions.length === 0 ? (
-            <Text style={styles.emptyText}>No community questions yet.</Text>
-          ) : null}
-          {myQuestions.map((question) => (
-            <ThreadCard
-              key={question.id}
-              question={question}
-              currentUserId={user?.id}
-              onOpen={() =>
-                navigation.navigate('CommunityQuestionDetail', {
-                  questionId: question.id,
-                })
-              }
-            />
-          ))}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent rider threads</Text>
+            <Text style={styles.sectionSubtitle}>Answer live commute questions from the community.</Text>
+          </View>
+          <View style={styles.feedSection}>
+            {isLoading ? <ActivityIndicator color={COLORS.primary} /> : null}
+            {!isLoading && recentQuestions.length === 0 ? (
+              <Text style={styles.emptyText}>No rider threads yet.</Text>
+            ) : null}
+            {recentQuestions.map((question) => (
+              <ThreadCard
+                key={question.id}
+                question={question}
+                currentUserId={user?.id}
+                onOpen={() =>
+                  navigation.navigate('CommunityQuestionDetail', {
+                    questionId: question.id,
+                  })
+                }
+              />
+            ))}
+          </View>
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>My submissions</Text>
-          <Text style={styles.sectionSubtitle}>Structured route and fare updates under review.</Text>
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>My questions</Text>
+            <Text style={styles.sectionSubtitle}>Threads you started and can revisit.</Text>
+          </View>
+          <View style={styles.feedSection}>
+            {!isLoading && myQuestions.length === 0 ? (
+              <Text style={styles.emptyText}>No community questions yet.</Text>
+            ) : null}
+            {myQuestions.map((question) => (
+              <ThreadCard
+                key={question.id}
+                question={question}
+                currentUserId={user?.id}
+                onOpen={() =>
+                  navigation.navigate('CommunityQuestionDetail', {
+                    questionId: question.id,
+                  })
+                }
+              />
+            ))}
+          </View>
         </View>
-        <View style={styles.submissionSection}>
-          {mySubmissions.map((submission) => (
-            <View key={submission.id} style={styles.submissionCard}>
-              <View style={styles.rowBetween}>
-                <Text style={styles.submissionTitle}>{submission.title}</Text>
-                <View style={[styles.badge, submissionBadgeStyle(submission.status)]}>
-                  <Text style={styles.badgeText}>{submission.status}</Text>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>My submissions</Text>
+            <Text style={styles.sectionSubtitle}>Structured route and fare updates under review.</Text>
+          </View>
+          <View style={styles.submissionSection}>
+            {mySubmissions.map((submission) => (
+              <View key={submission.id} style={styles.submissionCard}>
+                <View style={styles.rowBetween}>
+                  <Text style={styles.submissionTitle}>{submission.title}</Text>
+                  <View style={[styles.badge, submissionBadgeStyle(submission.status)]}>
+                    <Text style={styles.badgeText}>{submission.status}</Text>
+                  </View>
                 </View>
+                <Text style={styles.submissionMeta}>
+                  {submission.submissionType.replace(/_/g, ' ')}
+                </Text>
+                <Text style={styles.submissionMeta}>{formatDate(submission.createdAt)}</Text>
               </View>
-              <Text style={styles.submissionMeta}>
-                {submission.submissionType.replace(/_/g, ' ')}
-              </Text>
-              <Text style={styles.submissionMeta}>{formatDate(submission.createdAt)}</Text>
-            </View>
-          ))}
-          {!isLoading && mySubmissions.length === 0 ? (
-            <Text style={styles.emptyText}>No submissions yet.</Text>
-          ) : null}
+            ))}
+            {!isLoading && mySubmissions.length === 0 ? (
+              <Text style={styles.emptyText}>No submissions yet.</Text>
+            ) : null}
+          </View>
         </View>
       </ScrollView>
       )}
@@ -635,102 +646,114 @@ const styles = StyleSheet.create({
   },
   signedOutCard: {
     backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     padding: SPACING.lg,
-    gap: SPACING.md,
+    gap: SPACING.sm,
     borderWidth: 1,
-    borderColor: '#D8E4EC',
+    borderColor: '#E4EBF2',
   },
   signedOutTitle: {
+    color: COLORS.midnight,
+    fontFamily: FONTS.bold,
+    fontSize: TYPOGRAPHY.fontSizes.large,
+    lineHeight: 28,
+  },
+  signedOutSubtitle: {
+    color: '#5A6B79',
+    fontFamily: FONTS.regular,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    lineHeight: 20,
+  },
+  content: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.lg,
+    gap: SPACING.md,
+    paddingBottom: SPACING.xxl,
+  },
+  pageHeader: {
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.xs,
+  },
+  pageTitle: {
+    color: COLORS.midnight,
+    fontFamily: FONTS.bold,
+    fontSize: TYPOGRAPHY.fontSizes.xlarge,
+    lineHeight: 32,
+  },
+  pageSubtitle: {
+    color: '#6D7F90',
+    fontFamily: FONTS.regular,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    lineHeight: 20,
+  },
+  heroCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.md,
+    padding: SPACING.lg,
+    gap: SPACING.sm,
+    borderWidth: 1,
+    borderColor: '#E4EBF2',
+  },
+  heroTitle: {
     color: COLORS.midnight,
     fontFamily: FONTS.bold,
     fontSize: TYPOGRAPHY.fontSizes.xlarge,
     lineHeight: 30,
   },
-  signedOutSubtitle: {
-    color: '#5A6B79',
-    fontFamily: FONTS.regular,
-    fontSize: TYPOGRAPHY.fontSizes.body,
-    lineHeight: 22,
-  },
-  content: {
-    padding: SPACING.lg,
-    gap: SPACING.lg,
-    paddingBottom: SPACING.xxl,
-  },
-  heroCard: {
-    backgroundColor: COLORS.midnight,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  eyebrow: {
-    color: '#9CC6E3',
-    fontFamily: FONTS.medium,
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heroTitle: {
-    color: COLORS.white,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.hero,
-    lineHeight: 38,
-  },
   heroSubtitle: {
-    color: '#CAD8E4',
+    color: '#6D7F90',
     fontFamily: FONTS.regular,
-    fontSize: TYPOGRAPHY.fontSizes.body,
-    lineHeight: 22,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    lineHeight: 20,
   },
   heroActions: {
     flexDirection: 'row',
     gap: SPACING.sm,
-    marginTop: SPACING.sm,
+    marginTop: SPACING.xs,
   },
   heroPrimaryAction: {
     flex: 1,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.white,
-    paddingVertical: SPACING.md,
+    borderRadius: 14,
+    backgroundColor: COLORS.black,
+    paddingVertical: SPACING.sm + 4,
     alignItems: 'center',
   },
   heroPrimaryActionText: {
-    color: COLORS.midnight,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.body,
+    color: COLORS.white,
+    fontFamily: FONTS.semibold,
+    fontSize: TYPOGRAPHY.fontSizes.small,
   },
   heroSecondaryAction: {
     flex: 1,
-    borderRadius: RADIUS.full,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#35516B',
-    backgroundColor: '#183049',
-    paddingVertical: SPACING.md,
+    borderColor: '#D8E4EC',
+    backgroundColor: '#F8FBFD',
+    paddingVertical: SPACING.sm + 4,
     alignItems: 'center',
   },
   heroSecondaryActionText: {
-    color: COLORS.white,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.body,
+    color: COLORS.midnight,
+    fontFamily: FONTS.semibold,
+    fontSize: TYPOGRAPHY.fontSizes.small,
   },
   composerCard: {
     backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     padding: SPACING.md,
-    gap: SPACING.md,
+    gap: SPACING.sm,
     borderWidth: 1,
-    borderColor: '#D8E4EC',
+    borderColor: '#E4EBF2',
   },
   composerTitle: {
     color: COLORS.midnight,
     fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
   },
   composerSubtitle: {
     color: '#5A6B79',
     fontFamily: FONTS.regular,
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
   },
   dismissButton: {
     paddingHorizontal: SPACING.sm,
@@ -766,16 +789,18 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
   input: {
-    borderRadius: RADIUS.md,
-    backgroundColor: '#F7FBFE',
+    borderRadius: 12,
+    backgroundColor: '#F8FBFD',
+    borderWidth: 1,
+    borderColor: '#E6EDF3',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     color: '#102033',
     fontFamily: FONTS.regular,
-    fontSize: TYPOGRAPHY.fontSizes.body,
+    fontSize: TYPOGRAPHY.fontSizes.small,
   },
   textArea: {
-    minHeight: 104,
+    minHeight: 92,
     textAlignVertical: 'top',
   },
   chipList: {
@@ -803,9 +828,9 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   primaryButton: {
-    borderRadius: RADIUS.full,
+    borderRadius: 14,
     backgroundColor: COLORS.black,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm + 4,
     alignItems: 'center',
   },
   primaryButtonDisabled: {
@@ -813,36 +838,43 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: COLORS.white,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.body,
+    fontFamily: FONTS.semibold,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+  },
+  sectionCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#E4EBF2',
+    padding: SPACING.md,
+    gap: SPACING.sm,
   },
   sectionHeader: {
     gap: SPACING.xs,
-    paddingHorizontal: SPACING.xs,
   },
   sectionTitle: {
     color: COLORS.midnight,
     fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.large,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
   },
   sectionSubtitle: {
     color: '#5A6B79',
     fontFamily: FONTS.regular,
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
   },
   feedSection: {
-    gap: SPACING.md,
+    gap: SPACING.sm,
   },
   submissionSection: {
     gap: SPACING.sm,
   },
   threadCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg,
+    backgroundColor: '#FBFCFD',
+    borderRadius: 14,
     padding: SPACING.md,
-    gap: SPACING.sm,
+    gap: SPACING.xs + 6,
     borderWidth: 1,
-    borderColor: '#E2EBF2',
+    borderColor: '#E8EEF3',
   },
   threadHeaderRow: {
     flexDirection: 'row',
@@ -850,17 +882,17 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   threadAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#D8E8F5',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E8EFF5',
     alignItems: 'center',
     justifyContent: 'center',
   },
   threadAvatarText: {
     color: COLORS.midnight,
     fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.body,
+    fontSize: TYPOGRAPHY.fontSizes.small,
   },
   threadHeaderContent: {
     flex: 1,
@@ -873,8 +905,8 @@ const styles = StyleSheet.create({
   },
   threadAuthor: {
     color: COLORS.midnight,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.body,
+    fontFamily: FONTS.semibold,
+    fontSize: TYPOGRAPHY.fontSizes.small,
   },
   threadDot: {
     color: '#8191A0',
@@ -889,19 +921,19 @@ const styles = StyleSheet.create({
   threadRouteMeta: {
     color: '#5A6B79',
     fontFamily: FONTS.medium,
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
   },
   threadTitle: {
     color: COLORS.midnight,
     fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.large,
-    lineHeight: 25,
+    fontSize: TYPOGRAPHY.fontSizes.medium,
+    lineHeight: 22,
   },
   threadPreview: {
     color: '#213547',
     fontFamily: FONTS.regular,
-    fontSize: TYPOGRAPHY.fontSizes.body,
-    lineHeight: 22,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    lineHeight: 20,
   },
   threadFooterRow: {
     flexDirection: 'row',
@@ -917,35 +949,35 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.small,
   },
   inlineActionButton: {
-    borderRadius: RADIUS.full,
-    backgroundColor: '#E7F1FF',
+    borderRadius: 999,
+    backgroundColor: '#EEF4F8',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
   },
   inlineActionText: {
-    color: COLORS.primary,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    color: '#304A63',
+    fontFamily: FONTS.semibold,
+    fontSize: 11,
   },
   submissionCard: {
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    backgroundColor: '#FBFCFD',
     padding: SPACING.md,
     gap: SPACING.xs,
     borderWidth: 1,
-    borderColor: '#E2EBF2',
+    borderColor: '#E8EEF3',
   },
   submissionTitle: {
     flex: 1,
     marginRight: SPACING.sm,
     color: COLORS.midnight,
     fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.body,
+    fontSize: TYPOGRAPHY.fontSizes.small,
   },
   submissionMeta: {
     color: '#5A6B79',
     fontFamily: FONTS.regular,
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontSize: 11,
   },
   rowBetween: {
     flexDirection: 'row',
@@ -953,14 +985,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   badge: {
-    borderRadius: RADIUS.full,
+    borderRadius: 999,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
   },
   badgeText: {
     color: COLORS.white,
-    fontFamily: FONTS.bold,
-    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    fontSize: 10,
     textTransform: 'capitalize',
   },
   badgeNeutral: {

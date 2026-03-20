@@ -21,7 +21,9 @@ import {
 } from './api';
 import {
   clearStoredAuthState,
+  readHasCompletedOnboarding,
   readStoredAuthState,
+  writeHasCompletedOnboarding,
   writeStoredAuthState,
 } from './storage';
 import {
@@ -106,6 +108,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
   const googleAuthInFlightRef = useRef(false);
 
+  const markOnboardingComplete = useCallback(async (): Promise<void> => {
+    await writeHasCompletedOnboarding();
+    setUnauthenticatedRoute('Login');
+  }, []);
   const syncStoredPreferenceDraft = useCallback(async (accessToken: string): Promise<void> => {
     const storedDraft = await readStoredPreferenceDraft();
 
@@ -124,35 +130,47 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await clearStoredPreferenceDraft();
   }, []);
 
-  const persistAuthenticatedState = useCallback(async (value: StoredAuthState): Promise<void> => {
-    await writeStoredAuthState(value);
+  const persistAuthenticatedState = useCallback(
+    async (value: StoredAuthState): Promise<void> => {
+      await writeStoredAuthState(value);
 
-    try {
-      await syncStoredPreferenceDraft(value.session.accessToken);
-    } catch (error) {
-      console.warn('Failed to sync onboarding preferences after authentication', {
-        reason: error instanceof Error ? error.message : 'unknown error',
-      });
-    }
+      try {
+        await syncStoredPreferenceDraft(value.session.accessToken);
+      } catch (error) {
+        console.warn('Failed to sync onboarding preferences after authentication', {
+          reason: error instanceof Error ? error.message : 'unknown error',
+        });
+      }
 
-    setUnauthenticatedRoute('Welcome');
-    setAuthState(toAuthenticatedState(value));
-  }, [syncStoredPreferenceDraft]);
+      await markOnboardingComplete();
+      setUnauthenticatedRoute('Login');
+      setAuthState(toAuthenticatedState(value));
+    },
+    [markOnboardingComplete, syncStoredPreferenceDraft]
+  );
 
-  const clearAuthState = useCallback(async (
-    route: 'Welcome' | 'Login' = 'Welcome'
-  ): Promise<void> => {
-    await clearStoredAuthState();
-    setUnauthenticatedRoute(route);
-    setAuthState(UNAUTHENTICATED_STATE);
-  }, []);
+  const clearAuthState = useCallback(
+    async (route: 'Welcome' | 'Login' = 'Welcome'): Promise<void> => {
+      await clearStoredAuthState();
+      setUnauthenticatedRoute(route);
+      setAuthState(UNAUTHENTICATED_STATE);
+    },
+    []
+  );
 
   useEffect(() => {
     let isMounted = true;
 
     const hydrateAuthState = async () => {
       try {
-        const storedState = await readStoredAuthState();
+        const [storedState, storedOnboardingCompleted] = await Promise.all([
+          readStoredAuthState(),
+          readHasCompletedOnboarding(),
+        ]);
+
+        if (isMounted) {
+          setUnauthenticatedRoute(storedOnboardingCompleted ? 'Login' : 'Welcome');
+        }
 
         if (!storedState) {
           if (isMounted) {
@@ -205,10 +223,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       password,
     });
 
-    await clearAuthState('Welcome');
+    await markOnboardingComplete();
+    await clearAuthState('Login');
 
     return payload;
-  }, [clearAuthState]);
+  }, [clearAuthState, markOnboardingComplete]);
 
   const authenticateWithGoogle = useCallback(async (origin: GoogleAuthOrigin): Promise<void> => {
     if (googleAuthInFlightRef.current) {

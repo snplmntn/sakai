@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import { readStoredPreferenceDraft } from '../preferences/storage';
 import type { RoutePreference } from '../preferences/types';
 import {
   OnboardingPreferencesLayout,
@@ -19,6 +20,24 @@ export default function OnboardingRoutePreferenceScreen({
   navigation,
 }: OnboardingRoutePreferenceScreenProps) {
   const [selectedPreference, setSelectedPreference] = useState<RoutePreference>('balanced');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void (async () => {
+      const storedDraft = await readStoredPreferenceDraft();
+
+      if (!isMounted || !storedDraft) {
+        return;
+      }
+
+      setSelectedPreference(storedDraft.defaultPreference);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleSelect = (value: RoutePreference) => {
     setSelectedPreference(value);
