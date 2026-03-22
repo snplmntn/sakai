@@ -19,6 +19,8 @@ import type {
   RouteStop,
 } from './types';
 
+const ROUTE_QUERY_TIMEOUT_MS = 180000;
+
 const parseString = (value: unknown, field: string): string => {
   if (typeof value !== 'string') {
     throw new Error(`Invalid ${field} in route response`);
@@ -396,6 +398,7 @@ export const queryRoutes = async (input: {
     {
       method: 'POST',
       path: '/api/routes/query',
+      timeoutMs: ROUTE_QUERY_TIMEOUT_MS,
       accessToken: input.accessToken,
       body: {
         origin: toPointInput(input.origin),
@@ -424,6 +427,7 @@ export const queryRoutesByText = async (input: {
     {
       method: 'POST',
       path: '/api/routes/query',
+      timeoutMs: ROUTE_QUERY_TIMEOUT_MS,
       accessToken: input.accessToken,
       body: {
         queryText: input.queryText,

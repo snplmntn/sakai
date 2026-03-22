@@ -91,6 +91,7 @@ const toAuthenticatedState = (value: StoredAuthState): AuthState => ({
 });
 
 const GOOGLE_AUTH_REDIRECT_PATH = 'auth/callback';
+const GOOGLE_AUTH_NATIVE_REDIRECT_URI = 'sakai://auth/callback';
 
 const assertAuthenticatedPayload = (value: AuthPayload): StoredAuthState => {
   if (!hasAuthenticatedSession(value)) {
@@ -249,6 +250,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const actionLabel = origin === 'signup' ? 'sign up' : 'sign in';
     try {
       const redirectUri = ExpoAuthSession.makeRedirectUri({
+        native: GOOGLE_AUTH_NATIVE_REDIRECT_URI,
         scheme: 'sakai',
         path: GOOGLE_AUTH_REDIRECT_PATH,
       });

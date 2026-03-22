@@ -29,10 +29,12 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
 5. In Supabase Auth, enable the Email provider
 6. In Supabase Auth, enable the Google provider and add your Google OAuth client credentials
 7. Add your backend Google callback URL to the Supabase allowed redirect URLs.
-   For local dev that is usually `http://localhost:3000/api/auth/google/callback`.
+   For browser-based local dev that is usually `http://localhost:3000/api/auth/google/callback`.
+   For the Android emulator, use `http://10.0.2.2:3000/api/auth/google/callback` instead.
    For a deployed backend it should be your deployed API origin plus `/api/auth/google/callback`.
 8. Set `AUTH_APP_REDIRECT_URI` to the app callback that should receive auth results after the backend exchanges the Google code.
    For the current Expo app this should be `sakai://auth/callback`.
+   If you set `AUTH_GOOGLE_REDIRECT_URI` for local emulator testing, keep it aligned with the same `10.0.2.2` callback URL you allowed in Supabase.
 9. Apply `supabase/schema.sql` to your Supabase database
    The schema is designed to upgrade the legacy one-table `public.routes(stop_id, stop_name, latitude, longitude)` import automatically, so you can run this directly on both fresh and older projects.
    If MMDA refresh still fails with `permission denied for table area_updates`, run:

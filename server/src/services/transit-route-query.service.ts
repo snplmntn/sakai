@@ -199,11 +199,9 @@ const logTransitTrace = (
   trace: TransitPlannerTraceSummary,
   details: Record<string, unknown> = {}
 ) => {
-  console.info(message, {
-    operation: "transit_route_query_trace",
-    requestId: trace.requestId,
-    ...details
-  });
+  void message;
+  void trace;
+  void details;
 };
 
 const setTraceResolutionStatus = (

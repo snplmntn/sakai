@@ -1,28 +1,31 @@
 import { createContext, ReactNode, useContext, useMemo, useState } from 'react';
 
 type VoiceSearchContextValue = {
-  triggerToken: number;
+  startToken: number;
+  stopToken: number;
   isListening: boolean;
-  requestToggle: () => void;
+  requestStart: () => void;
+  requestStop: () => void;
   setIsListening: (value: boolean) => void;
 };
 
 const VoiceSearchContext = createContext<VoiceSearchContextValue | null>(null);
 
 export function VoiceSearchProvider({ children }: { children: ReactNode }) {
-  const [triggerToken, setTriggerToken] = useState(0);
+  const [startToken, setStartToken] = useState(0);
+  const [stopToken, setStopToken] = useState(0);
   const [isListening, setIsListening] = useState(false);
 
   const value = useMemo<VoiceSearchContextValue>(
     () => ({
-      triggerToken,
+      startToken,
+      stopToken,
       isListening,
-      requestToggle: () => {
-        setTriggerToken((current) => current + 1);
-      },
+      requestStart: () => setStartToken((n) => n + 1),
+      requestStop: () => setStopToken((n) => n + 1),
       setIsListening,
     }),
-    [isListening, triggerToken]
+    [isListening, startToken, stopToken]
   );
 
   return <VoiceSearchContext.Provider value={value}>{children}</VoiceSearchContext.Provider>;

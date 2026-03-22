@@ -17,10 +17,10 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
+import { HugeiconsIcon } from '@hugeicons/react-native';
+import { Exchange01Icon, Gps01Icon } from '@hugeicons/core-free-icons';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Mic01Icon } from '@hugeicons/core-free-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -57,11 +57,11 @@ import { getVoiceInputUnavailableMessage, useVoiceInput } from '../hooks/useVoic
 import { transcribeSpeechRecording } from '../speech/api';
 import { createFallbackSpeechTranscription } from '../speech/fallback';
 import {
-  getVoiceLanguageLabel,
   getVoiceRecognitionLocale,
   getVoiceTranscriptionOverride,
 } from '../voice/languages';
 import { extractVoiceDestinationHint, normalizeVoiceRouteQuery } from '../voice/route-query';
+import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import type {
   CommuteMode,
@@ -495,9 +495,21 @@ function SuggestionRow({
 // â”€â”€â”€ Main screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function RoutesScreen() {
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const { preferences: savedPreferences, updatePreferences } = usePreferences();
+
+  const firstName = (() => {
+    const meta = user?.userMetadata;
+    const fullName =
+      typeof meta?.full_name === 'string' ? meta.full_name :
+      typeof meta?.name === 'string' ? meta.name : null;
+    if (fullName) return fullName.split(' ')[0];
+    const email = user?.email;
+    if (email) return email.split('@')[0];
+    return null;
+  })();
   const { setNavigationCandidate, startNavigation } = useNavigationAlarm();
+  const voiceSearchContext = useVoiceSearchTrigger();
   const navigation =
     useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
   const insets = useSafeAreaInsets();
@@ -575,7 +587,7 @@ export default function RoutesScreen() {
       return [];
     }
 
-    return routeResult.options;
+    return routeResult.options.filter((o) => o.source !== 'google_fallback');
   }, [routeResult]);
   const selectedOption = activeRouteOptions.find((o) => o.id === selectedOptionId) ?? null;
   const mapMarkers = useMemo(
@@ -594,44 +606,6 @@ export default function RoutesScreen() {
   const driveContextNote = buildDriveContextNote(selectedOption);
   const canSearch = originText.trim().length > 0 && destText.trim().length > 0;
   const voicePreviewText = partialTranscript.trim() || voiceQuery.trim();
-  const voiceMicDisabled =
-    speechPhase === 'finishing' || speechPhase === 'transcribing' || speechPhase === 'searching' || queryLoading;
-  const voiceControlsUnavailable = !voiceAvailable;
-  const voiceButtonDisabled = voiceControlsUnavailable || (voiceMicDisabled && speechPhase !== 'listening');
-  const voiceStatusTitle =
-    voiceControlsUnavailable
-      ? 'Voice input unavailable'
-      : speechPhase === 'listening'
-        ? 'Listening now'
-        : speechPhase === 'finishing'
-          ? 'Finishing your voice request'
-          : speechPhase === 'transcribing'
-            ? 'Transcribing your route request'
-            : speechPhase === 'searching'
-              ? 'Searching from what you said'
-              : 'Hold the mic to talk';
-  const voiceStatusBadge =
-    voiceControlsUnavailable
-      ? 'Unavailable'
-      : speechPhase === 'listening'
-        ? 'Release to send'
-        : speechPhase === 'finishing'
-          ? 'Waiting for speech end'
-          : speechPhase === 'idle'
-            ? 'Hold to talk'
-            : 'Working';
-  const voiceStatusBody =
-    voiceControlsUnavailable
-      ? getVoiceInputUnavailableMessage()
-      : speechPhase === 'listening'
-        ? 'Sakai is listening. Keep holding and say your route naturally.'
-        : speechPhase === 'finishing'
-          ? 'You let go. Sakai will detect the end of speech, then send your request.'
-          : speechPhase === 'transcribing'
-            ? 'Turning your speech into a route request with multilingual transcription.'
-            : speechPhase === 'searching'
-              ? 'Matching your spoken request to route data and your saved commute preferences.'
-              : 'Say things like "BGC fastest route" or "Gate 3 from Espana."';
   const showResultsCanvas = queryLoading || routeResult !== null;
   const selectedRoute = selectedOption ?? activeRouteOptions[0] ?? null;
   const expandedSheetHeight = Math.min(
@@ -647,6 +621,7 @@ export default function RoutesScreen() {
   useEffect(() => {
     setRecordingAvailable(Boolean(NativeModules.ExponentAV));
   }, []);
+
 
   const resetGoogleSessionToken = useCallback((field: 'origin' | 'destination') => {
     googleSessionTokensRef.current[field] = createGooglePlacesSessionToken();
@@ -1257,6 +1232,24 @@ export default function RoutesScreen() {
     void finalizeRecordingAndSearch();
   }, [finalizeRecordingAndSearch, isListening, speechPhase]);
 
+  // Sync speechPhase → context so tab bar mic reflects listening state
+  useEffect(() => {
+    voiceSearchContext.setIsListening(speechPhase === 'listening');
+  }, [speechPhase, voiceSearchContext]);
+
+  // Respond to mic press from the tab bar
+  const { startToken, stopToken } = voiceSearchContext;
+  useEffect(() => {
+    if (startToken === 0) return;
+    void startSpeechCapture();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startToken]);
+  useEffect(() => {
+    if (stopToken === 0) return;
+    void stopSpeechCapture();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopToken]);
+
   // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleSuggestionSelect = useCallback(
@@ -1565,7 +1558,7 @@ export default function RoutesScreen() {
 
         <View style={[styles.topOverlayRow, { top: insets.top + SPACING.md }]}>
           <Pressable
-            style={styles.floatingEditButton}
+            style={styles.floatingBackButton}
             onPress={() => {
               setSpeechPhase('idle');
               setRouteResult(null);
@@ -1573,7 +1566,8 @@ export default function RoutesScreen() {
               setSheetSnap('expanded');
             }}
           >
-            <Text style={styles.floatingEditButtonText}>Edit trip</Text>
+            <Text style={styles.floatingBackArrow}>‹</Text>
+            <Text style={styles.floatingBackText}>Search</Text>
           </Pressable>
         </View>
 
@@ -1645,37 +1639,46 @@ export default function RoutesScreen() {
                 </View>
               ) : null}
 
-              {routeResult &&
-              routeResult.options.length === 0 &&
-              routeResult.googleFallback.options.length === 0 &&
-              routeResult.message ? (
+              {/* Commute modes — changeable from results */}
+              <View style={styles.sheetModeRow}>
+                {COMMUTE_MODE_OPTIONS.map((option) => {
+                  const selected = commuteModes.includes(option.value);
+
+                  return (
+                    <Pressable
+                      key={option.value}
+                      style={[styles.sheetModeChip, selected && styles.sheetModeChipSelected]}
+                      onPress={() => handleCommuteModeChipPress(option.value)}
+                    >
+                      <Text style={[styles.sheetModeChipText, selected && styles.sheetModeChipTextSelected]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                <Pressable
+                  style={[styles.sheetModeChip, allowCarAccess && styles.sheetModeChipSelected]}
+                  onPress={handleCarAccessChipPress}
+                >
+                  <Text style={[styles.sheetModeChipText, allowCarAccess && styles.sheetModeChipTextSelected]}>
+                    {allowCarAccess ? 'Car ✓' : 'Car'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              {routeResult && activeRouteOptions.length === 0 && routeResult.message ? (
                 <View style={styles.messageCard}>
                   <Text style={styles.messageText}>{routeResult.message}</Text>
                 </View>
               ) : null}
 
-              {routeResult &&
-              routeResult.options.length === 0 &&
-              routeResult.googleFallback.options.length === 0 &&
-              routeResult.googleFallback.message ? (
-                <View style={styles.messageCard}>
-                  <Text style={styles.messageText}>{routeResult.googleFallback.message}</Text>
-                </View>
-              ) : null}
-
-              {routeResult?.options.length ? (
+              {activeRouteOptions.length > 0 ? (
                 <>
                   <View style={styles.sheetSectionHeader}>
                     <Text style={styles.sheetSectionTitle}>Routes</Text>
-                    <Text style={styles.sheetSectionMeta}>
-                      {routeResult.options.some((option) => option.source === 'google_fallback')
-                        ? routeResult.options.some((option) => option.source === 'sakai')
-                          ? 'Sakai + fallback'
-                          : 'Google fallback'
-                        : 'Jeepney-first'}
-                    </Text>
+                    <Text style={styles.sheetSectionMeta}>Jeepney-first</Text>
                   </View>
-                  {routeResult.options.map((option) => (
+                  {activeRouteOptions.map((option) => (
                     <View key={option.id} style={styles.routeCardGroup}>
                       <RouteCard
                         option={option}
@@ -1723,41 +1726,14 @@ export default function RoutesScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* â”€â”€ Hero card â”€â”€ */}
+          {/* ── Hero card ── */}
           <View style={styles.heroCard}>
-            <View style={styles.heroRule} />
-            <View style={styles.heroTopRow}>
-              <Text style={styles.heroLabel}>Routes</Text>
-              <TouchableOpacity
-                style={[
-                  styles.heroMicButton,
-                  speechPhase === 'listening' && styles.heroMicButtonActive,
-                  voiceButtonDisabled && styles.heroMicButtonDisabled,
-                ]}
-                onPress={() => {
-                  if (!voiceAvailable) {
-                    return;
-                  }
-
-                  if (speechPhase === 'idle') {
-                    void startSpeechCapture();
-                    return;
-                  }
-
-                  if (speechPhase === 'listening') {
-                    void stopSpeechCapture();
-                  }
-                }}
-                activeOpacity={0.85}
-                disabled={voiceButtonDisabled}
-              >
-                <HugeiconsIcon icon={Mic01Icon} size={16} color={COLORS.white} />
-                <Text style={styles.heroMicButtonText}>
-                  {voiceAvailable ? (speechPhase === 'listening' ? 'Stop' : 'Voice') : 'Voice off'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.heroTitle}>Where to Sakai today?</Text>
+            <Text style={styles.heroGreeting}>
+              {firstName ? `Hey ${firstName} 👋` : 'Hey there 👋'}
+            </Text>
+            <Text style={styles.heroTitle}>
+              {'Where to Sakai\ntoday?'}
+            </Text>
 
             <View style={styles.searchCard}>
               <>
@@ -1766,10 +1742,10 @@ export default function RoutesScreen() {
                   <Text style={styles.searchFieldLabel}>From</Text>
                   <View style={styles.fieldHeaderActions}>
                     <Pressable style={styles.inlineActionButton} onPress={() => void handleLocatePress()}>
-                      <Text style={styles.inlineActionText}>Locate</Text>
+                      <HugeiconsIcon icon={Gps01Icon} size={16} color={COLORS.white} />
                     </Pressable>
                     <Pressable style={styles.inlineActionButton} onPress={handleSwapLocations}>
-                      <Text style={styles.inlineActionText}>Reverse</Text>
+                      <HugeiconsIcon icon={Exchange01Icon} size={16} color={COLORS.white} />
                     </Pressable>
                   </View>
                 </View>
@@ -1805,7 +1781,7 @@ export default function RoutesScreen() {
                   )}
                 </View>
 
-                {activeField === 'origin' && (
+                {activeField === 'origin' && (suggestionsLoading || selectingPlace || suggestions.length > 0 || activeText.trim().length >= 2) && (
                   <View style={styles.inlineSuggestionsCard}>
                     {suggestionsLoading || selectingPlace ? (
                       <View style={styles.suggestionsSpinner}>
@@ -1823,9 +1799,7 @@ export default function RoutesScreen() {
                         />
                       ))
                     ) : (
-                      <Text style={styles.noResults}>
-                        {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
-                      </Text>
+                      <Text style={styles.noResults}>No results</Text>
                     )}
                   </View>
                 )}
@@ -1837,13 +1811,11 @@ export default function RoutesScreen() {
                   style={[styles.searchField, activeField === 'destination' && styles.searchFieldActive]}
                 >
                   <Text style={styles.searchFieldLabel}>To</Text>
-                  <Text style={styles.searchFieldHint}>
-                    {voiceAvailable ? 'Hold mic to talk' : 'Mic unavailable'}
-                  </Text>
                 </View>
                 <View
                   style={[
                     styles.searchField,
+                    styles.searchInputRow,
                     activeField === 'destination' && styles.searchFieldActive,
                   ]}
                 >
@@ -1863,46 +1835,17 @@ export default function RoutesScreen() {
                     returnKeyType="search"
                     onSubmitEditing={canSearch ? handleSearch : undefined}
                   />
-                  <View style={styles.destinationActions}>
-                    {destText.length > 0 && speechPhase === 'idle' ? (
-                      <TouchableOpacity
-                        onPress={() => clearField('destination')}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Text style={styles.clearBtn}>x</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                    <Pressable
-                      style={[
-                        styles.voiceHoldButton,
-                        speechPhase === 'listening' && styles.voiceHoldButtonActive,
-                        voiceMicDisabled && !voiceControlsUnavailable && styles.voiceHoldButtonBusy,
-                        voiceControlsUnavailable && styles.voiceHoldButtonDisabled,
-                      ]}
-                      onPressIn={() => {
-                        if (!voiceAvailable) {
-                          return;
-                        }
-                        void startSpeechCapture();
-                      }}
-                      onPressOut={() => {
-                        if (!voiceAvailable) {
-                          return;
-                        }
-                        void stopSpeechCapture();
-                      }}
-                      disabled={voiceControlsUnavailable || voiceMicDisabled}
+                  {destText.length > 0 && speechPhase === 'idle' ? (
+                    <TouchableOpacity
+                      onPress={() => clearField('destination')}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <HugeiconsIcon
-                        icon={Mic01Icon}
-                        size={18}
-                        color={voiceControlsUnavailable ? 'rgba(255,255,255,0.72)' : COLORS.white}
-                      />
-                    </Pressable>
-                  </View>
+                      <Text style={styles.clearBtn}>x</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
 
-                {activeField === 'destination' && (
+                {activeField === 'destination' && (suggestionsLoading || selectingPlace || suggestions.length > 0 || activeText.trim().length >= 2) && (
                   <View style={styles.inlineSuggestionsCard}>
                     {suggestionsLoading || selectingPlace ? (
                       <View style={styles.suggestionsSpinner}>
@@ -1920,114 +1863,78 @@ export default function RoutesScreen() {
                         />
                       ))
                     ) : (
-                      <Text style={styles.noResults}>
-                        {activeText.trim().length >= 2 ? 'No results' : 'Type to search'}
-                      </Text>
+                      <Text style={styles.noResults}>No results</Text>
                     )}
                   </View>
                 )}
 
-                <View
-                  style={[
-                    styles.voiceStatusCard,
-                    speechPhase !== 'idle' && styles.voiceStatusCardActive,
-                  ]}
-                >
-                  <View style={styles.voiceStatusHeader}>
-                    <View
-                      style={[
-                        styles.voiceStatusIconWrap,
-                        speechPhase !== 'idle' && styles.voiceStatusIconWrapActive,
-                        voiceControlsUnavailable && styles.voiceStatusIconWrapDisabled,
-                      ]}
-                    >
-                      <HugeiconsIcon
-                        icon={Mic01Icon}
-                        size={18}
-                        color={voiceControlsUnavailable ? 'rgba(255,255,255,0.78)' : COLORS.white}
-                      />
-                    </View>
-                    <Text style={styles.voiceStatusTitle}>{voiceStatusTitle}</Text>
-                    <View style={styles.voiceStatusBadge}>
-                      <Text style={styles.voiceStatusBadgeText}>{voiceStatusBadge}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.voiceStatusBody}>{voiceStatusBody}</Text>
-                  {voicePreviewText.length > 0 ? (
-                    <Text style={styles.voiceStatusPreview}>{voicePreviewText}</Text>
-                  ) : null}
-                  <Text style={styles.voiceMetaText}>
-                    Voice language: {getVoiceLanguageLabel(savedPreferences.voiceLanguage)}
-                  </Text>
-                  {voiceError !== null && speechPhase === 'idle' ? (
-                    <Text style={styles.voiceErrorText}>{voiceError}</Text>
-                  ) : null}
-                  {voiceTranscriptNotice !== null ? (
-                    <Text style={styles.voiceInfoText}>{voiceTranscriptNotice}</Text>
-                  ) : null}
+                {/* Commute modes — below To field */}
+                <View style={styles.fieldDivider} />
+                <View style={styles.searchModesRow}>
+                  {COMMUTE_MODE_OPTIONS.map((option) => {
+                    const selected = commuteModes.includes(option.value);
+
+                    return (
+                      <Pressable
+                        key={option.value}
+                        style={[styles.modeChip, selected && styles.modeChipSelected]}
+                        onPress={() => handleCommuteModeChipPress(option.value)}
+                      >
+                        <Text style={[styles.modeChipText, selected && styles.modeChipTextSelected]}>
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                  <Pressable
+                    style={[styles.modeChip, allowCarAccess && styles.modeChipSelected]}
+                    onPress={handleCarAccessChipPress}
+                  >
+                    <Text style={[styles.modeChipText, allowCarAccess && styles.modeChipTextSelected]}>
+                      {allowCarAccess ? 'Car ✓' : 'Car'}
+                    </Text>
+                  </Pressable>
                 </View>
+
               </>
             </View>
 
-            <View style={styles.quickFiltersCard}>
-              <View style={styles.quickFiltersHeader}>
-                <Text style={styles.quickFiltersTitle}>Commute modes</Text>
-                <Text style={styles.quickFiltersHint}>Saved for future searches</Text>
+            {/* Voice feedback when active */}
+            {speechPhase !== 'idle' ? (
+              <View style={styles.voiceFeedbackBar}>
+                <Text style={styles.voiceFeedbackText}>
+                  {speechPhase === 'listening'
+                    ? voicePreviewText.length > 0 ? voicePreviewText : 'Listening...'
+                    : speechPhase === 'finishing'
+                      ? 'Finishing...'
+                      : speechPhase === 'transcribing'
+                        ? 'Transcribing...'
+                        : 'Searching...'}
+                </Text>
               </View>
-              <View style={styles.quickFiltersRow}>
-                {COMMUTE_MODE_OPTIONS.map((option) => {
-                  const selected = commuteModes.includes(option.value);
-
-                  return (
-                    <Pressable
-                      key={option.value}
-                      style={[styles.quickFilterChip, selected && styles.quickFilterChipSelected]}
-                      onPress={() => handleCommuteModeChipPress(option.value)}
-                    >
-                      <Text
-                        style={[
-                          styles.quickFilterChipText,
-                          selected && styles.quickFilterChipTextSelected,
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-                <Pressable
-                  style={[
-                    styles.quickFilterChip,
-                    allowCarAccess && styles.quickFilterChipSelected,
-                  ]}
-                  onPress={handleCarAccessChipPress}
-                >
-                  <Text
-                    style={[
-                      styles.quickFilterChipText,
-                      allowCarAccess && styles.quickFilterChipTextSelected,
-                    ]}
-                  >
-                    {allowCarAccess ? 'Car access on' : 'Car access off'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
+            ) : null}
           </View>
 
           <View style={styles.body}>
             {/* Search button */}
             <TouchableOpacity
-              style={[styles.searchBtn, !canSearch && styles.searchBtnDisabled]}
+              style={[styles.searchBtnOuter, !canSearch && styles.searchBtnDisabled]}
               onPress={handleSearch}
               disabled={!canSearch || queryLoading}
-              activeOpacity={0.85}
+              activeOpacity={0.88}
             >
-              {queryLoading ? (
-                <ActivityIndicator size="small" color={COLORS.white} />
-              ) : (
-                <Text style={styles.searchBtnText}>Find Routes</Text>
-              )}
+              <LinearGradient
+                colors={['#5a95be', '#457b9d', '#2a5a78']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.searchBtn}
+              >
+                {queryLoading ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Text style={styles.searchBtnText}>Find Routes</Text>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
 
             {/* Error */}
@@ -2068,140 +1975,80 @@ const styles = StyleSheet.create({
   // Hero
   heroCard: {
     backgroundColor: '#102033',
-    borderBottomLeftRadius: RADIUS.lg,
-    borderBottomRightRadius: RADIUS.lg,
+    borderBottomLeftRadius: RADIUS.xl,
+    borderBottomRightRadius: RADIUS.xl,
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
-    paddingBottom: SPACING.xl,
+    paddingBottom: SPACING.lg,
     marginBottom: SPACING.md,
   },
-  heroRule: {
-    width: 40,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: COLORS.primary,
-    marginBottom: SPACING.md,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  heroLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: 'rgba(255,255,255,0.68)',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heroMicButton: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  heroMicButtonActive: {
-    backgroundColor: 'rgba(0,122,255,0.28)',
-    borderColor: 'rgba(255,255,255,0.24)',
-  },
-  heroMicButtonDisabled: {
-    opacity: 0.65,
-  },
-  heroMicButtonText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.white,
+  heroGreeting: {
+    fontSize: 13,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.55)',
+    marginBottom: 4,
   },
   heroTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.hero,
+    fontSize: 32,
     fontFamily: FONTS.bold,
     color: COLORS.white,
+    letterSpacing: -0.5,
     lineHeight: 38,
     marginBottom: SPACING.md,
-  },
-  heroMetaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-    marginBottom: SPACING.lg,
-  },
-  heroMetaBadge: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  heroMetaText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.white,
   },
 
   // Search card inside hero
   searchCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.14)',
     overflow: 'hidden',
   },
-  quickFiltersCard: {
-    marginTop: SPACING.md,
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    gap: SPACING.sm,
-  },
-  quickFiltersHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  quickFiltersTitle: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.white,
-  },
-  quickFiltersHint: {
-    fontSize: 11,
-    fontFamily: FONTS.medium,
-    color: 'rgba(255,255,255,0.62)',
-  },
-  quickFiltersRow: {
+  // Commute modes inside search card
+  searchModesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
-  quickFilterChip: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
+  modeChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
   },
-  quickFilterChipSelected: {
-    backgroundColor: 'rgba(0,122,255,0.24)',
-    borderColor: 'rgba(255,255,255,0.24)',
+  modeChipSelected: {
+    backgroundColor: 'rgba(69,123,157,0.5)',
+    borderColor: 'rgba(100,180,230,0.6)',
   },
-  quickFilterChipText: {
+  modeChipText: {
+    fontSize: 11,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.75)',
+  },
+  modeChipTextSelected: {
+    color: '#c5e8fa',
+  },
+  // Voice feedback bar
+  voiceFeedbackBar: {
+    marginTop: SPACING.sm,
+    marginHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    backgroundColor: 'rgba(69,123,157,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(100,180,230,0.3)',
+  },
+  voiceFeedbackText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  quickFilterChipTextSelected: {
-    color: COLORS.white,
+    color: '#c5e8fa',
+    textAlign: 'center',
   },
   searchField: {
     flexDirection: 'row',
@@ -2230,17 +2077,11 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   inlineActionButton: {
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
+    padding: SPACING.xs + 2,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
-  },
-  inlineActionText: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.medium,
-    color: COLORS.white,
   },
   searchFieldLabel: {
     fontSize: TYPOGRAPHY.fontSizes.small,
@@ -2391,21 +2232,30 @@ const styles = StyleSheet.create({
   },
 
   // Search button
-  searchBtn: {
-    backgroundColor: COLORS.primary,
+  searchBtnOuter: {
     borderRadius: RADIUS.md,
-    paddingVertical: SPACING.md,
+    overflow: 'hidden',
+    shadowColor: '#2a5a78',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  searchBtn: {
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 50,
+    minHeight: 54,
   },
   searchBtnDisabled: {
-    backgroundColor: '#B0C4D4',
+    opacity: 0.48,
   },
   searchBtnText: {
     fontSize: TYPOGRAPHY.fontSizes.medium,
     fontFamily: FONTS.bold,
     color: COLORS.white,
+    letterSpacing: 0.3,
   },
 
   // Error
@@ -2687,8 +2537,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.12)',
   },
   voiceStatusCard: {
-    margin: SPACING.md,
     marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
     padding: SPACING.md,
     borderRadius: RADIUS.md,
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -2697,8 +2547,8 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   voiceStatusCardActive: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(69,123,157,0.18)',
+    borderColor: 'rgba(100,180,230,0.3)',
   },
   voiceStatusHeader: {
     flexDirection: 'row',
@@ -2716,8 +2566,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
   },
   voiceStatusIconWrapActive: {
-    backgroundColor: 'rgba(0,122,255,0.26)',
-    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(69,123,157,0.55)',
+    borderColor: 'rgba(100,180,230,0.4)',
   },
   voiceStatusIconWrapDisabled: {
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -2768,6 +2618,63 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     color: 'rgba(255,255,255,0.72)',
   },
+  largeMicContainer: {
+    alignItems: 'center',
+    paddingVertical: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  largeMicWrapper: {
+    width: 88,
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micPulseRing: {
+    position: 'absolute',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#e63946',
+  },
+  largeMicButton: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.22)',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  largeMicButtonActive: {
+    backgroundColor: '#e63946',
+    borderColor: 'rgba(255,255,255,0.35)',
+    shadowColor: '#e63946',
+    shadowOpacity: 0.55,
+  },
+  largeMicButtonBusy: {
+    backgroundColor: 'rgba(69,123,157,0.55)',
+    borderColor: 'rgba(255,255,255,0.14)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  largeMicButtonDisabled: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.10)',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  largeMicLabel: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'center',
+  },
   resultsScreen: {
     flex: 1,
     backgroundColor: '#E8F0F7',
@@ -2778,17 +2685,26 @@ const styles = StyleSheet.create({
     right: SPACING.md,
     zIndex: 10,
   },
-  floatingEditButton: {
-    alignSelf: 'flex-start',
-    minHeight: 44,
+  floatingBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 40,
     borderRadius: 999,
     paddingHorizontal: SPACING.md,
-    justifyContent: 'center',
+    paddingVertical: SPACING.xs,
     backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: 1,
     borderColor: '#DCE6F0',
   },
-  floatingEditButtonText: {
+  floatingBackArrow: {
+    fontSize: 22,
+    lineHeight: 26,
+    fontFamily: FONTS.regular,
+    color: '#102033',
+    marginTop: -2,
+  },
+  floatingBackText: {
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.semibold,
     color: '#102033',
@@ -2869,6 +2785,34 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.regular,
     color: 'rgba(239,246,252,0.82)',
     lineHeight: 20,
+  },
+  sheetModeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+    paddingBottom: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF4FA',
+  },
+  sheetModeChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#F0F5FA',
+    borderWidth: 1,
+    borderColor: '#D8E6F0',
+  },
+  sheetModeChipSelected: {
+    backgroundColor: '#102033',
+    borderColor: '#102033',
+  },
+  sheetModeChipText: {
+    fontSize: 11,
+    fontFamily: FONTS.medium,
+    color: '#5D7286',
+  },
+  sheetModeChipTextSelected: {
+    color: COLORS.white,
   },
   sheetSectionHeader: {
     flexDirection: 'row',
