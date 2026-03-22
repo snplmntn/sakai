@@ -18,7 +18,7 @@ import {
 import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Exchange01Icon, Gps01Icon } from '@hugeicons/core-free-icons';
+import { Exchange01Icon, Gps01Icon, Mic01Icon } from '@hugeicons/core-free-icons';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useNavigation } from '@react-navigation/native';
@@ -61,7 +61,6 @@ import {
   getVoiceTranscriptionOverride,
 } from '../voice/languages';
 import { extractVoiceDestinationHint, normalizeVoiceRouteQuery } from '../voice/route-query';
-import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import type {
   CommuteMode,
@@ -264,7 +263,7 @@ function LegRow({
         <View style={styles.legInfo}>
           <Text style={styles.legName}>Walk to {leg.toLabel}</Text>
           <Text style={styles.legMeta}>
-            {leg.distanceMeters}m Â· {formatDuration(leg.durationMinutes)}
+            {leg.distanceMeters}m · {formatDuration(leg.durationMinutes)}
           </Text>
         </View>
       </View>
@@ -279,10 +278,10 @@ function LegRow({
         </View>
         <View style={styles.legInfo}>
           <Text style={styles.legName}>
-            {leg.fromLabel} â†’ {leg.toLabel}
+            {leg.fromLabel} → {leg.toLabel}
           </Text>
           <Text style={styles.legMeta}>
-            {leg.distanceKm.toFixed(1)} km Â· {formatDuration(leg.durationMinutes)}
+            {leg.distanceKm.toFixed(1)} km · {formatDuration(leg.durationMinutes)}
           </Text>
           <Text style={styles.legFare}>
             {optionSource === 'google_fallback'
@@ -303,7 +302,7 @@ function LegRow({
         <Text style={styles.legName}>{leg.routeName}</Text>
         <Text style={styles.legMeta}>{leg.directionLabel}</Text>
         <Text style={styles.legMeta}>
-          {leg.fromStop.stopName} â†’ {leg.toStop.stopName}
+          {leg.fromStop.stopName} → {leg.toStop.stopName}
         </Text>
         <Text style={styles.legFare}>
           {optionSource === 'google_fallback'
@@ -424,7 +423,7 @@ function RouteCard({
             <RelevantIncidentsSection
               incidents={option.relevantIncidents}
               title="Route impact"
-              metaNotice="These MMDA updates match this routeâ€™s corridor or endpoints."
+              metaNotice="These MMDA updates match this route's corridor or endpoints."
             />
           )}
           {option.legs.map((leg) => (
@@ -467,7 +466,7 @@ function SuggestionRow({
   onSelect: (s: PlaceSuggestion) => void;
 }) {
   const isSakai = suggestion.source === 'sakai';
-  const secondary = isSakai ? `${suggestion.city} Â· ${suggestion.kind}` : suggestion.secondaryText;
+  const secondary = isSakai ? `${suggestion.city} · ${suggestion.kind}` : suggestion.secondaryText;
 
   return (
     <TouchableOpacity
@@ -509,7 +508,6 @@ export default function RoutesScreen() {
     return null;
   })();
   const { setNavigationCandidate, startNavigation } = useNavigationAlarm();
-  const voiceSearchContext = useVoiceSearchTrigger();
   const navigation =
     useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
   const insets = useSafeAreaInsets();
@@ -1232,23 +1230,6 @@ export default function RoutesScreen() {
     void finalizeRecordingAndSearch();
   }, [finalizeRecordingAndSearch, isListening, speechPhase]);
 
-  // Sync speechPhase → context so tab bar mic reflects listening state
-  useEffect(() => {
-    voiceSearchContext.setIsListening(speechPhase === 'listening');
-  }, [speechPhase, voiceSearchContext]);
-
-  // Respond to mic press from the tab bar
-  const { startToken, stopToken } = voiceSearchContext;
-  useEffect(() => {
-    if (startToken === 0) return;
-    void startSpeechCapture();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startToken]);
-  useEffect(() => {
-    if (stopToken === 0) return;
-    void stopSpeechCapture();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopToken]);
 
   // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1899,20 +1880,33 @@ export default function RoutesScreen() {
               </>
             </View>
 
-            {/* Voice feedback when active */}
-            {speechPhase !== 'idle' ? (
-              <View style={styles.voiceFeedbackBar}>
-                <Text style={styles.voiceFeedbackText}>
-                  {speechPhase === 'listening'
-                    ? voicePreviewText.length > 0 ? voicePreviewText : 'Listening...'
-                    : speechPhase === 'finishing'
-                      ? 'Finishing...'
-                      : speechPhase === 'transcribing'
-                        ? 'Transcribing...'
-                        : 'Searching...'}
-                </Text>
-              </View>
-            ) : null}
+            {/* Hold-to-speak mic button */}
+            <Pressable
+              style={styles.micRow}
+              onPressIn={() => void startSpeechCapture()}
+              onPressOut={() => void stopSpeechCapture()}
+              disabled={speechPhase !== 'idle' && speechPhase !== 'listening'}
+            >
+              <LinearGradient
+                colors={speechPhase === 'listening' ? ['#1a8fcf', '#0e6fa8'] : ['#1d3a52', '#102033']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.micCircle}
+              >
+                <HugeiconsIcon icon={Mic01Icon} size={24} color={COLORS.white} />
+              </LinearGradient>
+              <Text style={styles.micHintText}>
+                {speechPhase === 'listening'
+                  ? (voicePreviewText.length > 0 ? voicePreviewText : 'Listening...')
+                  : speechPhase === 'finishing'
+                    ? 'Finishing...'
+                    : speechPhase === 'transcribing'
+                      ? 'Transcribing...'
+                      : speechPhase === 'searching'
+                        ? 'Searching...'
+                        : 'Hold to speak'}
+              </Text>
+            </Pressable>
           </View>
 
           <View style={styles.body}>
@@ -2033,22 +2027,25 @@ const styles = StyleSheet.create({
   modeChipTextSelected: {
     color: '#c5e8fa',
   },
-  // Voice feedback bar
-  voiceFeedbackBar: {
-    marginTop: SPACING.sm,
-    marginHorizontal: SPACING.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.sm,
-    backgroundColor: 'rgba(69,123,157,0.35)',
-    borderWidth: 1,
-    borderColor: 'rgba(100,180,230,0.3)',
+  // Mic button
+  micRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingTop: SPACING.md,
   },
-  voiceFeedbackText: {
+  micCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micHintText: {
+    flex: 1,
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
-    color: '#c5e8fa',
-    textAlign: 'center',
+    color: 'rgba(255,255,255,0.7)',
   },
   searchField: {
     flexDirection: 'row',

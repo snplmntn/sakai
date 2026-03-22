@@ -1,5 +1,28 @@
 # Sakai Change Log
 
+## 2026-03-22
+
+### Client: Route Search Voice UI
+- Removed the floating tab-bar microphone from [CustomTabBar.tsx](/E:/sakai/client/src/components/CustomTabBar.tsx) and simplified the tab bar back to Home/Profile navigation only.
+- Moved voice capture control into [RoutesScreen.tsx](/E:/sakai/client/src/screens/RoutesScreen.tsx) with a hold-to-speak microphone button inside the route search card.
+- Removed the route-screen dependency on `VoiceSearchContext` tab-bar trigger tokens and localised the voice interaction to the screen that owns route search.
+- Cleaned up several malformed route-screen text glyphs in [RoutesScreen.tsx](/E:/sakai/client/src/screens/RoutesScreen.tsx) so arrows and separators render correctly.
+
+### Client: Public Env Handling
+- Simplified public env reads in [env.ts](/E:/sakai/client/src/config/env.ts) by normalizing `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` and `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` once and reusing the normalized values for required and optional checks.
+- Kept the existing fallback behavior where Places uses the Maps key when a dedicated Places key is absent.
+
+### Backend: Fare Policy
+- Updated fare rounding in [fare-engine.service.ts](/E:/sakai/server/src/services/fare-engine.service.ts), [route-query.service.ts](/E:/sakai/server/src/services/route-query.service.ts), [transit-route-query.service.ts](/E:/sakai/server/src/services/transit-route-query.service.ts), and [google-route-fallback.service.ts](/E:/sakai/server/src/services/google-route-fallback.service.ts) to always round fare outputs up to the next whole peso instead of keeping decimal currency amounts.
+- Updated runtime train discount handling in [fare-engine.service.ts](/E:/sakai/server/src/services/fare-engine.service.ts), [transit-route-query.service.ts](/E:/sakai/server/src/services/transit-route-query.service.ts), and [google-route-fallback.service.ts](/E:/sakai/server/src/services/google-route-fallback.service.ts) so discounted train pricing is calculated as 50% of the regular fare.
+- Updated generated rail fare references in [rail-fare-reference.ts](/E:/sakai/server/src/services/rail-fare-reference.ts) so seeded and formula-based discounted train fares follow the same 50%-off, round-up policy.
+
+### Tests
+- Updated fare expectations in [fare-engine.service.test.ts](/E:/sakai/server/tests/fare-engine.service.test.ts), [route-query.service.test.ts](/E:/sakai/server/tests/route-query.service.test.ts), and [rail-fare-reference.test.ts](/E:/sakai/server/tests/rail-fare-reference.test.ts) to match whole-peso rounding and 50%-off train pricing.
+- Verified pricing-focused coverage with:
+  - `npm test -- fare-engine.service.test.ts google-route-fallback.service.test.ts rail-fare-reference.test.ts`
+- The broader `route-query.service.test.ts` and `transit-route-query.service.test.ts` suites currently have separate pre-existing test drift in this branch and were not fully brought back to green as part of this change.
+
 ## 2026-03-19
 
 ### Product Requirements

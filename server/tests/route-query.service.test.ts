@@ -335,7 +335,7 @@ describe("route query service", () => {
     expect(result.normalizedQuery.preferenceSource).toBe("saved_preference");
     expect(result.normalizedQuery.passengerType).toBe("student");
     expect(result.options).toHaveLength(1);
-    expect(result.options[0]?.totalFare).toBe(15.88);
+    expect(result.options[0]?.totalFare).toBe(16);
     expect(result.options[0]?.transferCount).toBe(0);
     expect(result.options[0]?.recommendationLabel).toBe("Best for your preference");
   });

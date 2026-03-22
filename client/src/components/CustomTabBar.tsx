@@ -1,18 +1,15 @@
 import React from 'react';
 import {
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Home01Icon, Mic01Icon, UserIcon } from '@hugeicons/core-free-icons';
+import { Home01Icon, UserIcon } from '@hugeicons/core-free-icons';
 import { COLORS, FONTS, RADIUS } from '../constants/theme';
-import { useVoiceSearchTrigger } from '../voice/VoiceSearchContext';
 
 const TAB_ICONS: Record<string, object> = {
   Home: Home01Icon,
@@ -27,9 +24,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
     flattenedTabBarStyle !== null &&
     'display' in flattenedTabBarStyle &&
     flattenedTabBarStyle.display === 'none';
-
-  const { isListening, requestStart, requestStop } = useVoiceSearchTrigger();
-  const isHomeActive = state.routes[state.index]?.name === 'Home';
 
   if (isTabBarHidden) {
     return null;
@@ -71,43 +65,6 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
           );
         })}
       </View>
-
-      {/* Mic floater — rendered after container so it draws on top */}
-      <View style={styles.micFloaterRow} pointerEvents="box-none">
-        {state.routes.map((route) => {
-          if (route.name !== 'Home') {
-            return <View key={route.key} style={styles.micFloaterSlot} />;
-          }
-
-          return (
-            <View key={route.key} style={styles.micFloaterSlot}>
-              <Pressable
-                style={styles.micFloaterPress}
-                onPressIn={() => {
-                  if (isHomeActive) requestStart();
-                }}
-                onPressOut={() => {
-                  if (isHomeActive) requestStop();
-                }}
-                disabled={!isHomeActive}
-              >
-                <LinearGradient
-                  colors={isListening ? ['#1a8fcf', '#0e6fa8'] : isHomeActive ? ['#1d3a52', '#102033'] : ['#8a9baa', '#6b7c8a']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.micFloater}
-                >
-                  <HugeiconsIcon
-                    icon={Mic01Icon}
-                    size={28}
-                    color={COLORS.white}
-                  />
-                </LinearGradient>
-              </Pressable>
-            </View>
-          );
-        })}
-      </View>
     </View>
   );
 }
@@ -117,37 +74,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderTopWidth: 1,
     borderTopColor: '#E7EEF4',
-    overflow: 'visible',
-  },
-  micFloaterRow: {
-    position: 'absolute',
-    top: -40,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    pointerEvents: 'box-none',
-  } as object,
-  micFloaterSlot: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  micFloaterPress: {
-    borderRadius: 36,
-    shadowColor: '#102033',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  micFloater: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: COLORS.white,
   },
   container: {
     flexDirection: 'row',

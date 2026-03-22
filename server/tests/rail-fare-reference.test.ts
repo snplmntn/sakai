@@ -43,7 +43,7 @@ describe("rail fare reference", () => {
     expect(calculateLrt2SliceFare("Recto", "Pureza")).toBe(28);
     expect(calculateLrt2SliceFare("Pureza", "Recto")).toBe(28);
     expect(calculateLrt2SliceFare("D. Jose", "Pureza", "senior")).toBe(14);
-    expect(calculateLrt2SliceFare("Legarda", "Recto", "pwd")).toBe(6.5);
+    expect(calculateLrt2SliceFare("Legarda", "Recto", "pwd")).toBe(7);
   });
 
   it("generates only the directed fare rows covered by the provided LRT-2 formula slice", () => {
@@ -55,7 +55,7 @@ describe("rail fare reference", () => {
       originStopCode: "LRT2-01",
       destinationStopCode: "LRT2-02",
       regularFare: 13,
-      discountedFare: 6.5
+      discountedFare: 7
     });
     expect(fares).toContainEqual({
       originStopCode: "LRT2-01",

@@ -35,7 +35,8 @@ export interface FarePricingResult {
 
 const STALE_FARE_THRESHOLD_DAYS = 365;
 
-const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+const roundUpFareAmount = (value: number) => Math.ceil(Math.max(0, value));
+const calculateDiscountedTrainFare = (regularFare: number) => roundUpFareAmount(regularFare * 0.5);
 
 const getPricingType = (ruleVersion: FareRuleVersion): PricingType => {
   if (ruleVersion.trustLevel === "official") {
@@ -112,7 +113,7 @@ const calculateMinimumPlusSucceedingFare = (
   );
   const additionalDistanceKm = distanceKm - fareProduct.minimumDistanceKm;
   const additionalUnits = Math.ceil(additionalDistanceKm / fareProduct.succeedingDistanceKm);
-  const amount = roundCurrency(minimumFare.amount + additionalUnits * succeedingFare.amount);
+  const amount = roundUpFareAmount(minimumFare.amount + additionalUnits * succeedingFare.amount);
 
   return {
     amount,
@@ -137,7 +138,7 @@ const calculatePerKmFare = (
     fareProduct.succeedingFareDiscounted
   );
   const billableDistanceKm = Math.max(0, distanceKm - fareProduct.minimumDistanceKm);
-  const amount = roundCurrency(baseFare.amount + billableDistanceKm * perKmFare.amount);
+  const amount = roundUpFareAmount(baseFare.amount + billableDistanceKm * perKmFare.amount);
 
   return {
     amount,
@@ -159,7 +160,7 @@ const buildFareBreakdown = (input: {
   ].filter((value): value is string => Boolean(value));
 
   return {
-    amount: roundCurrency(input.amount),
+    amount: roundUpFareAmount(input.amount),
     pricingType: getPricingType(input.ruleVersion),
     fareProductCode: input.fareProductCode,
     ruleVersionName: input.ruleVersion.versionName,
@@ -211,7 +212,9 @@ const priceTrainRideLeg = (
   }
 
   const amount =
-    passengerType === "regular" ? trainFare.regularFare : trainFare.discountedFare;
+    passengerType === "regular"
+      ? roundUpFareAmount(trainFare.regularFare)
+      : calculateDiscountedTrainFare(trainFare.regularFare);
 
   return buildFareBreakdown({
     amount,
@@ -302,7 +305,7 @@ export const priceRideLegsWithCatalog = (
 
   return {
     rideLegs: pricedRideLegs,
-    totalFare: roundCurrency(
+    totalFare: roundUpFareAmount(
       pricedRideLegs.reduce((total, pricedRideLeg) => total + pricedRideLeg.fare.amount, 0)
     ),
     fareConfidence,

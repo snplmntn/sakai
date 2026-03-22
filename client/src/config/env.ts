@@ -1,16 +1,7 @@
-const readPublicEnv = (name: string): string => {
-  const value = process.env[name];
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`Missing ${name}. Set it in client/.env before running the app.`);
-  }
-
-  return value.trim();
-};
-
-const readOptionalPublicEnv = (name: string): string | null => {
-  const value = process.env[name];
-
+const normalizeEnvValue = (value: string | undefined): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
@@ -19,15 +10,23 @@ const readOptionalPublicEnv = (name: string): string | null => {
   return trimmedValue.length > 0 ? trimmedValue : null;
 };
 
-export const hasGoogleMapsApiKey = (): boolean =>
-  readOptionalPublicEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY') !== null;
+const readRequiredPublicEnv = (name: string, value: string | undefined): string => {
+  const normalizedValue = normalizeEnvValue(value);
+
+  if (normalizedValue === null) {
+    throw new Error(`Missing ${name}. Set it in client/.env before running the app.`);
+  }
+
+  return normalizedValue;
+};
+
+export const hasGoogleMapsApiKey = (): boolean => normalizeEnvValue(GOOGLE_MAPS_API_KEY) !== null;
 
 export const hasGooglePlacesApiKey = (): boolean =>
-  readOptionalPublicEnv('EXPO_PUBLIC_GOOGLE_PLACES_API_KEY') !== null || hasGoogleMapsApiKey();
+  normalizeEnvValue(GOOGLE_PLACES_API_KEY) !== null || hasGoogleMapsApiKey();
 
 export const readGoogleMapsApiKey = (): string =>
-  readPublicEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY');
+  readRequiredPublicEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY', GOOGLE_MAPS_API_KEY);
 
 export const readGooglePlacesApiKey = (): string =>
-  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY?.trim() ||
-  readGoogleMapsApiKey();
+  normalizeEnvValue(GOOGLE_PLACES_API_KEY) ?? readGoogleMapsApiKey();
