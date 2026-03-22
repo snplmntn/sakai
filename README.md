@@ -69,9 +69,25 @@ Useful client commands:
 ```bash
 npm run typecheck
 npm run android
+npm run android:release:local
 npm run ios
 npm run web
 ```
+
+Local Android release APK:
+
+```bash
+cd client
+npm run android:release:local
+```
+
+Notes:
+
+- The release command reads values from `client/.env` and fails if any required `EXPO_PUBLIC_*` value is missing or still uses a placeholder.
+- `EXPO_PUBLIC_API_BASE_URL` must point to a reachable backend URL for device testing. Local-only hosts like `localhost` and `10.0.2.2` are rejected.
+- The generated APK is written to `client/android/app/build/outputs/apk/release/app-release.apk`.
+- This local release build is signed with `client/android/app/debug.keystore`, so it is intended for direct install and testing, not Play Store distribution.
+- If Google Maps does not render in the APK, verify the Google Maps Android app restriction matches package `com.anonymous.sakaiapp` and the debug-keystore SHA-1 printed by the release script.
 
 ### 3. Web site
 

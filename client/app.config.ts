@@ -1,11 +1,11 @@
 import type { ExpoConfig } from 'expo/config';
 
 const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
-const appIconAsset = './assets/647550748_1861598611332676_3411325275701079353_n.png';
+const appIconAsset = './assets/icon.png';
 
 const config: ExpoConfig = {
   name: 'Sakai',
-  slug: 'sakai-app',
+  slug: 'sakai',
   scheme: 'sakai',
   version: '1.0.0',
   orientation: 'portrait',
