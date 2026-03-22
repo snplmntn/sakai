@@ -1,5 +1,11 @@
 import type { RoutePreference } from "../models/user-preference.model.js";
-import type { RouteModifier, RouteQueryOption } from "../types/route-query.js";
+import type { CommuteMode, RouteModifier, RouteQueryOption } from "../types/route-query.js";
+import {
+  hasTrainCommutePreference,
+  mapRideModeToCommuteMode,
+  normalizeCommuteModes,
+  usesAllCommuteModes
+} from "./route-planner-rules.js";
 
 const getBalancedMetricScore = (value: number, minimum: number, maximum: number) => {
   if (maximum === minimum) {
@@ -38,6 +44,73 @@ const getJeepneyRideCount = (option: RouteQueryOption) =>
   option.legs.filter((leg) => leg.type === "ride" && leg.mode === "jeepney").length;
 
 const getComparableFare = (option: RouteQueryOption) => option.totalFare ?? Number.MAX_SAFE_INTEGER;
+const hasDriveAccess = (option: RouteQueryOption) =>
+  option.legs.some((leg) => leg.type === "drive");
+
+const getCommuteModeAlignment = (option: RouteQueryOption, commuteModes: CommuteMode[]) => {
+  const preferredModes = new Set(normalizeCommuteModes(commuteModes));
+  const applyPreference = preferredModes.size > 0 && !usesAllCommuteModes(commuteModes);
+  let preferredRideCount = 0;
+  let unpreferredRideCount = 0;
+  const matchedModes = new Set<CommuteMode>();
+
+  if (!applyPreference) {
+    return {
+      preferredRideCount,
+      unpreferredRideCount,
+      matchedModeCount: matchedModes.size
+    };
+  }
+
+  for (const leg of option.legs) {
+    if (leg.type !== "ride") {
+      continue;
+    }
+
+    const commuteMode = mapRideModeToCommuteMode(leg.mode, `${leg.routeCode} ${leg.routeName}`);
+
+    if (!commuteMode) {
+      continue;
+    }
+
+    if (preferredModes.has(commuteMode)) {
+      preferredRideCount += 1;
+      matchedModes.add(commuteMode);
+    } else {
+      unpreferredRideCount += 1;
+    }
+  }
+
+  return {
+    preferredRideCount,
+    unpreferredRideCount,
+    matchedModeCount: matchedModes.size
+  };
+};
+
+const getTrainAlignmentMetrics = (option: RouteQueryOption) => {
+  let trainRideCount = 0;
+  let nonTrainRideCount = 0;
+
+  for (const leg of option.legs) {
+    if (leg.type !== "ride") {
+      continue;
+    }
+
+    const commuteMode = mapRideModeToCommuteMode(leg.mode, `${leg.routeCode} ${leg.routeName}`);
+
+    if (commuteMode === "train") {
+      trainRideCount += 1;
+    } else {
+      nonTrainRideCount += 1;
+    }
+  }
+
+  return {
+    trainRideCount,
+    nonTrainRideCount
+  };
+};
 
 const compareByModifiers = (
   left: RouteQueryOption,
@@ -75,10 +148,45 @@ const compareByModifiers = (
   return 0;
 };
 
+const compareByCommuteModes = (
+  left: RouteQueryOption,
+  right: RouteQueryOption,
+  commuteModes: CommuteMode[]
+) => {
+  if (usesAllCommuteModes(commuteModes)) {
+    return 0;
+  }
+
+  const leftAlignment = getCommuteModeAlignment(left, commuteModes);
+  const rightAlignment = getCommuteModeAlignment(right, commuteModes);
+  const trainPreferred = hasTrainCommutePreference(commuteModes);
+
+  if (trainPreferred) {
+    const leftTrainMetrics = getTrainAlignmentMetrics(left);
+    const rightTrainMetrics = getTrainAlignmentMetrics(right);
+
+    const trainComparison =
+      leftTrainMetrics.nonTrainRideCount - rightTrainMetrics.nonTrainRideCount ||
+      rightTrainMetrics.trainRideCount - leftTrainMetrics.trainRideCount;
+
+    if (trainComparison !== 0) {
+      return trainComparison;
+    }
+  }
+
+  return (
+    leftAlignment.unpreferredRideCount - rightAlignment.unpreferredRideCount ||
+    rightAlignment.preferredRideCount - leftAlignment.preferredRideCount ||
+    rightAlignment.matchedModeCount - leftAlignment.matchedModeCount
+  );
+};
+
 export const rankRouteOptions = (
   options: RouteQueryOption[],
   preference: RoutePreference,
-  modifiers: RouteModifier[] = []
+  modifiers: RouteModifier[] = [],
+  commuteModes: CommuteMode[] = [],
+  allowCarAccess = false
 ): RouteQueryOption[] => {
   if (options.length === 0) {
     return [];
@@ -89,6 +197,10 @@ export const rankRouteOptions = (
     right: RouteQueryOption,
     fallbackCompare: (leftOption: RouteQueryOption, rightOption: RouteQueryOption) => number
   ) =>
+    (!allowCarAccess
+      ? Number(hasDriveAccess(left)) - Number(hasDriveAccess(right))
+      : 0) ||
+    compareByCommuteModes(left, right, commuteModes) ||
     compareByModifiers(left, right, modifiers) ||
     fallbackCompare(left, right);
 

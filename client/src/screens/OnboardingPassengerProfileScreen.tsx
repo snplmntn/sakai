@@ -13,8 +13,10 @@ import {
   readStoredPreferenceDraft,
   writeStoredPreferenceDraft,
 } from '../preferences/storage';
-import type { PassengerType } from '../preferences/types';
-import { DEFAULT_VOICE_LANGUAGE } from '../voice/languages';
+import {
+  createDefaultUserPreferences,
+  type PassengerType,
+} from '../preferences/types';
 import {
   OnboardingPreferencesLayout,
   PASSENGER_TYPE_OPTIONS,
@@ -61,11 +63,16 @@ export default function OnboardingPassengerProfileScreen({
     setIsContinuing(true);
 
     try {
+      const storedDraft = await readStoredPreferenceDraft();
+      const localDefaults = createDefaultUserPreferences();
+
       await writeStoredPreferenceDraft({
         defaultPreference,
         passengerType,
-        routeModifiers: [],
-        voiceLanguage: DEFAULT_VOICE_LANGUAGE,
+        routeModifiers: storedDraft?.routeModifiers ?? localDefaults.routeModifiers,
+        voiceLanguage: storedDraft?.voiceLanguage ?? localDefaults.voiceLanguage,
+        commuteModes: storedDraft?.commuteModes ?? localDefaults.commuteModes,
+        allowCarAccess: storedDraft?.allowCarAccess ?? localDefaults.allowCarAccess,
       });
 
       navigation.navigate(destination);

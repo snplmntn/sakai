@@ -45,6 +45,7 @@ const routeOption: RouteQueryOption = {
       mode: "jeepney",
       routeId: "route-1",
       routeVariantId: "variant-1",
+      routeVariantCode: "variant-1",
       routeCode: "J1",
       routeName: "Cubao - PUP",
       directionLabel: "Eastbound",

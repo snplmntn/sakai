@@ -34,7 +34,13 @@ export const handleCreateSubmission = async (req: Request, res: Response) => {
   }
 };
 
-const submissionStatusSchema = z.enum(["pending", "reviewed", "approved", "rejected"]);
+const submissionStatusSchema = z.enum([
+  "pending",
+  "under_review",
+  "approved",
+  "rejected",
+  "published"
+]);
 
 export const handleGetMySubmissions = async (req: Request, res: Response) => {
   try {

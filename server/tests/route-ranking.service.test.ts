@@ -29,6 +29,7 @@ const createOption = (input: {
       mode: "jeepney" as const,
       routeId: `route-${input.id}-${index}`,
       routeVariantId: `variant-${input.id}-${index}`,
+      routeVariantCode: `variant-${input.id}-${index}`,
       routeCode: `JEEP-${input.id}-${index}`,
       routeName: `Jeep option ${input.id}`,
       directionLabel: "Outbound",

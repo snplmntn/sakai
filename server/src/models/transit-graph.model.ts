@@ -57,6 +57,11 @@ export interface TransitStopEdge {
   createdAt: string;
 }
 
+export interface TransitGraphCoverage {
+  stopCount: number;
+  edgeCount: number;
+}
+
 const EARTH_RADIUS_METERS = 6_371_000;
 const METERS_PER_DEGREE_LATITUDE = 111_320;
 const CLUSTER_ID_PREFIX = "cluster:";
@@ -477,4 +482,25 @@ export const listTransitEdgesBySourceStopIds = async (
         left.weight - right.weight ||
         left.targetStopId.localeCompare(right.targetStopId)
     );
+};
+
+export const getTransitGraphCoverage = async (): Promise<TransitGraphCoverage> => {
+  const client = getSupabaseAdminClient();
+  const [stopCountResult, edgeCountResult] = await Promise.all([
+    client.from("transit_stops").select("stop_id", { count: "exact", head: true }),
+    client.from("transit_stop_edges").select("source_stop_id", { count: "exact", head: true })
+  ]);
+
+  if (stopCountResult.error) {
+    throw new HttpError(500, `Failed to count transit stops: ${stopCountResult.error.message}`);
+  }
+
+  if (edgeCountResult.error) {
+    throw new HttpError(500, `Failed to count transit stop edges: ${edgeCountResult.error.message}`);
+  }
+
+  return {
+    stopCount: stopCountResult.count ?? 0,
+    edgeCount: edgeCountResult.count ?? 0
+  };
 };

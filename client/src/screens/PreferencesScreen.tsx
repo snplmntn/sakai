@@ -16,11 +16,18 @@ import SafeScreen from '../components/SafeScreen';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import {
+  COMMUTE_MODE_OPTIONS,
   PASSENGER_TYPE_OPTIONS,
   ROUTE_MODIFIER_OPTIONS,
   ROUTE_PREFERENCE_OPTIONS,
+  toggleCommuteModeSelection,
 } from '../preferences/types';
-import type { PassengerType, RouteModifier, RoutePreference } from '../preferences/types';
+import type {
+  CommuteMode,
+  PassengerType,
+  RouteModifier,
+  RoutePreference,
+} from '../preferences/types';
 import { usePreferences } from '../preferences/PreferencesContext';
 import { useToast } from '../toast/ToastContext';
 import { VOICE_LANGUAGE_OPTIONS, type VoiceLanguagePreference } from '../voice/languages';
@@ -32,14 +39,22 @@ export default function PreferencesScreen({ navigation }: PreferencesScreenProps
   const { showToast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const persistPreferences = async (
+    overrides: Partial<Pick<typeof preferences, 'defaultPreference' | 'passengerType' | 'routeModifiers' | 'voiceLanguage' | 'commuteModes' | 'allowCarAccess'>>
+  ) => {
+    await updatePreferences({
+      defaultPreference: overrides.defaultPreference ?? preferences.defaultPreference,
+      passengerType: overrides.passengerType ?? preferences.passengerType,
+      routeModifiers: overrides.routeModifiers ?? preferences.routeModifiers,
+      voiceLanguage: overrides.voiceLanguage ?? preferences.voiceLanguage,
+      commuteModes: overrides.commuteModes ?? preferences.commuteModes,
+      allowCarAccess: overrides.allowCarAccess ?? preferences.allowCarAccess,
+    });
+  };
+
   const handlePreferenceSelect = async (defaultPreference: RoutePreference) => {
     try {
-      await updatePreferences({
-        defaultPreference,
-        passengerType: preferences.passengerType,
-        routeModifiers: preferences.routeModifiers,
-        voiceLanguage: preferences.voiceLanguage,
-      });
+      await persistPreferences({ defaultPreference });
       showToast({ tone: 'success', message: 'Preferences updated.' });
     } catch (error) {
       showToast({
@@ -51,12 +66,7 @@ export default function PreferencesScreen({ navigation }: PreferencesScreenProps
 
   const handlePassengerTypeSelect = async (passengerType: PassengerType) => {
     try {
-      await updatePreferences({
-        defaultPreference: preferences.defaultPreference,
-        passengerType,
-        routeModifiers: preferences.routeModifiers,
-        voiceLanguage: preferences.voiceLanguage,
-      });
+      await persistPreferences({ passengerType });
       showToast({ tone: 'success', message: 'Preferences updated.' });
     } catch (error) {
       showToast({
@@ -72,12 +82,7 @@ export default function PreferencesScreen({ navigation }: PreferencesScreenProps
       : [...preferences.routeModifiers, modifier];
 
     try {
-      await updatePreferences({
-        defaultPreference: preferences.defaultPreference,
-        passengerType: preferences.passengerType,
-        routeModifiers,
-        voiceLanguage: preferences.voiceLanguage,
-      });
+      await persistPreferences({ routeModifiers });
       showToast({ tone: 'success', message: 'Preferences updated.' });
     } catch (error) {
       showToast({
@@ -89,12 +94,38 @@ export default function PreferencesScreen({ navigation }: PreferencesScreenProps
 
   const handleVoiceLanguageSelect = async (voiceLanguage: VoiceLanguagePreference) => {
     try {
-      await updatePreferences({
-        defaultPreference: preferences.defaultPreference,
-        passengerType: preferences.passengerType,
-        routeModifiers: preferences.routeModifiers,
-        voiceLanguage,
+      await persistPreferences({ voiceLanguage });
+      showToast({ tone: 'success', message: 'Preferences updated.' });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to update your preferences.',
       });
+    }
+  };
+
+  const handleCommuteModeToggle = async (commuteMode: CommuteMode) => {
+    const commuteModes = toggleCommuteModeSelection(preferences.commuteModes, commuteMode);
+
+    if (commuteModes === preferences.commuteModes) {
+      showToast({ tone: 'error', message: 'Keep at least one commute mode enabled.' });
+      return;
+    }
+
+    try {
+      await persistPreferences({ commuteModes });
+      showToast({ tone: 'success', message: 'Preferences updated.' });
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Unable to update your preferences.',
+      });
+    }
+  };
+
+  const handleCarAccessToggle = async (allowCarAccess: boolean) => {
+    try {
+      await persistPreferences({ allowCarAccess });
       showToast({ tone: 'success', message: 'Preferences updated.' });
     } catch (error) {
       showToast({
@@ -236,6 +267,86 @@ export default function PreferencesScreen({ navigation }: PreferencesScreenProps
                 </Pressable>
               );
             })}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Commute modes</Text>
+          <View style={styles.modifierRow}>
+            {COMMUTE_MODE_OPTIONS.map((option) => {
+              const selected = preferences.commuteModes.includes(option.value);
+
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[styles.modifierChip, selected && styles.modifierChipSelected]}
+                  onPress={() => {
+                    void handleCommuteModeToggle(option.value);
+                  }}
+                  disabled={isUpdating}
+                >
+                  <Text style={[styles.modifierTitle, selected && styles.modifierTitleSelected]}>
+                    {option.label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.modifierDescription,
+                      selected && styles.modifierDescriptionSelected,
+                    ]}
+                  >
+                    {option.description}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Car access</Text>
+          <View style={styles.list}>
+            <Pressable
+              style={[styles.card, !preferences.allowCarAccess && styles.cardSelected]}
+              onPress={() => {
+                void handleCarAccessToggle(false);
+              }}
+              disabled={isUpdating}
+            >
+              <View style={styles.cardCopy}>
+                <Text style={styles.cardTitle}>Avoid car access</Text>
+                <Text style={styles.cardDescription}>
+                  Keep searches on walking access to stops and destinations.
+                </Text>
+              </View>
+              <View style={[styles.pill, !preferences.allowCarAccess && styles.pillSelected]}>
+                <Text
+                  style={[styles.pillText, !preferences.allowCarAccess && styles.pillTextSelected]}
+                >
+                  {!preferences.allowCarAccess ? 'Selected' : 'Choose'}
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable
+              style={[styles.card, preferences.allowCarAccess && styles.cardSelected]}
+              onPress={() => {
+                void handleCarAccessToggle(true);
+              }}
+              disabled={isUpdating}
+            >
+              <View style={styles.cardCopy}>
+                <Text style={styles.cardTitle}>Allow car access</Text>
+                <Text style={styles.cardDescription}>
+                  Let Sakai use drive-to-stop or stop-to-destination access when it helps.
+                </Text>
+              </View>
+              <View style={[styles.pill, preferences.allowCarAccess && styles.pillSelected]}>
+                <Text
+                  style={[styles.pillText, preferences.allowCarAccess && styles.pillTextSelected]}
+                >
+                  {preferences.allowCarAccess ? 'Selected' : 'Choose'}
+                </Text>
+              </View>
+            </Pressable>
           </View>
         </View>
 

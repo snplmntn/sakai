@@ -1,7 +1,7 @@
 import type { RoutePreference } from "../models/user-preference.model.js";
 import type { TransitStop, TransitStopEdge } from "../models/transit-graph.model.js";
 import type { Stop, TransferPoint } from "../types/route-network.js";
-import type { RouteModifier } from "../types/route-query.js";
+import type { CommuteMode, RouteModifier } from "../types/route-query.js";
 
 const normalizePlannerText = (value: string) =>
   value
@@ -39,13 +39,16 @@ const MANUAL_INTERCHANGE_SPECS: ManualInterchangeSpec[] = [
 ];
 
 const JEEP_MODES = new Set(["jeep", "jeepney"]);
+const TRICYCLE_MODES = new Set(["tricycle"]);
 const UV_MODES = new Set(["uv"]);
 const LRT_MODES = new Set(["lrt", "lrt1", "lrt2"]);
 const MRT_MODES = new Set(["mrt", "mrt3"]);
+export const DEFAULT_COMMUTE_MODES: CommuteMode[] = ["jeepney", "train", "uv", "bus", "tricycle"];
 
 const normalizeMode = (mode: string) => mode.trim().toLowerCase();
 
 const isJeepMode = (mode: string) => JEEP_MODES.has(normalizeMode(mode));
+const isTricycleMode = (mode: string) => TRICYCLE_MODES.has(normalizeMode(mode));
 const isUvMode = (mode: string) => UV_MODES.has(normalizeMode(mode));
 const isLrtMode = (mode: string) => LRT_MODES.has(normalizeMode(mode));
 const isMrtMode = (mode: string) => MRT_MODES.has(normalizeMode(mode));
@@ -59,6 +62,54 @@ const isRailMode = (mode: string, routeName?: string | null) => {
     normalizedRouteName.includes("lrt") ||
     normalizedRouteName.includes("mrt")
   );
+};
+
+export const normalizeCommuteModes = (commuteModes: CommuteMode[]) => {
+  const uniqueModes = [...new Set(commuteModes)];
+
+  return uniqueModes.filter(
+    (commuteMode): commuteMode is CommuteMode =>
+      commuteMode === "jeepney" ||
+      commuteMode === "train" ||
+      commuteMode === "uv" ||
+      commuteMode === "bus" ||
+      commuteMode === "tricycle"
+  );
+};
+
+export const usesAllCommuteModes = (commuteModes: CommuteMode[]) =>
+  normalizeCommuteModes(commuteModes).length >= DEFAULT_COMMUTE_MODES.length;
+
+export const hasTrainCommutePreference = (commuteModes: CommuteMode[]) =>
+  normalizeCommuteModes(commuteModes).includes("train") && !usesAllCommuteModes(commuteModes);
+
+export const mapRideModeToCommuteMode = (
+  mode: string,
+  routeName?: string | null
+): CommuteMode | null => {
+  const normalizedMode = normalizeMode(mode);
+
+  if (isJeepMode(normalizedMode)) {
+    return "jeepney";
+  }
+
+  if (isTricycleMode(normalizedMode)) {
+    return "tricycle";
+  }
+
+  if (isUvMode(normalizedMode)) {
+    return "uv";
+  }
+
+  if (normalizedMode === "bus") {
+    return "bus";
+  }
+
+  if (isRailMode(normalizedMode, routeName)) {
+    return "train";
+  }
+
+  return null;
 };
 
 const getStationFamily = (mode: string, routeNames: string[] = []) => {
@@ -389,6 +440,7 @@ export const getTransitEdgeTraversalWeight = (input: {
   targetStop?: TransitStop;
   preference: RoutePreference;
   modifiers: RouteModifier[];
+  commuteModes: CommuteMode[];
   originFamily: string;
   destinationFamily: string;
 }) => {
@@ -435,6 +487,26 @@ export const getTransitEdgeTraversalWeight = (input: {
 
   if (input.modifiers.includes("less_walking") && input.edge.transfer) {
     segmentCost *= 1.45;
+  }
+
+  if (!input.edge.transfer) {
+    const commuteMode = mapRideModeToCommuteMode(input.edge.mode, routeName);
+    const preferredCommuteModes = new Set(normalizeCommuteModes(input.commuteModes));
+    const trainPreferred = hasTrainCommutePreference(input.commuteModes);
+
+    if (
+      commuteMode &&
+      preferredCommuteModes.size > 0 &&
+      !usesAllCommuteModes(input.commuteModes)
+    ) {
+      if (trainPreferred && commuteMode === "train") {
+        segmentCost *= preferredCommuteModes.size === 1 ? 0.64 : 0.72;
+      } else if (trainPreferred && commuteMode !== "train") {
+        segmentCost *= preferredCommuteModes.has(commuteMode) ? 0.94 : 1.42;
+      } else {
+        segmentCost *= preferredCommuteModes.has(commuteMode) ? 0.82 : 1.2;
+      }
+    }
   }
 
   return segmentCost;
@@ -486,6 +558,7 @@ export const awkwardMicroRidePenalty = (rideSegments: PlannerRideSegmentMetrics[
 export const buildPlannerCandidateMetrics = (input: {
   preference: RoutePreference;
   modifiers: RouteModifier[];
+  commuteModes: CommuteMode[];
   totalDurationMinutes: number;
   rideSegments: PlannerRideSegmentMetrics[];
   transferDurationsMinutes: number[];
@@ -496,6 +569,25 @@ export const buildPlannerCandidateMetrics = (input: {
   const transferWalkMinutes = input.transferDurationsMinutes.reduce((total, value) => total + value, 0);
   const jeepRideCount = input.rideSegments.filter((segment) => isJeepMode(segment.mode)).length;
   const railRideCount = input.rideSegments.filter((segment) => isRailMode(segment.mode)).length;
+  const tricycleRideCount = input.rideSegments.filter((segment) => isTricycleMode(segment.mode)).length;
+  const preferredCommuteModes = new Set(normalizeCommuteModes(input.commuteModes));
+  const applyCommuteModePreference =
+    preferredCommuteModes.size > 0 && !usesAllCommuteModes(input.commuteModes);
+  const trainPreferred = hasTrainCommutePreference(input.commuteModes);
+  const preferredRideSegmentCount = applyCommuteModePreference
+    ? input.rideSegments.filter((segment) => {
+        const commuteMode = mapRideModeToCommuteMode(segment.mode);
+
+        return commuteMode !== null && preferredCommuteModes.has(commuteMode);
+      }).length
+    : 0;
+  const unpreferredRideSegmentCount = applyCommuteModePreference
+    ? input.rideSegments.filter((segment) => {
+        const commuteMode = mapRideModeToCommuteMode(segment.mode);
+
+        return commuteMode !== null && !preferredCommuteModes.has(commuteMode);
+      }).length
+    : 0;
 
   const commuterEfficiencyScore =
     input.totalDurationMinutes + transferCount * 12 + rideHopCount * 4 + microRidePenalty +
@@ -523,6 +615,26 @@ export const buildPlannerCandidateMetrics = (input: {
 
   if (input.modifiers.includes("less_walking")) {
     score += transferWalkMinutes * 1.5;
+  }
+
+  if (applyCommuteModePreference) {
+    score -= preferredRideSegmentCount * 2.5;
+    score += unpreferredRideSegmentCount * 4;
+  }
+
+  if (trainPreferred) {
+    const nonTrainRideCount = rideHopCount - railRideCount;
+
+    score -= railRideCount * 5.5;
+    score += nonTrainRideCount * 6.5;
+
+    if (railRideCount === 0) {
+      score += 14;
+    }
+  }
+
+  if (preferredCommuteModes.has("tricycle")) {
+    score -= tricycleRideCount * 1.5;
   }
 
   return {

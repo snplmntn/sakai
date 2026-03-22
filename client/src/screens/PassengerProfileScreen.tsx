@@ -24,6 +24,8 @@ export default function PassengerProfileScreen() {
         passengerType: nextPassengerType,
         routeModifiers: preferences.routeModifiers,
         voiceLanguage: preferences.voiceLanguage,
+        commuteModes: preferences.commuteModes,
+        allowCarAccess: preferences.allowCarAccess,
       });
       showToast({ tone: 'success', message: 'Passenger profile updated.' });
     } catch (error) {

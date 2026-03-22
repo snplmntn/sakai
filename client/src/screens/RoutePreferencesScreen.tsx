@@ -23,6 +23,8 @@ export default function RoutePreferencesScreen() {
         passengerType: preferences.passengerType,
         routeModifiers: preferences.routeModifiers,
         voiceLanguage: preferences.voiceLanguage,
+        commuteModes: preferences.commuteModes,
+        allowCarAccess: preferences.allowCarAccess,
       });
       showToast({ tone: 'success', message: 'Route preference updated.' });
     } catch (error) {

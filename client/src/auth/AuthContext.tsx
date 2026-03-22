@@ -29,12 +29,14 @@ import {
 import {
   clearStoredPreferenceDraft,
   readStoredPreferenceDraft,
+  writeStoredPreferences,
 } from '../preferences/storage';
 import {
   getMyPreferences,
   toPersistedPreferenceDraft,
   upsertMyPreferences,
 } from '../preferences/api';
+import { toStoredPreferences } from '../preferences/types';
 import {
   hasAuthenticatedSession,
   type AuthPayload,
@@ -120,13 +122,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     const currentPreferences = await getMyPreferences(accessToken);
+    const persistedPreferences = currentPreferences.isPersisted
+      ? currentPreferences
+      : await upsertMyPreferences(accessToken, toPersistedPreferenceDraft(storedDraft));
 
-    if (currentPreferences.isPersisted) {
-      await clearStoredPreferenceDraft();
-      return;
-    }
-
-    await upsertMyPreferences(accessToken, toPersistedPreferenceDraft(storedDraft));
+    await writeStoredPreferences(
+      toStoredPreferences(
+        {
+          ...persistedPreferences,
+          routeModifiers: storedDraft.routeModifiers,
+          voiceLanguage: storedDraft.voiceLanguage,
+          commuteModes: storedDraft.commuteModes,
+          allowCarAccess: storedDraft.allowCarAccess,
+        },
+        'synced'
+      )
+    );
     await clearStoredPreferenceDraft();
   }, []);
 

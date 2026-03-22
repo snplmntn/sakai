@@ -3,9 +3,10 @@ import * as placeModel from "../models/place.model.js";
 import * as transitGraphModel from "../models/transit-graph.model.js";
 import { generateRouteSummary } from "../ai/route-summary.js";
 import { HttpError } from "../types/http-error.js";
-import type { PassengerType } from "../types/fare.js";
+import type { FareBreakdown, FareConfidence, PassengerType } from "../types/fare.js";
 import type { Stop } from "../types/route-network.js";
 import type {
+  CommuteMode,
   RouteModifier,
   RouteNavigationTarget,
   RouteQueryLeg,
@@ -44,6 +45,10 @@ interface TransitAccessStop {
   distanceMeters: number;
   durationMinutes: number;
   fromLabel: string;
+  accessMode: "walk" | "tricycle";
+  fareAmountRegular?: number;
+  fareAmountDiscounted?: number;
+  fareAssumptionText?: string;
 }
 
 interface TransitEndpointResolution {
@@ -116,17 +121,66 @@ interface TransitRideLegBlueprint {
 }
 
 const WALKING_METERS_PER_MINUTE = 80;
+const TRICYCLE_METERS_PER_MINUTE = 180;
 const MAX_ACCESS_DISTANCE_METERS = 800;
 const MAX_ACCESS_STOPS = 4;
+const MAX_PREFERRED_ACCESS_STOPS = 8;
+const TRAIN_ACCESS_DISTANCE_METERS = 1_800;
+const TRAIN_ACCESS_LOOKUP_LIMIT = 40;
 const MAX_TRANSIT_QUEUE_SIZE = 2000;
 const MAX_TRANSIT_CANDIDATES = 30;
 const MAX_TRANSIT_RIDE_BOARDINGS = 4;
 const MAX_TRANSIT_EDGES = 18;
 const SUPPORTED_TRANSIT_MODES = new Set(["jeep", "jeepney", "uv", "mrt3", "lrt1", "lrt2", "lrt", "mrt", "transfer"]);
 const fallbackWarningKeys = new Set<string>();
+const RAIL_ESTIMATE_BASE_FARE: Record<"lrt1" | "lrt2" | "mrt3", number> = {
+  lrt1: 15,
+  lrt2: 15,
+  mrt3: 13
+};
+const RAIL_ESTIMATE_PER_KM: Record<"lrt1" | "lrt2" | "mrt3", number> = {
+  lrt1: 1.35,
+  lrt2: 1.5,
+  mrt3: 1.25
+};
+const PUP_MAIN_CAMPUS_COORDINATES = {
+  latitude: 14.5979292,
+  longitude: 121.0107556
+};
+const CURATED_TRICYCLE_CONNECTORS = [
+  {
+    stopNormalizedName: "pureza lrt",
+    endpointCoordinates: PUP_MAIN_CAMPUS_COORDINATES,
+    endpointRadiusMeters: 1_200,
+    maxConnectorDistanceMeters: 1_600,
+    regularFare: 24,
+    discountedFare: 19.2,
+    assumptionText: "Estimated Sakai tricycle connector fare for the Pureza LRT to PUP corridor."
+  }
+] as const;
+
+const EARTH_RADIUS_METERS = 6_371_000;
 
 const roundMinutes = (value: number) => Math.max(1, Math.ceil(value));
 const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+const toRadians = (value: number) => (value * Math.PI) / 180;
+const calculateDistanceMeters = (
+  origin: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number }
+) => {
+  const latitudeDelta = toRadians(destination.latitude - origin.latitude);
+  const longitudeDelta = toRadians(destination.longitude - origin.longitude);
+  const originLatitude = toRadians(origin.latitude);
+  const destinationLatitude = toRadians(destination.latitude);
+
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(originLatitude) *
+      Math.cos(destinationLatitude) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(haversine));
+};
 
 const warnOnce = (key: string, message: string, details: Record<string, unknown>) => {
   if (fallbackWarningKeys.has(key)) {
@@ -193,7 +247,38 @@ const createWalkFareBreakdown = () => ({
   assumptionText: null
 });
 
+const buildEstimatedFareBreakdown = (input: {
+  amount: number;
+  fareProductCode?: string | null;
+  assumptionText: string;
+}): FareBreakdown => ({
+  amount: roundCurrency(Math.max(0, input.amount)),
+  pricingType: "estimated",
+  fareProductCode: input.fareProductCode ?? null,
+  ruleVersionName: null,
+  effectivityDate: null,
+  isDiscountApplied: false,
+  assumptionText: input.assumptionText
+});
+
 const normalizeTransitText = (value: string | null | undefined) => value?.trim().toLowerCase() ?? "";
+
+const createSyntheticEndpointStop = (input: {
+  point: RouteQueryNormalizedInput["origin"];
+  idPrefix: "origin" | "destination";
+  mode: "walk_anchor" | "tricycle";
+}): Stop => ({
+  id: `${input.idPrefix}:${input.point.placeId}`,
+  placeId: input.point.placeId,
+  externalStopCode: null,
+  stopName: input.point.label,
+  mode: input.mode,
+  area: input.point.label.split(",").slice(1).join(",").trim() || "Metro Manila",
+  latitude: input.point.latitude,
+  longitude: input.point.longitude,
+  isActive: true,
+  createdAt: new Date(0).toISOString()
+});
 
 export const mapTransitModeToRideMode = (input: {
   mode: string;
@@ -271,6 +356,103 @@ const getFareProductCodeForRideMode = (rideMode: RouteQueryRideLeg["mode"]) => {
   }
 
   return null;
+};
+
+const getFareConfidenceFromPricingTypes = (
+  pricingTypes: FareBreakdown["pricingType"][]
+): FareConfidence => {
+  if (pricingTypes.some((pricingType) => pricingType !== "official")) {
+    return pricingTypes.every((pricingType) => pricingType !== "official")
+      ? "estimated"
+      : "partially_estimated";
+  }
+
+  return "official";
+};
+
+const estimateJeepneyFare = (distanceKm: number, passengerType: PassengerType) => {
+  const minimumFare = 13;
+  const succeedingFare = passengerType === "regular" ? 1.8 : 1.44;
+
+  if (distanceKm <= 4) {
+    return minimumFare;
+  }
+
+  return minimumFare + Math.ceil(distanceKm - 4) * succeedingFare;
+};
+
+const estimateRailFare = (
+  distanceKm: number,
+  mode: "lrt1" | "lrt2" | "mrt3",
+  passengerType: PassengerType
+) => {
+  const baseFare = RAIL_ESTIMATE_BASE_FARE[mode];
+  const perKmFare = RAIL_ESTIMATE_PER_KM[mode];
+  const regularAmount = baseFare + Math.max(0, distanceKm - 2) * perKmFare;
+
+  return passengerType === "regular" ? regularAmount : regularAmount * 0.8;
+};
+
+const buildEstimatedTricycleFare = (input: {
+  passengerType: PassengerType;
+  regularAmount: number;
+  discountedAmount: number;
+  assumptionText: string;
+}) =>
+  buildEstimatedFareBreakdown({
+    amount: input.passengerType === "regular" ? input.regularAmount : input.discountedAmount,
+    fareProductCode: "tricycle_connector",
+    assumptionText: input.assumptionText
+  });
+
+const buildEstimatedTransitFare = (input: {
+  rideLeg: FareRideLegInput;
+  routeName: string;
+  passengerType: PassengerType;
+}): FareBreakdown | null => {
+  if (input.rideLeg.mode === "jeepney") {
+    return buildEstimatedFareBreakdown({
+      amount: estimateJeepneyFare(input.rideLeg.distanceKm, input.passengerType),
+      fareProductCode: input.rideLeg.fareProductCode,
+      assumptionText: "Estimated using Sakai fallback fare rules because fare catalog data was unavailable."
+    });
+  }
+
+  if (
+    input.rideLeg.mode === "lrt1" ||
+    input.rideLeg.mode === "lrt2" ||
+    input.rideLeg.mode === "mrt3"
+  ) {
+    return buildEstimatedFareBreakdown({
+      amount: estimateRailFare(input.rideLeg.distanceKm, input.rideLeg.mode, input.passengerType),
+      assumptionText: `Estimated ${input.rideLeg.mode.toUpperCase()} fare for ${input.routeName} because fare catalog data was unavailable.`
+    });
+  }
+
+  if (input.rideLeg.mode === "tricycle") {
+    return buildEstimatedFareBreakdown({
+      amount: 24,
+      fareProductCode: "tricycle_connector",
+      assumptionText: "Estimated Sakai tricycle connector fare because fare catalog data was unavailable."
+    });
+  }
+
+  return null;
+};
+
+const isSupportedTransitEdge = (edge: transitGraphModel.TransitStopEdge) => {
+  if (edge.transfer) {
+    return true;
+  }
+
+  return Boolean(
+    mapTransitModeToRideMode({
+      mode: edge.mode,
+      line: edge.line,
+      routeShortName: edge.routeShortName,
+      routeLongName: edge.routeLongName
+    })
+  );
 };
 
 const getServiceKey = (edge: transitGraphModel.TransitStopEdge) =>
@@ -361,6 +543,25 @@ const resolveWalkPathCoordinates = async (input: {
   );
 };
 
+const resolveEndpointConnectorPathCoordinates = async (input: {
+  from: { latitude: number; longitude: number };
+  to: { latitude: number; longitude: number };
+  accessMode: "walk" | "tricycle";
+}) => {
+  const fallbackGeometry = buildFallbackGeometry([input.from, input.to]);
+
+  if (!fallbackGeometry) {
+    return undefined;
+  }
+
+  return (
+    (await fetchORSGeometry({
+      profile: input.accessMode === "walk" ? "foot-walking" : "driving-car",
+      coordinates: fallbackGeometry
+    })) ?? fallbackGeometry
+  );
+};
+
 const toRouteStop = (
   stop: transitGraphModel.TransitStop,
   clusterId: string | null
@@ -398,23 +599,108 @@ const buildWalkLeg = (input: {
   pathCoordinates: input.pathCoordinates
 });
 
+const buildAccessStop = (input: {
+  stop: transitGraphModel.TransitStop;
+  distanceMeters: number;
+  durationMinutes: number;
+  fromLabel: string;
+  accessMode: "walk" | "tricycle";
+  fareAmountRegular?: number;
+  fareAmountDiscounted?: number;
+  fareAssumptionText?: string;
+}): TransitAccessStop => ({
+  stop: input.stop,
+  distanceMeters: Math.round(input.distanceMeters),
+  durationMinutes: input.durationMinutes,
+  fromLabel: input.fromLabel,
+  accessMode: input.accessMode,
+  fareAmountRegular: input.fareAmountRegular,
+  fareAmountDiscounted: input.fareAmountDiscounted,
+  fareAssumptionText: input.fareAssumptionText
+});
+
+const dedupeAccessStops = (accessStops: TransitAccessStop[]) => {
+  const accessStopMap = new Map<string, TransitAccessStop>();
+
+  for (const accessStop of accessStops) {
+    const existing = accessStopMap.get(accessStop.stop.stopId);
+
+    if (
+      !existing ||
+      accessStop.durationMinutes < existing.durationMinutes ||
+      (accessStop.durationMinutes === existing.durationMinutes &&
+        accessStop.accessMode === "tricycle" &&
+        existing.accessMode !== "tricycle")
+    ) {
+      accessStopMap.set(accessStop.stop.stopId, accessStop);
+    }
+  }
+
+  return [...accessStopMap.values()];
+};
+
+const sortAccessStops = (accessStops: TransitAccessStop[], commuteModes: CommuteMode[]) => {
+  const preferredModes = new Set(commuteModes);
+  const prefersTrain = preferredModes.has("train");
+  const prefersTricycle = preferredModes.has("tricycle");
+
+  const getPriorityScore = (accessStop: TransitAccessStop) => {
+    const rideMode = mapTransitModeToRideMode({
+      mode: accessStop.stop.mode,
+      line: accessStop.stop.line
+    });
+    const commuteMode =
+      rideMode === null ? null : rideMode === "lrt1" || rideMode === "lrt2" || rideMode === "mrt3" ? "train" : rideMode;
+
+    let score = accessStop.durationMinutes;
+
+    if (prefersTrain && commuteMode === "train") {
+      score -= 8;
+    }
+
+    if (prefersTricycle && accessStop.accessMode === "tricycle") {
+      score -= 4;
+    }
+
+    return score;
+  };
+
+  return [...accessStops].sort(
+    (left, right) =>
+      getPriorityScore(left) - getPriorityScore(right) ||
+      left.durationMinutes - right.durationMinutes ||
+      left.distanceMeters - right.distanceMeters ||
+      left.stop.stopName.localeCompare(right.stop.stopName) ||
+      left.stop.stopId.localeCompare(right.stop.stopId)
+  );
+};
+
 const buildAccessStopsFromCluster = async (clusterId: string, label: string) => {
   const memberStops = await transitGraphModel.listTransitStopsByClusterId(clusterId);
 
-  return memberStops.slice(0, MAX_ACCESS_STOPS).map((stop) => ({
-    stop,
-    distanceMeters: 0,
-    durationMinutes: 0,
-    fromLabel: label
-  }));
+  return memberStops.slice(0, MAX_ACCESS_STOPS).map((stop) =>
+    buildAccessStop({
+      stop,
+      distanceMeters: 0,
+      durationMinutes: 0,
+      fromLabel: label,
+      accessMode: "walk"
+    })
+  );
 };
 
-const buildAccessStopsFromCoordinates = async (point: RouteQueryPointInput, label: string) => {
+const buildAccessStopsFromCoordinates = async (input: {
+  point: RouteQueryPointInput;
+  label: string;
+  commuteModes: CommuteMode[];
+}) => {
+  const point = input.point;
+
   if (typeof point.latitude !== "number" || typeof point.longitude !== "number") {
     return [];
   }
 
-  const nearbyStops = await transitGraphModel.findNearestTransitStops({
+  const baseNearbyStops = await transitGraphModel.findNearestTransitStops({
     coordinates: {
       latitude: point.latitude,
       longitude: point.longitude
@@ -423,12 +709,95 @@ const buildAccessStopsFromCoordinates = async (point: RouteQueryPointInput, labe
     maxDistanceMeters: MAX_ACCESS_DISTANCE_METERS
   });
 
-  return nearbyStops.map((stop) => ({
-    stop,
-    distanceMeters: stop.distanceMeters,
-    durationMinutes: roundMinutes(stop.distanceMeters / WALKING_METERS_PER_MINUTE),
-    fromLabel: label
-  }));
+  const prefersTrain = input.commuteModes.includes("train");
+  const prefersTricycle = input.commuteModes.includes("tricycle");
+  const preferredNearbyStops =
+    prefersTrain || prefersTricycle
+      ? await transitGraphModel.findNearestTransitStops({
+          coordinates: {
+            latitude: point.latitude,
+            longitude: point.longitude
+          },
+          limit: TRAIN_ACCESS_LOOKUP_LIMIT,
+          maxDistanceMeters: TRAIN_ACCESS_DISTANCE_METERS
+        })
+      : [];
+  const accessStops: TransitAccessStop[] = baseNearbyStops.map((stop) =>
+    buildAccessStop({
+      stop,
+      distanceMeters: stop.distanceMeters,
+      durationMinutes: roundMinutes(stop.distanceMeters / WALKING_METERS_PER_MINUTE),
+      fromLabel: input.label,
+      accessMode: "walk"
+    })
+  );
+
+  if (prefersTrain) {
+    for (const stop of preferredNearbyStops) {
+      const rideMode = mapTransitModeToRideMode({
+        mode: stop.mode,
+        line: stop.line
+      });
+
+      if (rideMode !== "lrt1" && rideMode !== "lrt2" && rideMode !== "mrt3") {
+        continue;
+      }
+
+      accessStops.push(
+        buildAccessStop({
+          stop,
+          distanceMeters: stop.distanceMeters,
+          durationMinutes: roundMinutes(stop.distanceMeters / WALKING_METERS_PER_MINUTE),
+          fromLabel: input.label,
+          accessMode: "walk"
+        })
+      );
+    }
+  }
+
+  if (prefersTricycle) {
+    for (const stop of preferredNearbyStops) {
+      for (const connector of CURATED_TRICYCLE_CONNECTORS) {
+        if (stop.normalizedName !== connector.stopNormalizedName) {
+          continue;
+        }
+
+        const endpointDistance = calculateDistanceMeters(
+          {
+            latitude: point.latitude,
+            longitude: point.longitude
+          },
+          connector.endpointCoordinates
+        );
+
+        if (endpointDistance > connector.endpointRadiusMeters) {
+          continue;
+        }
+
+        if (stop.distanceMeters > connector.maxConnectorDistanceMeters) {
+          continue;
+        }
+
+        accessStops.push(
+          buildAccessStop({
+            stop,
+            distanceMeters: stop.distanceMeters,
+            durationMinutes: roundMinutes(stop.distanceMeters / TRICYCLE_METERS_PER_MINUTE),
+            fromLabel: input.label,
+            accessMode: "tricycle",
+            fareAmountRegular: connector.regularFare,
+            fareAmountDiscounted: connector.discountedFare,
+            fareAssumptionText: connector.assumptionText
+          })
+        );
+      }
+    }
+  }
+
+  return sortAccessStops(dedupeAccessStops(accessStops), input.commuteModes).slice(
+    0,
+    prefersTrain || prefersTricycle ? MAX_PREFERRED_ACCESS_STOPS : MAX_ACCESS_STOPS
+  );
 };
 
 const buildAccessStopsFromDirectStopMatch = async (label: string) => {
@@ -436,12 +805,15 @@ const buildAccessStopsFromDirectStopMatch = async (label: string) => {
     limit: MAX_ACCESS_STOPS
   });
 
-  return matchedStops.map((stop) => ({
-    stop,
-    distanceMeters: 0,
-    durationMinutes: 0,
-    fromLabel: label
-  }));
+  return matchedStops.map((stop) =>
+    buildAccessStop({
+      stop,
+      distanceMeters: 0,
+      durationMinutes: 0,
+      fromLabel: label,
+      accessMode: "walk"
+    })
+  );
 };
 
 const buildDirectMatchNormalizedPoint = (input: {
@@ -467,6 +839,7 @@ const buildDirectMatchNormalizedPoint = (input: {
 const resolveTransitEndpoint = async (
   field: "origin" | "destination",
   point: RouteQueryPointInput,
+  commuteModes: CommuteMode[],
   trace: TransitPlannerTraceSummary
 ): Promise<TransitEndpointAttempt> => {
   const clusterPlaceId = point.placeId?.startsWith("cluster:") ? point.placeId : undefined;
@@ -598,7 +971,11 @@ const resolveTransitEndpoint = async (
           longitude: point.longitude ?? clusterResolution.place.longitude
         }
       : point;
-  const coordinateAccessStops = await buildAccessStopsFromCoordinates(coordinatePoint, fallbackLabel).catch(
+  const coordinateAccessStops = await buildAccessStopsFromCoordinates({
+    point: coordinatePoint,
+    label: fallbackLabel,
+    commuteModes
+  }).catch(
     (error) => {
       if (transitGraphModel.isTransitGraphUnavailableError(error)) {
         warnOnce("transit_route_query_nearest_stop_fallback", "Transit nearby-stop access unavailable; skipping transit planner", {
@@ -728,17 +1105,39 @@ const resolveTransitEndpoint = async (
 const buildNavigationTarget = (
   input: {
     normalizedQuery: RouteQueryNormalizedInput;
-    rideLegs: RouteQueryRideLeg[];
+    legs: RouteQueryLeg[];
   }
 ): RouteNavigationTarget => {
-  const lastRideLeg = input.rideLegs.at(-1);
+  const lastLeg = input.legs.at(-1);
+  const rideLegs = input.legs.filter(
+    (leg): leg is RouteQueryRideLeg => leg.type === "ride"
+  );
+  const lastRideLeg = rideLegs.at(-1);
+
+  if (lastLeg?.type === "walk" || lastLeg?.type === "drive") {
+    return {
+      latitude: input.normalizedQuery.destination.latitude,
+      longitude: input.normalizedQuery.destination.longitude,
+      label: input.normalizedQuery.destination.label,
+      kind: "destination"
+    };
+  }
 
   if (lastRideLeg) {
+    const isSyntheticDestinationStop =
+      lastRideLeg.toStop.id === `destination:${input.normalizedQuery.destination.placeId}`;
+
     return {
-      latitude: lastRideLeg.toStop.latitude,
-      longitude: lastRideLeg.toStop.longitude,
-      label: lastRideLeg.toStop.stopName,
-      kind: "dropoff_stop"
+      latitude: isSyntheticDestinationStop
+        ? input.normalizedQuery.destination.latitude
+        : lastRideLeg.toStop.latitude,
+      longitude: isSyntheticDestinationStop
+        ? input.normalizedQuery.destination.longitude
+        : lastRideLeg.toStop.longitude,
+      label: isSyntheticDestinationStop
+        ? input.normalizedQuery.destination.label
+        : lastRideLeg.toStop.stopName,
+      kind: isSyntheticDestinationStop ? "destination" : "dropoff_stop"
     };
   }
 
@@ -749,6 +1148,51 @@ const buildNavigationTarget = (
     kind: "destination"
   };
 };
+
+const buildTricycleConnectorLeg = async (input: {
+  id: string;
+  fromStop: Stop;
+  toStop: Stop;
+  distanceMeters: number;
+  durationMinutes: number;
+  passengerType: PassengerType;
+  fareAmountRegular: number;
+  fareAmountDiscounted: number;
+  fareAssumptionText: string;
+}): Promise<RouteQueryRideLeg> => ({
+  type: "ride",
+  id: input.id,
+  mode: "tricycle",
+  routeId: "tricycle_connector",
+  routeVariantId: "tricycle_connector",
+  routeVariantCode: "TRICYCLE",
+  routeCode: "TRICYCLE",
+  routeName: "Tricycle connector",
+  directionLabel: input.toStop.stopName,
+  fromStop: input.fromStop,
+  toStop: input.toStop,
+  routeLabel: "Tricycle connector",
+  distanceKm: Number((input.distanceMeters / 1000).toFixed(2)),
+  durationMinutes: input.durationMinutes,
+  corridorTags: [placeModel.normalizePlaceSearchText(`${input.fromStop.stopName} ${input.toStop.stopName}`)],
+  fare: buildEstimatedTricycleFare({
+    passengerType: input.passengerType,
+    regularAmount: input.fareAmountRegular,
+    discountedAmount: input.fareAmountDiscounted,
+    assumptionText: input.fareAssumptionText
+  }),
+  pathCoordinates: await resolveEndpointConnectorPathCoordinates({
+    from: {
+      latitude: input.fromStop.latitude,
+      longitude: input.fromStop.longitude
+    },
+    to: {
+      latitude: input.toStop.latitude,
+      longitude: input.toStop.longitude
+    },
+    accessMode: "tricycle"
+  })
+});
 
 const buildTransitRouteOption = async (input: {
   candidate: TransitCandidate;
@@ -811,18 +1255,35 @@ const buildTransitRouteOption = async (input: {
 
   const fareRideLegInputs: FareRideLegInput[] = [];
   const rideLegBlueprints: TransitRideLegBlueprint[] = [];
-  const walkLegs: RouteQueryWalkLeg[] = [];
+  let accessWalkLeg: RouteQueryWalkLeg | null = null;
+  const transferWalkLegs: RouteQueryWalkLeg[] = [];
+  const syntheticOriginTricycleStop = createSyntheticEndpointStop({
+    point: input.normalizedQuery.origin,
+    idPrefix: "origin",
+    mode: "tricycle"
+  });
+  const syntheticDestinationWalkStop = createSyntheticEndpointStop({
+    point: input.normalizedQuery.destination,
+    idPrefix: "destination",
+    mode: "walk_anchor"
+  });
+  const syntheticDestinationTricycleStop = createSyntheticEndpointStop({
+    point: input.normalizedQuery.destination,
+    idPrefix: "destination",
+    mode: "tricycle"
+  });
 
-  if (input.candidate.accessStop.distanceMeters > 0) {
-    walkLegs.push(
-      buildWalkLeg({
-        id: `access:${input.candidate.accessStop.stop.stopId}`,
-        fromLabel: input.candidate.accessStop.fromLabel,
-        toLabel: input.candidate.accessStop.stop.stopName,
-        distanceMeters: input.candidate.accessStop.distanceMeters,
-        durationMinutes: input.candidate.accessStop.durationMinutes
-      })
-    );
+  if (
+    input.candidate.accessStop.distanceMeters > 0 &&
+    input.candidate.accessStop.accessMode === "walk"
+  ) {
+    accessWalkLeg = buildWalkLeg({
+      id: `access:${input.candidate.accessStop.stop.stopId}`,
+      fromLabel: input.candidate.accessStop.fromLabel,
+      toLabel: input.candidate.accessStop.stop.stopName,
+      distanceMeters: input.candidate.accessStop.distanceMeters,
+      durationMinutes: input.candidate.accessStop.durationMinutes
+    });
   }
 
   for (const rawLeg of rawLegs) {
@@ -834,7 +1295,7 @@ const buildTransitRouteOption = async (input: {
         return null;
       }
 
-      walkLegs.push(
+      transferWalkLegs.push(
         buildWalkLeg({
           id: `transfer:${rawLeg.edge.sourceStopId}:${rawLeg.edge.targetStopId}`,
           fromLabel: fromStop.stopName,
@@ -925,19 +1386,110 @@ const buildTransitRouteOption = async (input: {
     return null;
   }
 
-  const fareCatalog = await fareModel.getActiveFareCatalog([
-    ...new Set(fareRideLegInputs.map((rideLeg) => rideLeg.mode))
-  ]);
-  const pricedRideLegs = priceRideLegsWithCatalog(
-    fareCatalog,
-    fareRideLegInputs,
-    input.passengerType
-  );
-  const fareById = new Map(pricedRideLegs.rideLegs.map((rideLeg) => [rideLeg.id, rideLeg.fare]));
+  const fareModes = [...new Set(fareRideLegInputs.map((rideLeg) => rideLeg.mode))];
+  const fareCatalog = await fareModel.getActiveFareCatalog(fareModes);
+  let fareById = new Map<string, FareBreakdown>();
+  let fareConfidence: FareConfidence = "official";
+  let fareAssumptions: string[] = [];
+
+  try {
+    const pricedRideLegs = priceRideLegsWithCatalog(
+      fareCatalog,
+      fareRideLegInputs,
+      input.passengerType
+    );
+    fareById = new Map(pricedRideLegs.rideLegs.map((rideLeg) => [rideLeg.id, rideLeg.fare]));
+    fareConfidence = pricedRideLegs.fareConfidence;
+    fareAssumptions = pricedRideLegs.fareAssumptions;
+  } catch (error) {
+    if (!(error instanceof HttpError)) {
+      throw error;
+    }
+
+    warnOnce(
+      `transit_route_query_fare_estimate_fallback:${fareModes.sort().join(",")}`,
+      "Transit route option fell back to estimated fares because fare catalog pricing failed",
+      {
+        operation: "transit_route_query_fare_estimate_fallback",
+        reason: error.message,
+        fareModes
+      }
+    );
+
+    const estimatedRideFares = rideLegBlueprints.flatMap((rideLeg, index) => {
+      const fareRideLegInput = fareRideLegInputs[index];
+
+      if (!fareRideLegInput) {
+        return [];
+      }
+
+      const estimatedFare = buildEstimatedTransitFare({
+        rideLeg: fareRideLegInput,
+        routeName: rideLeg.routeName,
+        passengerType: input.passengerType
+      });
+
+      if (!estimatedFare) {
+        return [];
+      }
+
+      return [
+        {
+          id: rideLeg.id,
+          fare: estimatedFare
+        }
+      ];
+    });
+
+    if (estimatedRideFares.length !== rideLegBlueprints.length) {
+      return null;
+    }
+
+    fareById = new Map(estimatedRideFares.map((rideLeg) => [rideLeg.id, rideLeg.fare]));
+    fareConfidence = getFareConfidenceFromPricingTypes(
+      estimatedRideFares.map((rideLeg) => rideLeg.fare.pricingType)
+    );
+    fareAssumptions = [
+      ...new Set(
+        estimatedRideFares
+          .map((rideLeg) => rideLeg.fare.assumptionText)
+          .filter((assumptionText): assumptionText is string => Boolean(assumptionText))
+      )
+    ];
+  }
   const routeLegs: RouteQueryLeg[] = [];
 
-  if (walkLegs[0]) {
-    routeLegs.push(walkLegs[0]);
+  if (
+    input.candidate.accessStop.distanceMeters > 0 &&
+    input.candidate.accessStop.accessMode === "tricycle"
+  ) {
+    const fareAmountRegular = input.candidate.accessStop.fareAmountRegular;
+    const fareAmountDiscounted = input.candidate.accessStop.fareAmountDiscounted;
+    const fareAssumptionText = input.candidate.accessStop.fareAssumptionText;
+
+    if (
+      typeof fareAmountRegular !== "number" ||
+      typeof fareAmountDiscounted !== "number" ||
+      !fareAssumptionText
+    ) {
+      return null;
+    }
+
+    routeLegs.push(
+      await buildTricycleConnectorLeg({
+        id: `access-tricycle:${input.candidate.accessStop.stop.stopId}`,
+        fromStop: syntheticOriginTricycleStop,
+        toStop: toRouteStop(input.candidate.accessStop.stop, input.normalizedQuery.origin.placeId),
+        distanceMeters: input.candidate.accessStop.distanceMeters,
+        durationMinutes: input.candidate.accessStop.durationMinutes,
+        passengerType: input.passengerType,
+        fareAmountRegular,
+        fareAmountDiscounted,
+        fareAssumptionText
+      })
+    );
+  } else if (accessWalkLeg) {
+    routeLegs.push(accessWalkLeg);
   }
 
   for (let index = 0; index < rideLegBlueprints.length; index += 1) {
@@ -954,6 +1506,7 @@ const buildTransitRouteOption = async (input: {
       mode: rideLeg.mode,
       routeId: rideLeg.routeCode,
       routeVariantId: rideLeg.routeCode,
+      routeVariantCode: rideLeg.routeCode,
       routeCode: rideLeg.routeCode,
       routeName: rideLeg.routeName,
       directionLabel: rideLeg.directionLabel,
@@ -967,16 +1520,70 @@ const buildTransitRouteOption = async (input: {
       pathCoordinates: rideLeg.pathCoordinates
     });
 
-    const transferWalk = walkLegs[index + 1];
+    const transferWalk = transferWalkLegs[index];
 
     if (transferWalk) {
       routeLegs.push(transferWalk);
     }
   }
 
-  const totalFare = roundCurrency(pricedRideLegs.totalFare);
+  if (
+    input.candidate.destinationStop.distanceMeters > 0 &&
+    input.candidate.destinationStop.accessMode === "tricycle"
+  ) {
+    const fareAmountRegular = input.candidate.destinationStop.fareAmountRegular;
+    const fareAmountDiscounted = input.candidate.destinationStop.fareAmountDiscounted;
+    const fareAssumptionText = input.candidate.destinationStop.fareAssumptionText;
+
+    if (
+      typeof fareAmountRegular !== "number" ||
+      typeof fareAmountDiscounted !== "number" ||
+      !fareAssumptionText
+    ) {
+      return null;
+    }
+
+    routeLegs.push(
+      await buildTricycleConnectorLeg({
+        id: `egress-tricycle:${input.candidate.destinationStop.stop.stopId}`,
+        fromStop: toRouteStop(input.candidate.destinationStop.stop, input.normalizedQuery.destination.placeId),
+        toStop: syntheticDestinationTricycleStop,
+        distanceMeters: input.candidate.destinationStop.distanceMeters,
+        durationMinutes: input.candidate.destinationStop.durationMinutes,
+        passengerType: input.passengerType,
+        fareAmountRegular,
+        fareAmountDiscounted,
+        fareAssumptionText
+      })
+    );
+  } else if (input.candidate.destinationStop.distanceMeters > 0) {
+    routeLegs.push(
+      buildWalkLeg({
+        id: `egress:${input.candidate.destinationStop.stop.stopId}`,
+        fromLabel: input.candidate.destinationStop.stop.stopName,
+        toLabel: input.normalizedQuery.destination.label,
+        distanceMeters: input.candidate.destinationStop.distanceMeters,
+        durationMinutes: input.candidate.destinationStop.durationMinutes,
+        pathCoordinates: await resolveEndpointConnectorPathCoordinates({
+          from: {
+            latitude: input.candidate.destinationStop.stop.latitude,
+            longitude: input.candidate.destinationStop.stop.longitude
+          },
+          to: {
+            latitude: syntheticDestinationWalkStop.latitude,
+            longitude: syntheticDestinationWalkStop.longitude
+          },
+          accessMode: "walk"
+        })
+      })
+    );
+  }
+
   const rideLegs = routeLegs.filter(
     (leg): leg is RouteQueryRideLeg => leg.type === "ride"
+  );
+  const totalFare = roundCurrency(
+    rideLegs.reduce((total, rideLeg) => total + rideLeg.fare.amount, 0)
   );
 
   return {
@@ -986,16 +1593,17 @@ const buildTransitRouteOption = async (input: {
     highlights: [],
     totalDurationMinutes: routeLegs.reduce((total, leg) => total + leg.durationMinutes, 0),
     totalFare,
-    fareConfidence: pricedRideLegs.fareConfidence,
+    fareConfidence,
     transferCount: Math.max(0, rideLegs.length - 1),
     corridorTags: [...new Set(rideLegs.flatMap((leg) => leg.corridorTags))],
-    fareAssumptions: pricedRideLegs.fareAssumptions,
+    fareAssumptions,
     legs: routeLegs,
     relevantIncidents: [],
+    routeCommunity: [],
     source: "sakai",
     navigationTarget: buildNavigationTarget({
       normalizedQuery: input.normalizedQuery,
-      rideLegs
+      legs: routeLegs
     })
   };
 };
@@ -1006,6 +1614,8 @@ export const queryTransitRoutesIfPossible = async (input: {
   preference: EffectiveValue<RoutePreference>;
   passengerType: EffectiveValue<PassengerType>;
   modifiers: EffectiveValue<RouteModifier[]>;
+  commuteModes: EffectiveValue<CommuteMode[]>;
+  allowCarAccess: EffectiveValue<boolean>;
 }): Promise<TransitPlannerAttempt> => {
   const trace: TransitPlannerTraceSummary = {
     requestId: createTransitRequestId(),
@@ -1028,12 +1638,14 @@ export const queryTransitRoutesIfPossible = async (input: {
     origin: input.origin,
     destination: input.destination,
     preference: input.preference.value,
-    modifiers: input.modifiers.value
+    modifiers: input.modifiers.value,
+    commuteModes: input.commuteModes.value,
+    allowCarAccess: input.allowCarAccess.value
   });
 
   const [originAttempt, destinationAttempt] = await Promise.all([
-    resolveTransitEndpoint("origin", input.origin, trace),
-    resolveTransitEndpoint("destination", input.destination, trace)
+    resolveTransitEndpoint("origin", input.origin, input.commuteModes.value, trace),
+    resolveTransitEndpoint("destination", input.destination, input.commuteModes.value, trace)
   ]);
 
   if (originAttempt.status === "unavailable" || destinationAttempt.status === "unavailable") {
@@ -1079,8 +1691,16 @@ export const queryTransitRoutesIfPossible = async (input: {
     preferenceSource: input.preference.source,
     passengerTypeSource: input.passengerType.source,
     modifiers: input.modifiers.value,
-    modifierSource: input.modifiers.source
+    modifierSource: input.modifiers.source,
+    commuteModes: input.commuteModes.value,
+    commuteModeSource: input.commuteModes.source,
+    allowCarAccess: input.allowCarAccess.value,
+    carAccessSource: input.allowCarAccess.source
   };
+  const networkCommuteModes =
+    normalizedQuery.commuteModes.filter((commuteMode) => commuteMode !== "tricycle");
+  const graphTraversalCommuteModes =
+    networkCommuteModes.length > 0 ? networkCommuteModes : normalizedQuery.commuteModes;
 
   const destinationMap = new Map(
     destinationResolution.accessStops.map((accessStop) => [accessStop.stop.stopId, accessStop])
@@ -1346,6 +1966,10 @@ export const queryTransitRoutesIfPossible = async (input: {
     }
 
     for (const edge of augmentedOutgoingEdges) {
+      if (!isSupportedTransitEdge(edge)) {
+        continue;
+      }
+
       const nextStopId = edge.targetStopId;
 
       if (state.visitedStopIds.has(nextStopId)) {
@@ -1372,6 +1996,7 @@ export const queryTransitRoutesIfPossible = async (input: {
             targetStop: knownTransitStops.get(edge.targetStopId),
             preference: normalizedQuery.preference,
             modifiers: normalizedQuery.modifiers,
+            commuteModes: graphTraversalCommuteModes,
             originFamily,
             destinationFamily
           });
@@ -1456,7 +2081,13 @@ export const queryTransitRoutesIfPossible = async (input: {
   }
 
   const optionsWithIncidents = await attachRelevantIncidentsToOptions({
-    options: rankRouteOptions(routeOptions, normalizedQuery.preference, normalizedQuery.modifiers),
+    options: rankRouteOptions(
+      routeOptions,
+      normalizedQuery.preference,
+      normalizedQuery.modifiers,
+      normalizedQuery.commuteModes,
+      normalizedQuery.allowCarAccess
+    ),
     normalizedQuery
   });
   const summarizedOptions = await Promise.all(

@@ -13,10 +13,12 @@ import * as routeModel from "../models/route.model.js";
 import * as stopModel from "../models/stop.model.js";
 import * as transferPointModel from "../models/transfer-point.model.js";
 import * as userPreferenceModel from "../models/user-preference.model.js";
+import { buildRouteCommunityMetadataLookup } from "../models/community-review.model.js";
 import { HttpError } from "../types/http-error.js";
 import type { FareBreakdown, PassengerType } from "../types/fare.js";
 import type { PlaceMatch, RouteLeg, RouteVariant, Stop, StopMode, TransferPoint } from "../types/route-network.js";
 import type {
+  CommuteMode,
   RouteModifier,
   RouteQueryDriveLeg,
   RouteQueryLeg,
@@ -33,6 +35,7 @@ import { priceRideLegsWithCatalog, type FareRideLegInput } from "./fare-engine.s
 import {
   buildPlannerCandidateMetrics,
   buildRuntimeManualTransferPoints,
+  DEFAULT_COMMUTE_MODES,
   dominatesPlannerCandidate
 } from "./route-planner-rules.js";
 import { attachRelevantIncidentsToOptions } from "./route-incident.service.js";
@@ -42,6 +45,7 @@ import { queryGoogleFallbackRoutes } from "./google-route-fallback.service.js";
 
 const DEFAULT_ROUTE_PREFERENCE: RoutePreference = "balanced";
 const DEFAULT_PASSENGER_TYPE: PassengerType = "regular";
+const DEFAULT_ALLOW_CAR_ACCESS = false;
 const MAX_WALK_ACCESS_DISTANCE_METERS = 500;
 const MAX_DRIVE_ACCESS_DISTANCE_METERS = 3_000;
 const MAX_WALK_ACCESS_STOPS = 5;
@@ -49,11 +53,11 @@ const MAX_DRIVE_ACCESS_STOPS = 5;
 const MAX_ROUTE_SLICES_PER_STOP = 10;
 const MAX_QUEUED_MULTIMODAL_STATES = 500;
 const MAX_CANDIDATE_DRAFTS = 200;
-const MAX_ROUTE_OPTIONS = 6;
+const MAX_ROUTE_OPTIONS = 3;
 const ROUTE_SUMMARY_CONCURRENCY = 3;
 const WALKING_METERS_PER_MINUTE = 80;
 const DRIVING_METERS_PER_MINUTE = 250;
-const RIDE_STOP_MODES: StopMode[] = ["jeepney", "uv", "mrt3", "lrt1", "lrt2", "car"];
+const RIDE_STOP_MODES: StopMode[] = ["jeepney", "uv", "mrt3", "lrt1", "lrt2", "tricycle", "car"];
 const MAX_RIDE_LEGS_PER_OPTION = 4;
 const fallbackWarningKeys = new Set<string>();
 
@@ -65,6 +69,8 @@ interface RouteQueryRequest {
   preference?: RoutePreference;
   passengerType?: PassengerType;
   modifiers?: RouteModifier[];
+  commuteModes?: CommuteMode[];
+  allowCarAccess?: boolean;
 }
 
 interface EffectiveValue<T> {
@@ -284,31 +290,20 @@ const getEffectivePreferenceValues = async (input: {
   preference?: RoutePreference;
   passengerType?: PassengerType;
   modifiers?: RouteModifier[];
+  commuteModes?: CommuteMode[];
+  allowCarAccess?: boolean;
   parsedPreference?: RoutePreference | null;
   parsedPassengerType?: PassengerType | null;
   parsedModifiers?: RouteModifier[];
+  parsedCommuteModes?: CommuteMode[] | null;
+  parsedAllowCarAccess?: boolean | null;
 }): Promise<{
   preference: EffectiveValue<RoutePreference>;
   passengerType: EffectiveValue<PassengerType>;
   modifiers: EffectiveValue<RouteModifier[]>;
+  commuteModes: EffectiveValue<CommuteMode[]>;
+  allowCarAccess: EffectiveValue<boolean>;
 }> => {
-  if (input.preference && input.passengerType && input.modifiers) {
-    return {
-      preference: {
-        value: input.preference,
-        source: "request_override"
-      },
-      passengerType: {
-        value: input.passengerType,
-        source: "request_override"
-      },
-      modifiers: {
-        value: [...new Set(input.modifiers)],
-        source: "request_override"
-      }
-    };
-  }
-
   const savedPreference = input.userId
     ? await userPreferenceModel.getUserPreferenceByUserId(
         input.userId,
@@ -368,9 +363,46 @@ const getEffectivePreferenceValues = async (input: {
         : {
             value: [],
             source: "default"
+          },
+    commuteModes: input.commuteModes
+      ? {
+          value: [...new Set(input.commuteModes)],
+          source: "request_override"
+        }
+      : input.parsedCommuteModes && input.parsedCommuteModes.length > 0
+        ? {
+            value: [...new Set(input.parsedCommuteModes)],
+            source: "ai_parsed"
           }
+        : {
+            value: [...DEFAULT_COMMUTE_MODES],
+            source: "default"
+          },
+    allowCarAccess:
+      typeof input.allowCarAccess === "boolean"
+        ? {
+            value: input.allowCarAccess,
+            source: "request_override"
+          }
+        : typeof input.parsedAllowCarAccess === "boolean"
+          ? {
+              value: input.parsedAllowCarAccess,
+              source: "ai_parsed"
+            }
+          : {
+              value: DEFAULT_ALLOW_CAR_ACCESS,
+              source: "default"
+            }
   };
 };
+
+const filterAccessStopsForCarPreference = (
+  accessStops: AccessStopCandidate[],
+  allowCarAccess: boolean
+) =>
+  allowCarAccess
+    ? accessStops
+    : accessStops.filter((accessStop) => accessStop.accessMode === "walk");
 
 const getCoordinatesFromPoint = (point: RouteQueryPointInput) =>
   typeof point.latitude === "number" && typeof point.longitude === "number"
@@ -843,6 +875,7 @@ const buildMultimodalCandidateDrafts = (input: {
   destinationLabel: string;
   preference: RoutePreference;
   modifiers: RouteModifier[];
+  commuteModes: CommuteMode[];
 }): CandidateDraft[] => {
   const stopById = new Map<string, Stop>();
   const routeSlicesByFromStopId = listRouteSlicesFromStopIds(input.variants);
@@ -1049,7 +1082,8 @@ const buildMultimodalCandidateDrafts = (input: {
 
   return dedupeCandidateDrafts(destinationCandidates, {
     preference: input.preference,
-    modifiers: input.modifiers
+    modifiers: input.modifiers,
+    commuteModes: input.commuteModes
   }).slice(0, MAX_CANDIDATE_DRAFTS);
 };
 
@@ -1136,6 +1170,7 @@ const buildRouteQueryRideLeg = (
   mode: rideLeg.variant.route.primaryMode,
   routeId: rideLeg.variant.route.id,
   routeVariantId: rideLeg.variant.id,
+  routeVariantCode: rideLeg.variant.code,
   routeCode: rideLeg.variant.route.code,
   routeName: rideLeg.variant.route.displayName,
   directionLabel: rideLeg.variant.directionLabel,
@@ -1257,6 +1292,7 @@ const buildRouteOption = (
     fareAssumptions: [...new Set(fareAssumptions)],
     legs,
     relevantIncidents: [],
+    routeCommunity: [],
     source: "sakai",
     navigationTarget: buildNavigationTarget({
       normalizedQuery,
@@ -1268,11 +1304,218 @@ const buildRouteOption = (
 const buildRouteQueryMessage = (normalizedQuery: RouteQueryNormalizedInput) =>
   `No supported route found for ${normalizedQuery.origin.label} to ${normalizedQuery.destination.label} in the current coverage`;
 
+const createSkippedGoogleFallback = (): RouteQueryResult["googleFallback"] => ({
+  status: "skipped",
+  options: []
+});
+
+const attachRouteCommunityMetadata = async (
+  options: RouteQueryOption[]
+): Promise<RouteQueryOption[]> => {
+  const rideLegs = options.flatMap((option) =>
+    option.legs.filter((leg): leg is RouteQueryRideLeg => leg.type === "ride")
+  );
+
+  if (rideLegs.length === 0) {
+    return options.map((option) => ({
+      ...option,
+      routeCommunity: []
+    }));
+  }
+
+  const metadataLookup = await buildRouteCommunityMetadataLookup({
+    routeIds: rideLegs.map((leg) => leg.routeId),
+    routeCodes: rideLegs.map((leg) => leg.routeCode),
+    routeVariantIds: rideLegs.map((leg) => leg.routeVariantId),
+    routeVariantCodes: rideLegs.flatMap((leg) => (leg.routeVariantCode ? [leg.routeVariantCode] : []))
+  });
+
+  return options.map((option) => {
+    const nextLegs = option.legs.map((leg) => {
+      if (leg.type !== "ride") {
+        return leg;
+      }
+
+      const community =
+        metadataLookup.get(`variant-id:${leg.routeVariantId}`) ??
+        (leg.routeVariantCode ? metadataLookup.get(`variant-code:${leg.routeVariantCode}`) : undefined) ??
+        metadataLookup.get(`route-id:${leg.routeId}`) ??
+        metadataLookup.get(`route-code:${leg.routeCode}`);
+
+      return community
+        ? {
+            ...leg,
+            community
+          }
+        : leg;
+    });
+
+    return {
+      ...option,
+      legs: nextLegs,
+      routeCommunity: nextLegs
+        .filter((leg): leg is RouteQueryRideLeg => leg.type === "ride" && Boolean(leg.community))
+        .map((leg) => leg.community!)
+        .filter(
+          (community, index, items) =>
+            items.findIndex(
+              (candidate) =>
+                candidate.routeId === community.routeId &&
+                candidate.routeVariantId === community.routeVariantId &&
+                candidate.routeCode === community.routeCode
+            ) === index
+        )
+    };
+  });
+};
+
+const normalizeRouteSignatureText = (value: string | null | undefined) =>
+  (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ");
+
+const buildRideSequenceSignature = (option: RouteQueryOption) => {
+  const rideLegs = option.legs.filter(
+    (leg): leg is RouteQueryRideLeg => leg.type === "ride"
+  );
+
+  if (rideLegs.length === 0) {
+    return "";
+  }
+
+  return rideLegs
+    .map((leg) =>
+      [
+        leg.mode,
+        normalizeRouteSignatureText(leg.routeCode),
+        normalizeRouteSignatureText(leg.routeName),
+        normalizeRouteSignatureText(leg.fromStop.stopName),
+        normalizeRouteSignatureText(leg.toStop.stopName)
+      ].join(":")
+    )
+    .join("|");
+};
+
+const mergeUniqueFallbackOptions = (input: {
+  primaryOptions: RouteQueryOption[];
+  fallbackOptions: RouteQueryOption[];
+  maxOptions: number;
+}) => {
+  const mergedOptions = [...input.primaryOptions];
+  const knownSignatures = new Set(
+    input.primaryOptions.map((option) => buildRideSequenceSignature(option)).filter(Boolean)
+  );
+  const appendedFallbackOptions: RouteQueryOption[] = [];
+
+  for (const option of input.fallbackOptions) {
+    if (mergedOptions.length >= input.maxOptions) {
+      break;
+    }
+
+    const signature = buildRideSequenceSignature(option);
+
+    if (signature.length > 0 && knownSignatures.has(signature)) {
+      continue;
+    }
+
+    if (signature.length > 0) {
+      knownSignatures.add(signature);
+    }
+
+    mergedOptions.push(option);
+    appendedFallbackOptions.push(option);
+  }
+
+  return {
+    mergedOptions,
+    appendedFallbackOptions
+  };
+};
+
+const queryGoogleFallbackSafely = async (input: {
+  normalizedQuery: RouteQueryNormalizedInput;
+  modifiers: RouteModifier[];
+  commuteModes: CommuteMode[];
+  passengerType: PassengerType;
+}) => {
+  const result = await queryGoogleFallbackRoutes(input).catch((error: unknown) => {
+    console.warn("Google fallback route lookup failed", {
+      operation: "google_fallback_route_lookup",
+      reason: error instanceof Error ? error.message : "unknown error"
+    });
+
+    return {
+      status: "unavailable",
+      options: [],
+      message: "Google Maps fallback is unavailable right now."
+    } satisfies RouteQueryResult["googleFallback"];
+  });
+
+  if (result.options.length <= MAX_ROUTE_OPTIONS) {
+    return result;
+  }
+
+  return {
+    ...result,
+    options: result.options.slice(0, MAX_ROUTE_OPTIONS)
+  };
+};
+
+const finalizeRouteOptions = async (input: {
+  normalizedQuery: RouteQueryNormalizedInput;
+  primaryOptions: RouteQueryOption[];
+  fallbackQuery: {
+    modifiers: RouteModifier[];
+    commuteModes: CommuteMode[];
+    passengerType: PassengerType;
+  };
+}) => {
+  const cappedPrimaryOptions = input.primaryOptions.slice(0, MAX_ROUTE_OPTIONS);
+
+  if (cappedPrimaryOptions.length >= MAX_ROUTE_OPTIONS) {
+    return {
+      options: cappedPrimaryOptions,
+      googleFallback: createSkippedGoogleFallback()
+    };
+  }
+
+  const googleFallback = await queryGoogleFallbackSafely({
+    normalizedQuery: input.normalizedQuery,
+    modifiers: input.fallbackQuery.modifiers,
+    commuteModes: input.fallbackQuery.commuteModes,
+    passengerType: input.fallbackQuery.passengerType
+  });
+
+  if (googleFallback.options.length === 0) {
+    return {
+      options: cappedPrimaryOptions,
+      googleFallback
+    };
+  }
+
+  const { mergedOptions, appendedFallbackOptions } = mergeUniqueFallbackOptions({
+    primaryOptions: cappedPrimaryOptions,
+    fallbackOptions: googleFallback.options,
+    maxOptions: MAX_ROUTE_OPTIONS
+  });
+
+  return {
+    options: mergedOptions,
+    googleFallback: {
+      ...googleFallback,
+      options: appendedFallbackOptions
+    }
+  };
+};
+
 const dedupeCandidateDrafts = (
   drafts: CandidateDraft[],
   input: {
     preference: RoutePreference;
     modifiers: RouteModifier[];
+    commuteModes: CommuteMode[];
   }
 ) => {
   const draftMap = new Map<string, { draft: CandidateDraft; metrics: ReturnType<typeof buildPlannerCandidateMetrics> }>();
@@ -1291,6 +1534,7 @@ const dedupeCandidateDrafts = (
     const metrics = buildPlannerCandidateMetrics({
       preference: input.preference,
       modifiers: input.modifiers,
+      commuteModes: input.commuteModes,
       totalDurationMinutes:
         draft.rideLegs.reduce((total, rideLeg) => total + rideLeg.durationMinutes, 0) +
         draft.transitionLegs.reduce((total, transitionLeg) => total + transitionLeg.durationMinutes, 0),
@@ -1391,9 +1635,13 @@ export const queryRoutes = async (input: {
       preference: input.request.preference,
       passengerType: input.request.passengerType,
       modifiers: input.request.modifiers,
+      commuteModes: input.request.commuteModes,
+      allowCarAccess: input.request.allowCarAccess,
       parsedPreference: parsedContext.intent?.preference,
       parsedPassengerType: parsedContext.intent?.passengerType,
-      parsedModifiers: parsedContext.intent?.modifiers
+      parsedModifiers: parsedContext.intent?.modifiers,
+      parsedCommuteModes: parsedContext.intent?.commuteModes,
+      parsedAllowCarAccess: parsedContext.intent?.allowCarAccess
     }),
     resolveEndpoint("origin", parsedContext.origin, {
       queryText: input.request.queryText
@@ -1422,46 +1670,45 @@ export const queryRoutes = async (input: {
     preferenceSource: effectiveValues.preference.source,
     passengerTypeSource: effectiveValues.passengerType.source,
     modifiers: effectiveValues.modifiers.value,
-    modifierSource: effectiveValues.modifiers.source
+    modifierSource: effectiveValues.modifiers.source,
+    commuteModes: effectiveValues.commuteModes.value,
+    commuteModeSource: effectiveValues.commuteModes.source,
+    allowCarAccess: effectiveValues.allowCarAccess.value,
+    carAccessSource: effectiveValues.allowCarAccess.source
   };
 
-  const [transitAttempt, googleFallback] = await Promise.all([
-    queryTransitRoutesIfPossible({
-      origin: buildPointFromResolvedPlace(parsedContext.origin, originResolution.place),
-      destination: buildPointFromResolvedPlace(parsedContext.destination, destinationResolution.place),
-      preference: effectiveValues.preference,
-      passengerType: effectiveValues.passengerType,
-      modifiers: effectiveValues.modifiers
-    }),
-    queryGoogleFallbackRoutes({
-      normalizedQuery: fallbackNormalizedQuery,
-      modifiers: effectiveValues.modifiers.value,
-      passengerType: effectiveValues.passengerType.value
-    }).catch((error: unknown) => {
-      console.warn("Google fallback route lookup failed", {
-        operation: "google_fallback_route_lookup",
-        reason: error instanceof Error ? error.message : "unknown error"
-      });
-
-      return {
-        status: "unavailable",
-        options: [],
-        message: "Google Maps fallback is unavailable right now."
-      } satisfies RouteQueryResult["googleFallback"];
-    })
-  ]);
+  const transitAttempt = await queryTransitRoutesIfPossible({
+    origin: buildPointFromResolvedPlace(parsedContext.origin, originResolution.place),
+    destination: buildPointFromResolvedPlace(parsedContext.destination, destinationResolution.place),
+    preference: effectiveValues.preference,
+    passengerType: effectiveValues.passengerType,
+    modifiers: effectiveValues.modifiers,
+    commuteModes: effectiveValues.commuteModes,
+    allowCarAccess: effectiveValues.allowCarAccess
+  });
 
   if (transitAttempt.status === "success" && transitAttempt.result) {
+    const finalizedTransitOptions = await finalizeRouteOptions({
+      normalizedQuery: transitAttempt.result.normalizedQuery,
+      primaryOptions: transitAttempt.result.options,
+      fallbackQuery: {
+        modifiers: effectiveValues.modifiers.value,
+        commuteModes: effectiveValues.commuteModes.value,
+        passengerType: effectiveValues.passengerType.value
+      }
+    });
+
     console.info("Route query selected transit planner result", {
       operation: "route_query_planner_select",
       requestId: transitAttempt.traceSummary.requestId,
       planner: "transit",
-      optionCount: transitAttempt.result.options.length
+      optionCount: finalizedTransitOptions.options.length
     });
 
     return {
       ...transitAttempt.result,
-      googleFallback
+      options: await attachRouteCommunityMetadata(finalizedTransitOptions.options),
+      googleFallback: finalizedTransitOptions.googleFallback
     };
   }
 
@@ -1473,140 +1720,162 @@ export const queryRoutes = async (input: {
   });
 
   const normalizedQuery = fallbackNormalizedQuery;
+  let legacyOptions: RouteQueryOption[] = [];
 
-  if (originResolution.accessStops.length === 0 || destinationResolution.accessStops.length === 0) {
-    return {
-      normalizedQuery,
-      options: [],
-      googleFallback,
-      message: buildRouteQueryMessage(normalizedQuery)
-    };
-  }
-
-  const variants = await routeModel.listActiveRouteVariants();
-
-  if (variants.length === 0) {
-    return {
-      normalizedQuery,
-      options: [],
-      googleFallback,
-      message: buildRouteQueryMessage(normalizedQuery)
-    };
-  }
-
-  const originAccessMap = buildStopAccessMap(originResolution.accessStops);
-  const destinationAccessMap = buildStopAccessMap(destinationResolution.accessStops);
-  const originSlices = listRouteSlicesFromAccessStops(
-    variants,
-    new Set(originAccessMap.keys())
+  const legacyOriginAccessStops = filterAccessStopsForCarPreference(
+    originResolution.accessStops,
+    effectiveValues.allowCarAccess.value
+  );
+  const legacyDestinationAccessStops = filterAccessStopsForCarPreference(
+    destinationResolution.accessStops,
+    effectiveValues.allowCarAccess.value
   );
 
-  const transferPoints = await transferPointModel.listTransferPointsByStopIds(
-    variants.flatMap((variant) => variant.legs.flatMap((leg) => [leg.fromStop.id, leg.toStop.id]))
-  );
-  const candidateDrafts = buildMultimodalCandidateDrafts({
-    variants,
-    originSlices,
-    originAccessMap,
-    destinationAccessMap,
-    transferPoints,
-    originLabel: normalizedQuery.origin.label,
-    destinationLabel: normalizedQuery.destination.label,
-    preference: normalizedQuery.preference,
-    modifiers: normalizedQuery.modifiers
-  });
+  if (legacyOriginAccessStops.length > 0 && legacyDestinationAccessStops.length > 0) {
+    const variants = await routeModel.listActiveRouteVariants();
 
-  if (candidateDrafts.length === 0) {
-    return {
-      normalizedQuery,
-      options: [],
-      googleFallback,
-      message: buildRouteQueryMessage(normalizedQuery)
-    };
-  }
+    if (variants.length > 0) {
+      const originAccessMap = buildStopAccessMap(legacyOriginAccessStops);
+      const destinationAccessMap = buildStopAccessMap(legacyDestinationAccessStops);
+      const originSlices = listRouteSlicesFromAccessStops(
+        variants,
+        new Set(originAccessMap.keys())
+      );
 
-  const fareCatalog = await fareModel.getActiveFareCatalog([
-    ...new Set(
-      candidateDrafts.flatMap((draft) => [
-        ...draft.rideLegs.map((rideLeg) => rideLeg.variant.route.primaryMode),
-        ...draft.transitionLegs.flatMap((transitionLeg) =>
-          transitionLeg.mode === "drive" ? ["car" as const] : []
-        )
-      ])
-    )
-  ]);
-  const routeOptions = candidateDrafts.flatMap((draft) => {
-    try {
-      return [
-        buildRouteOption(
-          draft,
-          fareCatalog,
-          normalizedQuery.passengerType,
-          "Alternative option",
-          normalizedQuery
-        )
-      ];
-    } catch (error) {
-      if (error instanceof HttpError) {
-        console.warn("Dropped route draft during option building", {
-          operation: "route_query_option_drop",
-          reason: error.message,
-          includesDrive: draft.transitionLegs.some((transitionLeg) => transitionLeg.mode === "drive")
+      const transferPoints = await transferPointModel.listTransferPointsByStopIds(
+        variants.flatMap((variant) => variant.legs.flatMap((leg) => [leg.fromStop.id, leg.toStop.id]))
+      );
+      const candidateDrafts = buildMultimodalCandidateDrafts({
+        variants,
+        originSlices,
+        originAccessMap,
+        destinationAccessMap,
+        transferPoints,
+        originLabel: normalizedQuery.origin.label,
+        destinationLabel: normalizedQuery.destination.label,
+        preference: normalizedQuery.preference,
+        modifiers: normalizedQuery.modifiers,
+        commuteModes: normalizedQuery.commuteModes
+      });
+
+      if (candidateDrafts.length > 0) {
+        const fareCatalog = await fareModel.getActiveFareCatalog([
+          ...new Set(
+            candidateDrafts.flatMap((draft) => [
+              ...draft.rideLegs.map((rideLeg) => rideLeg.variant.route.primaryMode),
+              ...draft.transitionLegs.flatMap((transitionLeg) =>
+                transitionLeg.mode === "drive" ? ["car" as const] : []
+              )
+            ])
+          )
+        ]);
+        const routeOptions = candidateDrafts.flatMap((draft) => {
+          try {
+            return [
+              buildRouteOption(
+                draft,
+                fareCatalog,
+                normalizedQuery.passengerType,
+                "Alternative option",
+                normalizedQuery
+              )
+            ];
+          } catch (error) {
+            if (error instanceof HttpError) {
+              console.warn("Dropped route draft during option building", {
+                operation: "route_query_option_drop",
+                reason: error.message,
+                includesDrive: draft.transitionLegs.some((transitionLeg) => transitionLeg.mode === "drive")
+              });
+              return [];
+            }
+
+            throw error;
+          }
         });
-        return [];
+
+        if (routeOptions.length > 0) {
+          const rankedOptions = rankRouteOptions(
+            routeOptions,
+            normalizedQuery.preference,
+            normalizedQuery.modifiers,
+            normalizedQuery.commuteModes,
+            normalizedQuery.allowCarAccess
+          );
+          const optionsWithIncidents = await attachRelevantIncidentsToOptions({
+            options: rankedOptions.slice(0, MAX_ROUTE_OPTIONS),
+            normalizedQuery
+          });
+          legacyOptions = await mapWithConcurrency(
+            optionsWithIncidents,
+            ROUTE_SUMMARY_CONCURRENCY,
+            async (option) => ({
+              ...option,
+              summary: await generateRouteSummary({
+                option,
+                normalizedQuery
+              })
+            })
+          );
+        }
       }
-
-      throw error;
     }
-  });
+  }
 
-  if (routeOptions.length === 0) {
-    console.info("Route query legacy planner produced no route options", {
-      operation: "route_query_planner_empty",
+  if (legacyOptions.length > 0) {
+    const finalizedLegacyOptions = await finalizeRouteOptions({
+      normalizedQuery,
+      primaryOptions: legacyOptions,
+      fallbackQuery: {
+        modifiers: effectiveValues.modifiers.value,
+        commuteModes: effectiveValues.commuteModes.value,
+        passengerType: effectiveValues.passengerType.value
+      }
+    });
+
+    console.info("Route query selected legacy planner result", {
+      operation: "route_query_planner_select",
       requestId: transitAttempt.traceSummary.requestId,
-      transitStatus: transitAttempt.status,
-      transitReason: transitAttempt.traceSummary.finalReason
+      planner: "legacy_graph",
+      optionCount: finalizedLegacyOptions.options.length
     });
 
     return {
       normalizedQuery,
-      options: [],
-      googleFallback,
-      message: buildRouteQueryMessage(normalizedQuery)
+      options: await attachRouteCommunityMetadata(finalizedLegacyOptions.options),
+      googleFallback: finalizedLegacyOptions.googleFallback
     };
   }
 
-  const rankedOptions = rankRouteOptions(
-    routeOptions,
-    normalizedQuery.preference,
-    normalizedQuery.modifiers
-  );
-  const optionsWithIncidents = await attachRelevantIncidentsToOptions({
-    options: rankedOptions.slice(0, MAX_ROUTE_OPTIONS),
-    normalizedQuery
-  });
-  const summarizedOptions = await mapWithConcurrency(
-    optionsWithIncidents,
-    ROUTE_SUMMARY_CONCURRENCY,
-    async (option) => ({
-      ...option,
-      summary: await generateRouteSummary({
-        option,
-        normalizedQuery
-      })
-    })
-  );
-
-  console.info("Route query selected legacy planner result", {
-    operation: "route_query_planner_select",
+  console.info("Route query legacy planner produced no route options", {
+    operation: "route_query_planner_empty",
     requestId: transitAttempt.traceSummary.requestId,
-    planner: "legacy_graph",
-    optionCount: summarizedOptions.length
+    transitStatus: transitAttempt.status,
+    transitReason: transitAttempt.traceSummary.finalReason
   });
+
+  const googleFallback = await queryGoogleFallbackSafely({
+    normalizedQuery,
+    modifiers: effectiveValues.modifiers.value,
+    commuteModes: effectiveValues.commuteModes.value,
+    passengerType: effectiveValues.passengerType.value
+  });
+
+  if (googleFallback.options.length > 0) {
+    return {
+      normalizedQuery,
+      options: await attachRouteCommunityMetadata(googleFallback.options),
+      googleFallback: {
+        ...googleFallback,
+        options: await attachRouteCommunityMetadata(googleFallback.options)
+      }
+    };
+  }
 
   return {
     normalizedQuery,
-    options: summarizedOptions,
-    googleFallback
+    options: [],
+    googleFallback,
+    message: buildRouteQueryMessage(normalizedQuery)
   };
 };

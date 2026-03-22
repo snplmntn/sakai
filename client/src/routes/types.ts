@@ -3,8 +3,11 @@ import type { PlaceMatchSource } from '../places/types';
 export type RoutePreference = 'fastest' | 'cheapest' | 'balanced';
 export type PassengerType = 'regular' | 'student' | 'senior' | 'pwd';
 export type RouteModifier = 'jeep_if_possible' | 'less_walking';
-export type RideMode = 'jeepney' | 'uv' | 'mrt3' | 'lrt1' | 'lrt2' | 'car' | 'bus' | 'rail';
+export type CommuteMode = 'jeepney' | 'train' | 'uv' | 'bus' | 'tricycle';
+export type RideMode = 'jeepney' | 'uv' | 'mrt3' | 'lrt1' | 'lrt2' | 'tricycle' | 'car' | 'bus' | 'rail';
 export type FareConfidence = 'official' | 'estimated' | 'partially_estimated';
+export type RouteLifecycleStatus = 'active' | 'deprecated' | 'superseded';
+export type RouteTrustLevel = 'trusted_seed' | 'community_reviewed' | 'demo_fallback';
 
 export interface RouteQueryPointInput {
   placeId?: string;
@@ -37,12 +40,48 @@ export interface FareBreakdown {
   assumptionText: string | null;
 }
 
+export interface RouteCommunityUpdate {
+  id: string;
+  action:
+    | 'route_create'
+    | 'route_update'
+    | 'route_deprecate'
+    | 'route_reactivate'
+    | 'stop_correction'
+    | 'transfer_correction'
+    | 'fare_update'
+    | 'route_note';
+  summary: string;
+  publishedAt: string;
+}
+
+export interface RouteCommunityNote {
+  id: string;
+  note: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  createdAt: string;
+}
+
+export interface RouteCommunityMetadata {
+  routeId: string | null;
+  routeVariantId: string | null;
+  routeVariantCode: string | null;
+  routeCode: string;
+  routeName: string;
+  lifecycleStatus: RouteLifecycleStatus;
+  trustLevel: RouteTrustLevel;
+  recentUpdates: RouteCommunityUpdate[];
+  activeNotes: RouteCommunityNote[];
+}
+
 export interface RouteQueryRideLeg {
   type: 'ride';
   id: string;
   mode: RideMode;
   routeId: string;
   routeVariantId: string;
+  routeVariantCode: string | null;
   routeCode: string;
   routeName: string;
   directionLabel: string;
@@ -53,6 +92,7 @@ export interface RouteQueryRideLeg {
   durationMinutes: number;
   corridorTags: string[];
   fare: FareBreakdown;
+  community?: RouteCommunityMetadata;
   pathCoordinates?: Array<{
     latitude: number;
     longitude: number;
@@ -122,6 +162,7 @@ export interface RouteQueryOption {
   fareAssumptions: string[];
   legs: RouteQueryLeg[];
   relevantIncidents: RouteQueryIncident[];
+  routeCommunity?: RouteCommunityMetadata[];
   navigationTarget: RouteNavigationTarget;
   source: 'sakai' | 'google_fallback';
   providerLabel?: string;
@@ -156,6 +197,10 @@ export interface RouteQueryResult {
     passengerTypeSource: string;
     modifiers: RouteModifier[];
     modifierSource: string;
+    commuteModes: CommuteMode[];
+    commuteModeSource: string;
+    allowCarAccess: boolean;
+    carAccessSource: string;
   };
   options: RouteQueryOption[];
   googleFallback: RouteQueryFallbackResult;

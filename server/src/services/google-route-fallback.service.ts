@@ -1,14 +1,25 @@
 import { createHash } from "node:crypto";
 
 import { getEnv } from "../config/env.js";
-import type { FareBreakdown, PassengerType } from "../types/fare.js";
+import * as fareModel from "../models/fare.model.js";
+import * as placeModel from "../models/place.model.js";
+import * as stopModel from "../models/stop.model.js";
+import type { FareBreakdown, FareConfidence, PassengerType } from "../types/fare.js";
 import type {
+  CommuteMode,
   RouteModifier,
   RouteQueryLeg,
   RouteQueryNormalizedInput,
   RouteQueryOption,
   RouteQueryResult
 } from "../types/route-query.js";
+import { priceRideLegsWithCatalog, type FareRideLegInput } from "./fare-engine.service.js";
+import {
+  hasTrainCommutePreference,
+  mapRideModeToCommuteMode,
+  normalizeCommuteModes,
+  usesAllCommuteModes
+} from "./route-planner-rules.js";
 
 type Coordinate = {
   latitude: number;
@@ -24,6 +35,17 @@ interface GoogleFallbackResult {
 }
 
 const GOOGLE_COMPUTE_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
+const JEEPNEY_FARE_PRODUCT_CODE = "puj_traditional";
+const RAIL_ESTIMATE_BASE_FARE: Record<"lrt1" | "lrt2" | "mrt3", number> = {
+  lrt1: 20,
+  lrt2: 15,
+  mrt3: 16
+};
+const RAIL_ESTIMATE_PER_KM: Record<"lrt1" | "lrt2" | "mrt3", number> = {
+  lrt1: 1.2,
+  lrt2: 1.5,
+  mrt3: 1.3
+};
 
 const parseSecondsDuration = (value: string | undefined): number => {
   if (!value) {
@@ -43,6 +65,354 @@ const parseSecondsDuration = (value: string | undefined): number => {
 const roundMinutes = (seconds: number) => Math.max(1, Math.ceil(seconds / 60));
 
 const roundCurrency = (amount: number) => Math.round(amount * 100) / 100;
+
+const readLocalizedText = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const textValue = (value as { text?: unknown }).text;
+
+  if (typeof textValue !== "string") {
+    return null;
+  }
+
+  const trimmed = textValue.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const buildEstimatedFareBreakdown = (input: {
+  amount: number;
+  fareProductCode?: string | null;
+  assumptionText: string;
+}): FareBreakdown => ({
+  amount: roundCurrency(Math.max(0, input.amount)),
+  pricingType: "estimated",
+  fareProductCode: input.fareProductCode ?? null,
+  ruleVersionName: null,
+  effectivityDate: null,
+  isDiscountApplied: false,
+  assumptionText: input.assumptionText
+});
+
+const inferRailMode = (leg: {
+  routeCode: string;
+  routeName: string;
+  directionLabel: string;
+}): "lrt1" | "lrt2" | "mrt3" | null => {
+  const normalized = `${leg.routeCode} ${leg.routeName} ${leg.directionLabel}`.toLowerCase();
+
+  if (
+    normalized.includes("mrt-3") ||
+    normalized.includes("mrt3") ||
+    normalized.includes("mrt 3")
+  ) {
+    return "mrt3";
+  }
+
+  if (
+    normalized.includes("lrt-2") ||
+    normalized.includes("lrt2") ||
+    normalized.includes("lrt 2")
+  ) {
+    return "lrt2";
+  }
+
+  if (
+    normalized.includes("lrt-1") ||
+    normalized.includes("lrt1") ||
+    normalized.includes("lrt 1")
+  ) {
+    return "lrt1";
+  }
+
+  return null;
+};
+
+const estimateJeepneyFare = (distanceKm: number, passengerType: PassengerType) => {
+  const minimumFare = passengerType === "regular" ? 13 : 13;
+  const succeedingFare = passengerType === "regular" ? 1.8 : 1.44;
+
+  if (distanceKm <= 4) {
+    return minimumFare;
+  }
+
+  return minimumFare + Math.ceil(distanceKm - 4) * succeedingFare;
+};
+
+const estimateRailFare = (
+  distanceKm: number,
+  mode: "lrt1" | "lrt2" | "mrt3",
+  passengerType: PassengerType
+) => {
+  const baseFare = RAIL_ESTIMATE_BASE_FARE[mode];
+  const perKmFare = RAIL_ESTIMATE_PER_KM[mode];
+  const regularAmount = baseFare + Math.max(0, distanceKm - 2) * perKmFare;
+
+  return passengerType === "regular" ? regularAmount : regularAmount * 0.8;
+};
+
+const getFareConfidenceFromPricingTypes = (
+  pricingTypes: FareBreakdown["pricingType"][]
+): FareConfidence => {
+  if (pricingTypes.some((pricingType) => pricingType !== "official")) {
+    return pricingTypes.every((pricingType) => pricingType !== "official")
+      ? "estimated"
+      : "partially_estimated";
+  }
+
+  return "official";
+};
+
+const resolveRailStopId = async (input: {
+  stopName: string;
+  mode: "lrt1" | "lrt2" | "mrt3";
+}) => {
+  const resolution = await placeModel
+    .resolvePlaceReference({
+      query: input.stopName
+    })
+    .catch(() => ({
+      status: "unresolved" as const
+    }));
+
+  if (resolution.status !== "resolved") {
+    return null;
+  }
+
+  const stops = await stopModel.listStopsByPlaceId(resolution.place.id).catch(() => []);
+  const matchingStop = stops.find((stop) => stop.mode === input.mode);
+
+  return matchingStop?.id ?? null;
+};
+
+const priceLegWithCatalog = (input: {
+  fareCatalog: fareModel.ActiveFareCatalog;
+  rideLeg: FareRideLegInput;
+  passengerType: PassengerType;
+}) => {
+  try {
+    const pricing = priceRideLegsWithCatalog(input.fareCatalog, [input.rideLeg], input.passengerType);
+    return pricing.rideLegs[0]?.fare ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const enrichFallbackOptionFares = async (input: {
+  option: RouteQueryOption;
+  fareCatalog: fareModel.ActiveFareCatalog;
+  passengerType: PassengerType;
+}) => {
+  const rideLegs = input.option.legs.filter(
+    (leg): leg is Extract<RouteQueryLeg, { type: "ride" }> => leg.type === "ride"
+  );
+
+  if (rideLegs.length === 0) {
+    return input.option;
+  }
+
+  const fareByLegId = new Map<string, FareBreakdown>();
+  const unresolvedRideLegs: Array<Extract<RouteQueryLeg, { type: "ride" }>> = [];
+
+  for (const rideLeg of rideLegs) {
+    if (rideLeg.mode === "bus") {
+      const fare = priceLegWithCatalog({
+        fareCatalog: input.fareCatalog,
+        rideLeg: {
+          id: rideLeg.id,
+          mode: "jeepney",
+          distanceKm: rideLeg.distanceKm,
+          fareProductCode: JEEPNEY_FARE_PRODUCT_CODE,
+          fromStopId: `${rideLeg.id}:from`,
+          toStopId: `${rideLeg.id}:to`
+        },
+        passengerType: input.passengerType
+      });
+
+      if (fare) {
+        fareByLegId.set(rideLeg.id, fare);
+        continue;
+      }
+
+      unresolvedRideLegs.push(rideLeg);
+      continue;
+    }
+
+    if (rideLeg.mode !== "rail") {
+      unresolvedRideLegs.push(rideLeg);
+      continue;
+    }
+
+    const railMode = inferRailMode(rideLeg);
+
+    if (!railMode) {
+      unresolvedRideLegs.push(rideLeg);
+      continue;
+    }
+
+    const [fromStopId, toStopId] = await Promise.all([
+      resolveRailStopId({
+        stopName: rideLeg.fromStop.stopName,
+        mode: railMode
+      }),
+      resolveRailStopId({
+        stopName: rideLeg.toStop.stopName,
+        mode: railMode
+      })
+    ]);
+
+    if (!fromStopId || !toStopId) {
+      unresolvedRideLegs.push(rideLeg);
+      continue;
+    }
+
+    const fare = priceLegWithCatalog({
+      fareCatalog: input.fareCatalog,
+      rideLeg: {
+        id: rideLeg.id,
+        mode: railMode,
+        distanceKm: rideLeg.distanceKm,
+        fareProductCode: null,
+        fromStopId,
+        toStopId
+      },
+      passengerType: input.passengerType
+    });
+
+    if (fare) {
+      fareByLegId.set(rideLeg.id, fare);
+      continue;
+    }
+
+    unresolvedRideLegs.push(rideLeg);
+  }
+
+  const mappedTotalFare = [...fareByLegId.values()].reduce((total, fare) => total + fare.amount, 0);
+  const unresolvedTotalDistance = unresolvedRideLegs.reduce((total, leg) => total + leg.distanceKm, 0);
+  const distributableGoogleFare =
+    input.option.totalFare === null ? null : Math.max(0, input.option.totalFare - mappedTotalFare);
+
+  for (const rideLeg of unresolvedRideLegs) {
+    if (distributableGoogleFare !== null) {
+      const distanceRatio =
+        unresolvedTotalDistance > 0 ? rideLeg.distanceKm / unresolvedTotalDistance : 1 / unresolvedRideLegs.length;
+
+      fareByLegId.set(
+        rideLeg.id,
+        buildEstimatedFareBreakdown({
+          amount: distributableGoogleFare * distanceRatio,
+          assumptionText: "Allocated from Google Maps total fare after Sakai fare mapping."
+        })
+      );
+      continue;
+    }
+
+    if (rideLeg.mode === "bus") {
+      fareByLegId.set(
+        rideLeg.id,
+        buildEstimatedFareBreakdown({
+          amount: estimateJeepneyFare(rideLeg.distanceKm, input.passengerType),
+          fareProductCode: JEEPNEY_FARE_PRODUCT_CODE,
+          assumptionText: "Estimated using Sakai jeepney fare rules because Google total fare was unavailable."
+        })
+      );
+      continue;
+    }
+
+    const railMode = inferRailMode(rideLeg) ?? "lrt1";
+    fareByLegId.set(
+      rideLeg.id,
+      buildEstimatedFareBreakdown({
+        amount: estimateRailFare(rideLeg.distanceKm, railMode, input.passengerType),
+        assumptionText:
+          "Estimated rail fare because exact station-to-station matching was unavailable for Sakai pricing."
+      })
+    );
+  }
+
+  const enrichedLegs = input.option.legs.map((leg) => {
+    if (leg.type !== "ride") {
+      return leg;
+    }
+
+    const fare = fareByLegId.get(leg.id);
+
+    return fare
+      ? {
+          ...leg,
+          fare
+        }
+      : leg;
+  });
+  const enrichedPricingTypes = enrichedLegs
+    .filter((leg): leg is Extract<RouteQueryLeg, { type: "ride" }> => leg.type === "ride")
+    .map((leg) => leg.fare.pricingType);
+  const enrichedFareAssumptions = [
+    ...new Set(
+      [
+        ...input.option.fareAssumptions,
+        ...enrichedLegs
+          .filter((leg): leg is Extract<RouteQueryLeg, { type: "ride" }> => leg.type === "ride")
+          .map((leg) => leg.fare.assumptionText)
+          .filter((assumptionText): assumptionText is string => Boolean(assumptionText))
+      ].filter((assumptionText): assumptionText is string => assumptionText.length > 0)
+    )
+  ];
+  const enrichedTotalFare = roundCurrency(
+    enrichedLegs.reduce((total, leg) => total + leg.fare.amount, 0)
+  );
+
+  return {
+    ...input.option,
+    legs: enrichedLegs,
+    totalFare: enrichedTotalFare,
+    fareConfidence: getFareConfidenceFromPricingTypes(enrichedPricingTypes),
+    fareAssumptions: enrichedFareAssumptions,
+    providerNotice:
+      input.option.providerNotice ??
+      "Route data is from Google Maps fallback. Fare is enriched with Sakai fare rules when possible."
+  };
+};
+
+const enrichFallbackOptions = async (input: {
+  options: RouteQueryOption[];
+  passengerType: PassengerType;
+}) => {
+  if (input.options.length === 0) {
+    return input.options;
+  }
+
+  const fareCatalog = await fareModel
+    .getActiveFareCatalog(["jeepney", "lrt1", "lrt2", "mrt3"])
+    .catch((error: unknown) => {
+      console.warn("Failed to load fare catalog for Google fallback enrichment", {
+        operation: "google_fallback_fare_catalog",
+        reason: error instanceof Error ? error.message : "unknown error"
+      });
+
+      return {
+        ruleVersions: [],
+        fareProducts: [],
+        trainStationFares: []
+      } satisfies fareModel.ActiveFareCatalog;
+    });
+
+  return Promise.all(
+    input.options.map((option) =>
+      enrichFallbackOptionFares({
+        option,
+        fareCatalog,
+        passengerType: input.passengerType
+      })
+    )
+  );
+};
 
 const decodePolyline = (encoded: string): Coordinate[] => {
   const coordinates: Coordinate[] = [];
@@ -199,11 +569,96 @@ const dedupeOptions = (options: RouteQueryOption[]) => {
   return [...optionMap.values()];
 };
 
-const compareGoogleOptions = (left: RouteQueryOption, right: RouteQueryOption) =>
-  left.totalDurationMinutes - right.totalDurationMinutes ||
-  left.transferCount - right.transferCount ||
-  (left.totalFare ?? Number.MAX_SAFE_INTEGER) - (right.totalFare ?? Number.MAX_SAFE_INTEGER) ||
-  left.summary.localeCompare(right.summary);
+const getCommuteModeAlignment = (option: RouteQueryOption, commuteModes: CommuteMode[]) => {
+  const preferredModes = new Set(normalizeCommuteModes(commuteModes));
+  const applyPreference = preferredModes.size > 0 && !usesAllCommuteModes(commuteModes);
+  let preferredRideCount = 0;
+  let unpreferredRideCount = 0;
+
+  if (!applyPreference) {
+    return {
+      preferredRideCount,
+      unpreferredRideCount
+    };
+  }
+
+  for (const leg of option.legs) {
+    if (leg.type !== "ride") {
+      continue;
+    }
+
+    const commuteMode = mapRideModeToCommuteMode(leg.mode, `${leg.routeCode} ${leg.routeName}`);
+
+    if (!commuteMode) {
+      continue;
+    }
+
+    if (preferredModes.has(commuteMode)) {
+      preferredRideCount += 1;
+    } else {
+      unpreferredRideCount += 1;
+    }
+  }
+
+  return {
+    preferredRideCount,
+    unpreferredRideCount
+  };
+};
+
+const compareGoogleOptions = (
+  left: RouteQueryOption,
+  right: RouteQueryOption,
+  commuteModes: CommuteMode[]
+) => {
+  const leftAlignment = getCommuteModeAlignment(left, commuteModes);
+  const rightAlignment = getCommuteModeAlignment(right, commuteModes);
+  const trainPreferred = hasTrainCommutePreference(commuteModes);
+
+  if (trainPreferred) {
+    const getTrainMetrics = (option: RouteQueryOption) => {
+      let trainRideCount = 0;
+      let nonTrainRideCount = 0;
+
+      for (const leg of option.legs) {
+        if (leg.type !== "ride") {
+          continue;
+        }
+
+        const commuteMode = mapRideModeToCommuteMode(leg.mode, `${leg.routeCode} ${leg.routeName}`);
+
+        if (commuteMode === "train") {
+          trainRideCount += 1;
+        } else {
+          nonTrainRideCount += 1;
+        }
+      }
+
+      return {
+        trainRideCount,
+        nonTrainRideCount
+      };
+    };
+    const leftTrainMetrics = getTrainMetrics(left);
+    const rightTrainMetrics = getTrainMetrics(right);
+    const trainComparison =
+      leftTrainMetrics.nonTrainRideCount - rightTrainMetrics.nonTrainRideCount ||
+      rightTrainMetrics.trainRideCount - leftTrainMetrics.trainRideCount;
+
+    if (trainComparison !== 0) {
+      return trainComparison;
+    }
+  }
+
+  return (
+    leftAlignment.unpreferredRideCount - rightAlignment.unpreferredRideCount ||
+    rightAlignment.preferredRideCount - leftAlignment.preferredRideCount ||
+    left.totalDurationMinutes - right.totalDurationMinutes ||
+    left.transferCount - right.transferCount ||
+    (left.totalFare ?? Number.MAX_SAFE_INTEGER) - (right.totalFare ?? Number.MAX_SAFE_INTEGER) ||
+    left.summary.localeCompare(right.summary)
+  );
+};
 
 const buildFallbackOption = (input: {
   normalizedQuery: RouteQueryNormalizedInput;
@@ -251,15 +706,15 @@ const buildFallbackOption = (input: {
       transitDetails?: {
         headsign?: unknown;
         stopDetails?: {
-          departureStop?: { name?: { text?: unknown } };
-          arrivalStop?: { name?: { text?: unknown } };
+          departureStop?: { name?: unknown };
+          arrivalStop?: { name?: unknown };
         };
         transitLine?: {
-          name?: { text?: unknown };
-          nameShort?: { text?: unknown };
+          name?: unknown;
+          nameShort?: unknown;
           vehicle?: {
             type?: unknown;
-            name?: { text?: unknown };
+            name?: unknown;
           };
         };
       };
@@ -313,11 +768,9 @@ const buildFallbackOption = (input: {
         ? typedStep.endLocation.latLng.longitude
         : input.normalizedQuery.destination.longitude;
     const lineName =
-      typeof typedStep.transitDetails?.transitLine?.nameShort?.text === "string"
-        ? typedStep.transitDetails.transitLine.nameShort.text
-        : typeof typedStep.transitDetails?.transitLine?.name?.text === "string"
-          ? typedStep.transitDetails.transitLine.name.text
-          : "Google transit";
+      readLocalizedText(typedStep.transitDetails?.transitLine?.nameShort) ??
+      readLocalizedText(typedStep.transitDetails?.transitLine?.name) ??
+      "Google transit";
     const vehicleType =
       typeof typedStep.transitDetails?.transitLine?.vehicle?.type === "string"
         ? typedStep.transitDetails.transitLine.vehicle.type.toUpperCase()
@@ -331,13 +784,9 @@ const buildFallbackOption = (input: {
         ? "rail"
         : "bus";
     const fromName =
-      typeof typedStep.transitDetails?.stopDetails?.departureStop?.name?.text === "string"
-        ? typedStep.transitDetails.stopDetails.departureStop.name.text
-        : "Boarding stop";
+      readLocalizedText(typedStep.transitDetails?.stopDetails?.departureStop?.name) ?? "Boarding stop";
     const toName =
-      typeof typedStep.transitDetails?.stopDetails?.arrivalStop?.name?.text === "string"
-        ? typedStep.transitDetails.stopDetails.arrivalStop.name.text
-        : "Alighting stop";
+      readLocalizedText(typedStep.transitDetails?.stopDetails?.arrivalStop?.name) ?? "Alighting stop";
     const headsign =
       typeof typedStep.transitDetails?.headsign === "string"
         ? typedStep.transitDetails.headsign
@@ -349,6 +798,7 @@ const buildFallbackOption = (input: {
       mode,
       routeId: `google:${lineName}`,
       routeVariantId: `google:${lineName}:${headsign}`,
+      routeVariantCode: headsign,
       routeCode: lineName,
       routeName: lineName,
       directionLabel: headsign,
@@ -407,6 +857,7 @@ const buildFallbackOption = (input: {
         : ["Fare estimate comes from Google Maps fallback and may differ from Sakai fare rules."],
     legs,
     relevantIncidents: [],
+    routeCommunity: [],
     navigationTarget: lastRideLeg
       ? {
           latitude: lastRideLeg.toStop.latitude,
@@ -429,6 +880,7 @@ const buildFallbackOption = (input: {
 export const queryGoogleFallbackRoutes = async (input: {
   normalizedQuery: RouteQueryNormalizedInput;
   modifiers: RouteModifier[];
+  commuteModes: CommuteMode[];
   passengerType: PassengerType;
 }): Promise<GoogleFallbackResult> => {
   const apiKey = getEnv().GOOGLE_MAPS_SERVER_API_KEY?.trim() ?? "";
@@ -447,7 +899,7 @@ export const queryGoogleFallbackRoutes = async (input: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
       "X-Goog-FieldMask":
-        "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.travelAdvisory.transitFare,routes.legs.steps.travelMode,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.polyline.encodedPolyline,routes.legs.steps.navigationInstruction.instructions,routes.legs.steps.startLocation.latLng.latitude,routes.legs.steps.startLocation.latLng.longitude,routes.legs.steps.endLocation.latLng.latitude,routes.legs.steps.endLocation.latLng.longitude,routes.legs.steps.transitDetails.headsign,routes.legs.steps.transitDetails.stopDetails.departureStop.name.text,routes.legs.steps.transitDetails.stopDetails.arrivalStop.name.text,routes.legs.steps.transitDetails.transitLine.name.text,routes.legs.steps.transitDetails.transitLine.nameShort.text,routes.legs.steps.transitDetails.transitLine.vehicle.type"
+        "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.travelAdvisory.transitFare,routes.legs.steps.travelMode,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.polyline.encodedPolyline,routes.legs.steps.navigationInstruction.instructions,routes.legs.steps.startLocation.latLng.latitude,routes.legs.steps.startLocation.latLng.longitude,routes.legs.steps.endLocation.latLng.latitude,routes.legs.steps.endLocation.latLng.longitude,routes.legs.steps.transitDetails.headsign,routes.legs.steps.transitDetails.stopDetails.departureStop.name,routes.legs.steps.transitDetails.stopDetails.arrivalStop.name,routes.legs.steps.transitDetails.transitLine.name,routes.legs.steps.transitDetails.transitLine.nameShort,routes.legs.steps.transitDetails.transitLine.vehicle.type"
     },
     body: JSON.stringify({
       origin: {
@@ -506,7 +958,7 @@ export const queryGoogleFallbackRoutes = async (input: {
 
   const body = (await response.json().catch(() => null)) as { routes?: unknown } | null;
   const routes = Array.isArray(body?.routes) ? body.routes : [];
-  const options = dedupeOptions(
+  const parsedOptions = dedupeOptions(
     routes.flatMap((route, index) => {
       const option = buildFallbackOption({
         normalizedQuery: input.normalizedQuery,
@@ -516,7 +968,14 @@ export const queryGoogleFallbackRoutes = async (input: {
 
       return option ? [option] : [];
     })
-  ).sort(compareGoogleOptions);
+  );
+  const enrichedOptions = await enrichFallbackOptions({
+    options: parsedOptions,
+    passengerType: input.passengerType
+  });
+  const options = dedupeOptions(enrichedOptions).sort((left, right) =>
+    compareGoogleOptions(left, right, input.commuteModes)
+  );
 
   if (options.length === 0) {
     return {
