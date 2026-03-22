@@ -69,3 +69,39 @@ export const authenticateOptionalRequest: RequestHandler = async (req, res, next
     next(error);
   }
 };
+
+const readRolesFromMetadata = (appMetadata: AuthUser["appMetadata"]): string[] => {
+  if (!appMetadata || typeof appMetadata !== "object" || Array.isArray(appMetadata)) {
+    return [];
+  }
+
+  const singleRole =
+    typeof appMetadata.role === "string" && appMetadata.role.trim().length > 0
+      ? [appMetadata.role.trim()]
+      : [];
+  const multipleRoles = Array.isArray(appMetadata.roles)
+    ? appMetadata.roles.filter((role): role is string => typeof role === "string" && role.trim().length > 0)
+    : [];
+
+  return [...new Set([...singleRole, ...multipleRoles].map((role) => role.toLowerCase()))];
+};
+
+export const hasReviewerRole = (user: AuthUser): boolean => {
+  const roles = readRolesFromMetadata(user.appMetadata);
+
+  return roles.includes("reviewer") || roles.includes("admin");
+};
+
+export const requireReviewerRole: RequestHandler = (_req, res, next) => {
+  try {
+    const { user } = getAuthenticatedLocals(res);
+
+    if (!hasReviewerRole(user)) {
+      throw new HttpError(403, "Reviewer access is required");
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};

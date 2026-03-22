@@ -42,7 +42,13 @@ export const routeQuerySchema = z
     modifiers: z
       .array(z.enum(["jeep_if_possible", "less_walking"]))
       .max(2)
-      .optional()
+      .optional(),
+    commuteModes: z
+      .array(z.enum(["jeepney", "train", "uv", "bus", "tricycle"]))
+      .min(1)
+      .max(5)
+      .optional(),
+    allowCarAccess: z.boolean().optional()
   })
   .strict()
   .superRefine((value, context) => {

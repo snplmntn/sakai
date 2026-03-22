@@ -1,9 +1,13 @@
 import { isRecord, requestData } from '../api/base';
 import type { PlaceMatchSource, SelectedPlace } from '../places/types';
 import type {
+  CommuteMode,
   FareBreakdown,
   PassengerType,
   RouteModifier,
+  RouteCommunityMetadata,
+  RouteCommunityNote,
+  RouteCommunityUpdate,
   RideMode,
   RoutePreference,
   RouteQueryIncident,
@@ -94,6 +98,58 @@ const parseFareBreakdown = (value: unknown): FareBreakdown => {
   };
 };
 
+const parseRouteCommunityUpdate = (value: unknown): RouteCommunityUpdate => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid route community update');
+  }
+
+  return {
+    id: parseString(value.id, 'communityUpdate.id'),
+    action: parseString(value.action, 'communityUpdate.action') as RouteCommunityUpdate['action'],
+    summary: parseString(value.summary, 'communityUpdate.summary'),
+    publishedAt: parseString(value.publishedAt, 'communityUpdate.publishedAt'),
+  };
+};
+
+const parseRouteCommunityNote = (value: unknown): RouteCommunityNote => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid route community note');
+  }
+
+  return {
+    id: parseString(value.id, 'communityNote.id'),
+    note: parseString(value.note, 'communityNote.note'),
+    startsAt: parseNullableString(value.startsAt, 'communityNote.startsAt'),
+    endsAt: parseNullableString(value.endsAt, 'communityNote.endsAt'),
+    createdAt: parseString(value.createdAt, 'communityNote.createdAt'),
+  };
+};
+
+const parseRouteCommunityMetadata = (value: unknown): RouteCommunityMetadata => {
+  if (!isRecord(value)) {
+    throw new Error('Invalid route community metadata');
+  }
+
+  return {
+    routeId: parseNullableString(value.routeId, 'routeCommunity.routeId'),
+    routeVariantId: parseNullableString(value.routeVariantId, 'routeCommunity.routeVariantId'),
+    routeVariantCode: parseNullableString(value.routeVariantCode, 'routeCommunity.routeVariantCode'),
+    routeCode: parseString(value.routeCode, 'routeCommunity.routeCode'),
+    routeName: parseString(value.routeName, 'routeCommunity.routeName'),
+    lifecycleStatus: parseString(
+      value.lifecycleStatus,
+      'routeCommunity.lifecycleStatus'
+    ) as RouteCommunityMetadata['lifecycleStatus'],
+    trustLevel: parseString(value.trustLevel, 'routeCommunity.trustLevel') as RouteCommunityMetadata['trustLevel'],
+    recentUpdates: Array.isArray(value.recentUpdates)
+      ? value.recentUpdates.map(parseRouteCommunityUpdate)
+      : [],
+    activeNotes: Array.isArray(value.activeNotes)
+      ? value.activeNotes.map(parseRouteCommunityNote)
+      : [],
+  };
+};
+
 const parseLeg = (value: unknown): RouteQueryLeg => {
   if (!isRecord(value) || typeof value.type !== 'string') {
     throw new Error('Invalid route leg');
@@ -132,6 +188,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
     mode: parseString(value.mode, 'ride.mode') as RideMode,
     routeId: parseString(value.routeId, 'ride.routeId'),
     routeVariantId: parseString(value.routeVariantId, 'ride.routeVariantId'),
+    routeVariantCode: parseNullableString(value.routeVariantCode, 'ride.routeVariantCode'),
     routeCode: parseString(value.routeCode, 'ride.routeCode'),
     routeName: parseString(value.routeName, 'ride.routeName'),
     directionLabel: parseString(value.directionLabel, 'ride.directionLabel'),
@@ -144,6 +201,7 @@ const parseLeg = (value: unknown): RouteQueryLeg => {
       ? value.corridorTags.map((tag) => parseString(tag, 'ride.corridorTags'))
       : [],
     fare: parseFareBreakdown(value.fare),
+    community: isRecord(value.community) ? parseRouteCommunityMetadata(value.community) : undefined,
     pathCoordinates: parsePathCoordinates(value.pathCoordinates, 'ride.pathCoordinates'),
   };
 };
@@ -225,6 +283,9 @@ const parseRouteOption = (value: unknown): RouteQueryOption => {
     relevantIncidents: Array.isArray(value.relevantIncidents)
       ? value.relevantIncidents.map(parseIncident)
       : [],
+    routeCommunity: Array.isArray(value.routeCommunity)
+      ? value.routeCommunity.map(parseRouteCommunityMetadata)
+      : [],
     navigationTarget: parseNavigationTarget(value.navigationTarget),
     source: parseString(value.source, 'option.source') as RouteQueryOption['source'],
     providerLabel:
@@ -290,6 +351,20 @@ const parseRouteQueryResult = (value: unknown): RouteQueryResult => {
           )
         : [],
       modifierSource: parseString(value.normalizedQuery.modifierSource, 'normalized.modifierSource'),
+      commuteModes: Array.isArray(value.normalizedQuery.commuteModes)
+        ? value.normalizedQuery.commuteModes.map(
+            (item) => parseString(item, 'normalized.commuteModes') as CommuteMode
+          )
+        : ['jeepney', 'train', 'uv', 'bus', 'tricycle'],
+      commuteModeSource:
+        typeof value.normalizedQuery.commuteModeSource === 'string'
+          ? value.normalizedQuery.commuteModeSource
+          : 'default',
+      allowCarAccess: Boolean(value.normalizedQuery.allowCarAccess),
+      carAccessSource:
+        typeof value.normalizedQuery.carAccessSource === 'string'
+          ? value.normalizedQuery.carAccessSource
+          : 'default',
     },
     options: Array.isArray(value.options) ? value.options.map(parseRouteOption) : [],
     googleFallback: parseFallbackResult(value.googleFallback),
@@ -313,6 +388,8 @@ export const queryRoutes = async (input: {
   preference: RoutePreference;
   passengerType?: 'regular' | 'student' | 'senior' | 'pwd';
   modifiers?: RouteModifier[];
+  commuteModes?: CommuteMode[];
+  allowCarAccess?: boolean;
   accessToken?: string;
 }): Promise<RouteQueryResult> =>
   requestData(
@@ -326,6 +403,8 @@ export const queryRoutes = async (input: {
         preference: input.preference,
         passengerType: input.passengerType ?? 'regular',
         modifiers: input.modifiers,
+        commuteModes: input.commuteModes,
+        allowCarAccess: input.allowCarAccess,
       },
     },
     parseRouteQueryResult
@@ -337,6 +416,8 @@ export const queryRoutesByText = async (input: {
   preference: RoutePreference;
   passengerType?: PassengerType;
   modifiers?: RouteModifier[];
+  commuteModes?: CommuteMode[];
+  allowCarAccess?: boolean;
   accessToken?: string;
 }): Promise<RouteQueryResult> =>
   requestData(
@@ -350,6 +431,8 @@ export const queryRoutesByText = async (input: {
         preference: input.preference,
         passengerType: input.passengerType ?? 'regular',
         modifiers: input.modifiers,
+        commuteModes: input.commuteModes,
+        allowCarAccess: input.allowCarAccess,
       },
     },
     parseRouteQueryResult

@@ -1,6 +1,7 @@
 import type { PlaceMatch, RideMode, Stop } from "./route-network.js";
 import type { FareBreakdown, FareConfidence, PassengerType } from "./fare.js";
 import type { RoutePreference } from "../models/user-preference.model.js";
+import type { RouteLifecycleStatus, RouteTrustLevel } from "./route-network.js";
 
 export type RouteQueryValueSource =
   | "request_override"
@@ -9,6 +10,7 @@ export type RouteQueryValueSource =
   | "default";
 
 export type RouteModifier = "jeep_if_possible" | "less_walking";
+export type CommuteMode = "jeepney" | "train" | "uv" | "bus" | "tricycle";
 
 export interface RouteQueryPointInput {
   placeId?: string;
@@ -33,6 +35,41 @@ export interface RouteNavigationTarget {
   kind: "destination" | "dropoff_stop";
 }
 
+export interface RouteCommunityUpdate {
+  id: string;
+  action:
+    | "route_create"
+    | "route_update"
+    | "route_deprecate"
+    | "route_reactivate"
+    | "stop_correction"
+    | "transfer_correction"
+    | "fare_update"
+    | "route_note";
+  summary: string;
+  publishedAt: string;
+}
+
+export interface RouteCommunityNote {
+  id: string;
+  note: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  createdAt: string;
+}
+
+export interface RouteCommunityMetadata {
+  routeId: string | null;
+  routeVariantId: string | null;
+  routeVariantCode: string | null;
+  routeCode: string;
+  routeName: string;
+  lifecycleStatus: RouteLifecycleStatus;
+  trustLevel: RouteTrustLevel;
+  recentUpdates: RouteCommunityUpdate[];
+  activeNotes: RouteCommunityNote[];
+}
+
 export interface RouteQueryNormalizedInput {
   origin: RouteQueryNormalizedPoint;
   destination: RouteQueryNormalizedPoint;
@@ -42,6 +79,10 @@ export interface RouteQueryNormalizedInput {
   passengerTypeSource: RouteQueryValueSource;
   modifiers: RouteModifier[];
   modifierSource: RouteQueryValueSource;
+  commuteModes: CommuteMode[];
+  commuteModeSource: RouteQueryValueSource;
+  allowCarAccess: boolean;
+  carAccessSource: RouteQueryValueSource;
 }
 
 export interface RouteQueryRideLeg {
@@ -50,6 +91,7 @@ export interface RouteQueryRideLeg {
   mode: RideMode | "bus" | "rail";
   routeId: string;
   routeVariantId: string;
+  routeVariantCode: string | null;
   routeCode: string;
   routeName: string;
   directionLabel: string;
@@ -64,6 +106,7 @@ export interface RouteQueryRideLeg {
   durationMinutes: number;
   corridorTags: string[];
   fare: FareBreakdown;
+  community?: RouteCommunityMetadata;
   pathCoordinates?: Array<{
     latitude: number;
     longitude: number;
@@ -126,6 +169,7 @@ export interface RouteQueryOption {
   fareAssumptions: string[];
   legs: RouteQueryLeg[];
   relevantIncidents: RouteQueryIncident[];
+  routeCommunity?: RouteCommunityMetadata[];
   navigationTarget: RouteNavigationTarget;
   source: "sakai" | "google_fallback";
   providerLabel?: string;

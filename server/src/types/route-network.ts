@@ -12,6 +12,7 @@ export type PlaceKind = PlaceRow["kind"];
 export type RideMode = RouteRow["primary_mode"];
 export type StopMode = StopRow["mode"];
 export type RouteTrustLevel = RouteRow["trust_level"];
+export type RouteLifecycleStatus = RouteRow["lifecycle_status"];
 
 export interface Coordinates {
   latitude: number;
@@ -87,6 +88,8 @@ export interface RouteSummary {
   sourceName: string;
   sourceUrl: string | null;
   trustLevel: RouteTrustLevel;
+  lifecycleStatus?: RouteLifecycleStatus;
+  supersededByRouteId?: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -114,6 +117,8 @@ export interface RouteVariant {
   directionLabel: string;
   originPlaceId: string | null;
   destinationPlaceId: string | null;
+  lifecycleStatus?: RouteLifecycleStatus;
+  supersededByVariantId?: string | null;
   isActive: boolean;
   createdAt: string;
   route: RouteSummary;
@@ -170,6 +175,8 @@ export const mapRouteSummary = (row: RouteRow): RouteSummary => ({
   sourceName: row.source_name,
   sourceUrl: row.source_url,
   trustLevel: row.trust_level,
+  lifecycleStatus: row.lifecycle_status,
+  supersededByRouteId: row.superseded_by_route_id,
   isActive: row.is_active,
   createdAt: row.created_at
 });
@@ -192,6 +199,8 @@ export const mapRouteVariantBase = (row: RouteVariantRow) => ({
   directionLabel: row.direction_label,
   originPlaceId: row.origin_place_id,
   destinationPlaceId: row.destination_place_id,
+  lifecycleStatus: row.lifecycle_status,
+  supersededByVariantId: row.superseded_by_variant_id,
   isActive: row.is_active,
   createdAt: row.created_at
 });

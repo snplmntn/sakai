@@ -4,7 +4,6 @@ import { HttpError } from "../types/http-error.js";
 import type { CreateCommunitySubmissionInput } from "../schemas/community-submission.schema.js";
 
 type CommunitySubmissionRow = Database["public"]["Tables"]["community_submissions"]["Row"];
-type CommunitySubmissionInsert = Database["public"]["Tables"]["community_submissions"]["Insert"];
 
 export interface CommunitySubmission {
     id: string;
@@ -14,6 +13,8 @@ export interface CommunitySubmission {
     title: string;
     payload: Record<string, unknown>;
     sourceContext: Record<string, unknown> | null;
+    routeId?: string | null;
+    routeVariantId?: string | null;
     reviewNotes: string | null;
     createdAt: string;
     updatedAt: string;
@@ -27,58 +28,52 @@ const mapCommunitySubmission = (row: CommunitySubmissionRow): CommunitySubmissio
     title: row.title,
     payload: row.payload as Record<string, unknown>,
     sourceContext: row.source_context as Record<string, unknown> | null,
+    routeId: row.route_id,
+    routeVariantId: row.route_variant_id,
     reviewNotes: row.review_notes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
 });
 
 export const createSubmission = async (
-    payload: CreateCommunitySubmissionInput & { userId: string },
-    accessToken: string
+  payload: CreateCommunitySubmissionInput & { userId: string },
+  accessToken: string
 ): Promise<CommunitySubmission> => {
-    const client = createSupabaseUserClient(accessToken);
-    
-    const record: CommunitySubmissionInsert = {
-        user_id: payload.userId,
-        submission_type: payload.submissionType,
-        title: payload.title,
-        payload: payload.payload,
-        source_context: payload.sourceContext,
-    };
+  const client = createSupabaseUserClient(accessToken);
+  const { data, error } = await client.rpc("create_community_submission_with_proposal", {
+    p_user_id: payload.userId,
+    p_submission_type: payload.submissionType,
+    p_title: payload.title,
+    p_payload: payload.payload,
+    p_source_context: payload.sourceContext ?? null,
+    p_route_id: payload.routeId ?? null,
+    p_route_variant_id: payload.routeVariantId ?? null
+  });
 
-    const { data, error } = await client
-        .from("community_submissions")
-        .insert(record)
-        .select("*")
-        .single();
+  if (error) {
+    throw new HttpError(500, `Failed to create submission: ${error.message}`);
+  }
 
-    if (error) {
-        throw new HttpError(500, `Failed to create submission: ${error.message}`);
-    }
-
-    return mapCommunitySubmission(data as CommunitySubmissionRow);
+  return mapCommunitySubmission(data as CommunitySubmissionRow);
 };
 
 export const findSubmissionsByUserId = async (
-    userId: string,
-    accessToken: string,
-    status?: CommunitySubmissionRow['status']
+  userId: string,
+  accessToken: string,
+  status?: CommunitySubmissionRow["status"]
 ): Promise<CommunitySubmission[]> => {
-    const client = createSupabaseUserClient(accessToken);
-    let query = client
-        .from("community_submissions")
-        .select("*")
-        .eq("user_id", userId);
+  const client = createSupabaseUserClient(accessToken);
+  let query = client.from("community_submissions").select("*").eq("user_id", userId);
 
-    if (status) {
-        query = query.eq("status", status);
-    }
+  if (status) {
+    query = query.eq("status", status);
+  }
 
-    const { data, error } = await query.order("created_at", { ascending: false });
+  const { data, error } = await query.order("created_at", { ascending: false });
 
-    if (error) {
-        throw new HttpError(500, `Failed to fetch submissions: ${error.message}`);
-    }
+  if (error) {
+    throw new HttpError(500, `Failed to fetch submissions: ${error.message}`);
+  }
 
-    return ((data ?? []) as CommunitySubmissionRow[]).map(mapCommunitySubmission);
+  return ((data ?? []) as CommunitySubmissionRow[]).map(mapCommunitySubmission);
 };

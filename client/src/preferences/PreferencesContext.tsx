@@ -30,7 +30,12 @@ interface PreferencesContextValue {
   updatePreferences: (
     input: Pick<
       UserPreferences,
-      'defaultPreference' | 'passengerType' | 'routeModifiers' | 'voiceLanguage'
+      | 'defaultPreference'
+      | 'passengerType'
+      | 'routeModifiers'
+      | 'voiceLanguage'
+      | 'commuteModes'
+      | 'allowCarAccess'
     >
   ) => Promise<UserPreferences>;
   refreshPreferences: () => Promise<void>;
@@ -85,6 +90,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         ...persistedPreferences,
         routeModifiers: storedPreferences?.routeModifiers ?? [],
         voiceLanguage: storedPreferences?.voiceLanguage ?? createDefaultUserPreferences().voiceLanguage,
+        commuteModes: storedPreferences?.commuteModes ?? createDefaultUserPreferences().commuteModes,
+        allowCarAccess:
+          storedPreferences?.allowCarAccess ?? createDefaultUserPreferences().allowCarAccess,
       };
 
       await writeStoredPreferences(
@@ -136,7 +144,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const updatePreferences = async (
     input: Pick<
       UserPreferences,
-      'defaultPreference' | 'passengerType' | 'routeModifiers' | 'voiceLanguage'
+      | 'defaultPreference'
+      | 'passengerType'
+      | 'routeModifiers'
+      | 'voiceLanguage'
+      | 'commuteModes'
+      | 'allowCarAccess'
     >
   ): Promise<UserPreferences> => {
     if (authStatus !== 'authenticated' || !session?.accessToken) {
@@ -146,6 +159,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         passengerType: input.passengerType,
         routeModifiers: input.routeModifiers,
         voiceLanguage: input.voiceLanguage,
+        commuteModes: input.commuteModes,
+        allowCarAccess: input.allowCarAccess,
       };
 
       await writeStoredPreferences(toStoredPreferences(nextPreferences, 'pending'));
@@ -166,6 +181,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         ...savedPreferences,
         routeModifiers: input.routeModifiers,
         voiceLanguage: input.voiceLanguage,
+        commuteModes: input.commuteModes,
+        allowCarAccess: input.allowCarAccess,
       };
 
       await writeStoredPreferences(toStoredPreferences(nextPreferences, 'synced'));

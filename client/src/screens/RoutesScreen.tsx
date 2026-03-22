@@ -41,6 +41,10 @@ import {
 } from '../places/search';
 import { getGoogleDirectionsPath, reverseGeocodeCurrentLocation } from '../places/api';
 import { usePreferences } from '../preferences/PreferencesContext';
+import {
+  COMMUTE_MODE_OPTIONS,
+  toggleCommuteModeSelection,
+} from '../preferences/types';
 import { queryRoutes, queryRoutesByText } from '../routes/api';
 import {
   buildCoordinateFallbackNote,
@@ -60,6 +64,7 @@ import {
 import { extractVoiceDestinationHint, normalizeVoiceRouteQuery } from '../voice/route-query';
 import type { PlaceSuggestion, SakaiPlaceSuggestion, SelectedPlace } from '../places/types';
 import type {
+  CommuteMode,
   PassengerType,
   RouteModifier,
   RoutePreference,
@@ -76,6 +81,7 @@ const MODE_LABELS: Record<string, string> = {
   mrt3: 'MRT3',
   lrt1: 'LRT1',
   lrt2: 'LRT2',
+  tricycle: 'Tricycle',
   rail: 'Rail',
   car: 'Car',
   bus: 'Bus',
@@ -94,6 +100,7 @@ const ROUTE_LINE_COLORS: Record<string, string> = {
   mrt3: '#FF9500',
   lrt1: '#FF3B30',
   lrt2: '#AF52DE',
+  tricycle: '#FFB000',
   rail: '#FF9500',
   car: '#102033',
   bus: '#0A84FF',
@@ -327,6 +334,7 @@ function RouteCard({
     option.fareConfidence === 'estimated' || option.fareConfidence === 'partially_estimated';
   const fareBadgeLabel = option.fareConfidence === 'partially_estimated' ? 'Part. Est.' : 'Est. Fare';
   const isGoogleFallback = option.source === 'google_fallback';
+  const primaryCommunityRoute = option.routeCommunity?.[0];
 
   return (
     <TouchableOpacity
@@ -373,6 +381,29 @@ function RouteCard({
           ))}
         </View>
       )}
+
+      {primaryCommunityRoute ? (
+        <View style={styles.communityRouteCard}>
+          <View style={styles.communityRouteHeader}>
+            <Text style={styles.communityRouteEyebrow}>
+              {primaryCommunityRoute.trustLevel === 'community_reviewed'
+                ? 'Community reviewed'
+                : 'Route status'}
+            </Text>
+            <Text style={styles.communityRouteStatus}>
+              {primaryCommunityRoute.lifecycleStatus.replace(/_/g, ' ')}
+            </Text>
+          </View>
+          {primaryCommunityRoute.activeNotes[0] ? (
+            <Text style={styles.communityRouteText}>{primaryCommunityRoute.activeNotes[0].note}</Text>
+          ) : null}
+          {primaryCommunityRoute.recentUpdates[0] ? (
+            <Text style={styles.communityRouteMeta}>
+              Recent update: {primaryCommunityRoute.recentUpdates[0].summary}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {!isGoogleFallback && option.relevantIncidents.length > 0 && (
         <RelevantIncidentsSection
@@ -465,7 +496,7 @@ function SuggestionRow({
 
 export default function RoutesScreen() {
   const { session } = useAuth();
-  const { preferences: savedPreferences } = usePreferences();
+  const { preferences: savedPreferences, updatePreferences } = usePreferences();
   const { setNavigationCandidate, startNavigation } = useNavigationAlarm();
   const navigation =
     useNavigation<BottomTabNavigationProp<MainTabParamList, 'Home'>>();
@@ -486,6 +517,10 @@ export default function RoutesScreen() {
   const [preference, setPreference] = useState<RoutePreference>('balanced');
   const [passengerType, setPassengerType] = useState<PassengerType>('regular');
   const [modifiers, setModifiers] = useState<RouteModifier[]>([]);
+  const [commuteModes, setCommuteModes] = useState<CommuteMode[]>(
+    COMMUTE_MODE_OPTIONS.map((option) => option.value)
+  );
+  const [allowCarAccess, setAllowCarAccess] = useState(false);
 
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
@@ -535,11 +570,14 @@ export default function RoutesScreen() {
   const accessToken = session?.accessToken;
   const isGoogleMapsConfigured = hasGoogleMapsApiKey();
   const canUseGooglePlaces = hasGooglePlacesApiKey();
-  const allRouteOptions = useMemo(
-    () => (routeResult ? [...routeResult.options, ...routeResult.googleFallback.options] : []),
-    [routeResult]
-  );
-  const selectedOption = allRouteOptions.find((o) => o.id === selectedOptionId) ?? null;
+  const activeRouteOptions = useMemo(() => {
+    if (!routeResult) {
+      return [];
+    }
+
+    return routeResult.options;
+  }, [routeResult]);
+  const selectedOption = activeRouteOptions.find((o) => o.id === selectedOptionId) ?? null;
   const mapMarkers = useMemo(
     () => buildRouteMarkers({ origin, destination, routeResult, option: selectedOption }),
     [destination, origin, routeResult, selectedOption]
@@ -595,7 +633,7 @@ export default function RoutesScreen() {
               ? 'Matching your spoken request to route data and your saved commute preferences.'
               : 'Say things like "BGC fastest route" or "Gate 3 from Espana."';
   const showResultsCanvas = queryLoading || routeResult !== null;
-  const selectedRoute = selectedOption ?? allRouteOptions[0] ?? null;
+  const selectedRoute = selectedOption ?? activeRouteOptions[0] ?? null;
   const expandedSheetHeight = Math.min(
     Math.max(windowHeight * SHEET_EXPANDED_RATIO, 420),
     windowHeight - insets.top - 24
@@ -635,7 +673,7 @@ export default function RoutesScreen() {
         nextDestination,
         result.normalizedQuery.destination
       );
-      const initialOption = result.options[0] ?? result.googleFallback.options[0] ?? null;
+      const initialOption = result.options[0] ?? null;
 
       setOrigin(resolvedOrigin);
       setDestination(resolvedDestination);
@@ -732,11 +770,62 @@ export default function RoutesScreen() {
     setPreference(savedPreferences.defaultPreference);
     setPassengerType(savedPreferences.passengerType);
     setModifiers(savedPreferences.routeModifiers);
+    setCommuteModes(savedPreferences.commuteModes);
+    setAllowCarAccess(savedPreferences.allowCarAccess);
   }, [
     savedPreferences.defaultPreference,
     savedPreferences.passengerType,
     savedPreferences.routeModifiers,
+    savedPreferences.commuteModes,
+    savedPreferences.allowCarAccess,
   ]);
+
+  const persistRoutePreferences = useCallback(
+    async (overrides: { commuteModes?: CommuteMode[]; allowCarAccess?: boolean }) => {
+      await updatePreferences({
+        defaultPreference: preference,
+        passengerType,
+        routeModifiers: modifiers,
+        voiceLanguage: savedPreferences.voiceLanguage,
+        commuteModes: overrides.commuteModes ?? commuteModes,
+        allowCarAccess: overrides.allowCarAccess ?? allowCarAccess,
+      });
+    },
+    [
+      allowCarAccess,
+      commuteModes,
+      modifiers,
+      passengerType,
+      preference,
+      savedPreferences.voiceLanguage,
+      updatePreferences,
+    ]
+  );
+
+  const handleCommuteModeChipPress = useCallback(
+    (commuteMode: CommuteMode) => {
+      const nextCommuteModes = toggleCommuteModeSelection(commuteModes, commuteMode);
+
+      if (nextCommuteModes === commuteModes) {
+        return;
+      }
+
+      setCommuteModes(nextCommuteModes);
+      void persistRoutePreferences({ commuteModes: nextCommuteModes }).catch((error: unknown) => {
+        console.warn('Unable to persist commute mode preferences from routes screen', error);
+      });
+    },
+    [commuteModes, persistRoutePreferences]
+  );
+
+  const handleCarAccessChipPress = useCallback(() => {
+    const nextAllowCarAccess = !allowCarAccess;
+
+    setAllowCarAccess(nextAllowCarAccess);
+    void persistRoutePreferences({ allowCarAccess: nextAllowCarAccess }).catch((error: unknown) => {
+      console.warn('Unable to persist car access preference from routes screen', error);
+    });
+  }, [allowCarAccess, persistRoutePreferences]);
 
   useEffect(() => {
     if (!activeField) {
@@ -962,6 +1051,8 @@ export default function RoutesScreen() {
           preference,
           passengerType,
           modifiers,
+          commuteModes,
+          allowCarAccess,
           accessToken,
         });
 
@@ -982,7 +1073,17 @@ export default function RoutesScreen() {
         setSpeechPhase('idle');
       }
     },
-    [accessToken, applyStructuredResult, destination, modifiers, passengerType, preference, resetRoutePresentation]
+    [
+      accessToken,
+      allowCarAccess,
+      applyStructuredResult,
+      commuteModes,
+      destination,
+      modifiers,
+      passengerType,
+      preference,
+      resetRoutePresentation,
+    ]
   );
 
   const finalizeRecordingAndSearch = useCallback(async () => {
@@ -1223,6 +1324,8 @@ export default function RoutesScreen() {
         preference,
         passengerType,
         modifiers,
+        commuteModes,
+        allowCarAccess,
         accessToken,
       });
 
@@ -1243,9 +1346,11 @@ export default function RoutesScreen() {
     }
   }, [
     accessToken,
+    allowCarAccess,
     applyStructuredResult,
     cachedCurrentOrigin,
     canSearch,
+    commuteModes,
     destination,
     destText,
     modifiers,
@@ -1306,6 +1411,8 @@ export default function RoutesScreen() {
               preference,
               passengerType,
               modifiers,
+              commuteModes,
+              allowCarAccess,
               accessToken,
             });
             applyStructuredResult(result, nextOrigin, nextDestination);
@@ -1319,9 +1426,11 @@ export default function RoutesScreen() {
     }
   }, [
     accessToken,
+    allowCarAccess,
     applyStructuredResult,
     destText,
     destination,
+    commuteModes,
     modifiers,
     origin,
     originText,
@@ -1536,7 +1645,10 @@ export default function RoutesScreen() {
                 </View>
               ) : null}
 
-              {routeResult && routeResult.options.length === 0 && routeResult.message ? (
+              {routeResult &&
+              routeResult.options.length === 0 &&
+              routeResult.googleFallback.options.length === 0 &&
+              routeResult.message ? (
                 <View style={styles.messageCard}>
                   <Text style={styles.messageText}>{routeResult.message}</Text>
                 </View>
@@ -1554,8 +1666,14 @@ export default function RoutesScreen() {
               {routeResult?.options.length ? (
                 <>
                   <View style={styles.sheetSectionHeader}>
-                    <Text style={styles.sheetSectionTitle}>Sakai routes</Text>
-                    <Text style={styles.sheetSectionMeta}>Jeepney-first</Text>
+                    <Text style={styles.sheetSectionTitle}>Routes</Text>
+                    <Text style={styles.sheetSectionMeta}>
+                      {routeResult.options.some((option) => option.source === 'google_fallback')
+                        ? routeResult.options.some((option) => option.source === 'sakai')
+                          ? 'Sakai + fallback'
+                          : 'Google fallback'
+                        : 'Jeepney-first'}
+                    </Text>
                   </View>
                   {routeResult.options.map((option) => (
                     <View key={option.id} style={styles.routeCardGroup}>
@@ -1583,36 +1701,6 @@ export default function RoutesScreen() {
                 </>
               ) : null}
 
-              {routeResult?.googleFallback.options.length ? (
-                <>
-                  <View style={styles.sheetSectionHeader}>
-                    <Text style={styles.sheetSectionTitle}>Also from Google Maps</Text>
-                    <Text style={styles.sheetSectionMeta}>Fallback</Text>
-                  </View>
-                  {routeResult.googleFallback.options.map((option) => (
-                    <View key={option.id} style={styles.routeCardGroup}>
-                      <RouteCard
-                        option={option}
-                        selected={option.id === selectedOptionId}
-                        onSelect={() => setSelectedOptionId(option.id)}
-                        expanded={expandedOptions.has(option.id)}
-                        onToggleLegs={() => toggleExpanded(option.id)}
-                      />
-                      {option.id === selectedOptionId ? (
-                        <TouchableOpacity
-                          style={styles.primaryActionButton}
-                          onPress={() => {
-                            void startNavigation();
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.primaryActionButtonText}>Start route</Text>
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-                  ))}
-                </>
-              ) : null}
             </ScrollView>
           )}
         </Animated.View>
@@ -1880,6 +1968,51 @@ export default function RoutesScreen() {
                 </View>
               </>
             </View>
+
+            <View style={styles.quickFiltersCard}>
+              <View style={styles.quickFiltersHeader}>
+                <Text style={styles.quickFiltersTitle}>Commute modes</Text>
+                <Text style={styles.quickFiltersHint}>Saved for future searches</Text>
+              </View>
+              <View style={styles.quickFiltersRow}>
+                {COMMUTE_MODE_OPTIONS.map((option) => {
+                  const selected = commuteModes.includes(option.value);
+
+                  return (
+                    <Pressable
+                      key={option.value}
+                      style={[styles.quickFilterChip, selected && styles.quickFilterChipSelected]}
+                      onPress={() => handleCommuteModeChipPress(option.value)}
+                    >
+                      <Text
+                        style={[
+                          styles.quickFilterChipText,
+                          selected && styles.quickFilterChipTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+                <Pressable
+                  style={[
+                    styles.quickFilterChip,
+                    allowCarAccess && styles.quickFilterChipSelected,
+                  ]}
+                  onPress={handleCarAccessChipPress}
+                >
+                  <Text
+                    style={[
+                      styles.quickFilterChipText,
+                      allowCarAccess && styles.quickFilterChipTextSelected,
+                    ]}
+                  >
+                    {allowCarAccess ? 'Car access on' : 'Car access off'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
 
           <View style={styles.body}>
@@ -2019,6 +2152,56 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
     overflow: 'hidden',
+  },
+  quickFiltersCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    gap: SPACING.sm,
+  },
+  quickFiltersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  quickFiltersTitle: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: COLORS.white,
+  },
+  quickFiltersHint: {
+    fontSize: 11,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.62)',
+  },
+  quickFiltersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+  },
+  quickFilterChip: {
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  quickFilterChipSelected: {
+    backgroundColor: 'rgba(0,122,255,0.24)',
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  quickFilterChipText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  quickFilterChipTextSelected: {
+    color: COLORS.white,
   },
   searchField: {
     flexDirection: 'row',
@@ -2374,6 +2557,44 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSizes.small,
     fontFamily: FONTS.medium,
     color: '#2D6A9F',
+  },
+  communityRouteCard: {
+    borderRadius: RADIUS.md,
+    backgroundColor: '#F4F9FD',
+    borderWidth: 1,
+    borderColor: '#D7E7F4',
+    padding: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  communityRouteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+  },
+  communityRouteEyebrow: {
+    fontSize: 11,
+    fontFamily: FONTS.semibold,
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  communityRouteStatus: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.semibold,
+    color: '#102033',
+    textTransform: 'capitalize',
+  },
+  communityRouteText: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.regular,
+    color: '#213547',
+    lineHeight: 18,
+  },
+  communityRouteMeta: {
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    fontFamily: FONTS.medium,
+    color: '#5D7286',
   },
   toggleBtn: {
     alignSelf: 'flex-start',

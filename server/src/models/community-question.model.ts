@@ -38,6 +38,10 @@ export interface CommunityQuestionAnswer {
   questionId: string;
   userId: string;
   body: string;
+  helpfulCount: number;
+  promotionStatus: AnswerRow["promotion_status"];
+  linkedRouteId: string | null;
+  linkedRouteVariantId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +80,10 @@ const mapAnswer = (row: AnswerRow): CommunityQuestionAnswer => ({
   questionId: row.question_id,
   userId: row.user_id,
   body: row.body,
+  helpfulCount: row.helpful_count,
+  promotionStatus: row.promotion_status,
+  linkedRouteId: row.linked_route_id,
+  linkedRouteVariantId: row.linked_route_variant_id,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });

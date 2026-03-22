@@ -15,17 +15,27 @@ import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 
 import { useAuth } from '../auth/AuthContext';
 import {
+  approveCommunityProposal,
   createCommunityQuestion,
   createCommunitySubmission,
+  generateCommunityProposalAiDraft,
+  getCommunityReviewQueue,
+  getCommunityReviewProposalDetail,
   getMyCommunityQuestions,
   getMyCommunitySubmissions,
   getRecentCommunityQuestions,
+  rejectCommunityProposal,
 } from '../community/api';
+import CommunityProposalChangeSetEditor from '../community/CommunityProposalChangeSetEditor';
 import type {
   CommunityQuestion,
+  CommunityReviewedChangeSet,
+  CommunityReviewProposalDetail,
+  CommunityReviewProposal,
   CommunitySubmission,
   CommunitySubmissionType,
 } from '../community/types';
+import { coerceReviewedChangeSet, createEmptyReviewedChangeSet } from '../community/review-change-set-types';
 import SafeScreen from '../components/SafeScreen';
 import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -35,11 +45,32 @@ type ComposerMode = 'question' | 'submission';
 type CommunityLoadMode = 'initial' | 'refresh' | 'background';
 
 const SUBMISSION_TYPES: Array<{ value: CommunitySubmissionType; label: string }> = [
-  { value: 'missing_route', label: 'Missing route' },
-  { value: 'route_correction', label: 'Correction' },
+  { value: 'route_update', label: 'Route update' },
+  { value: 'route_deprecate', label: 'Deprecate route' },
+  { value: 'route_reactivate', label: 'Reactivate route' },
+  { value: 'stop_correction', label: 'Stop correction' },
+  { value: 'transfer_correction', label: 'Transfer fix' },
   { value: 'fare_update', label: 'Fare update' },
   { value: 'route_note', label: 'Route note' },
+  { value: 'route_create', label: 'New route' },
 ];
+
+const hasReviewerRole = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const appMetadata = value as Record<string, unknown>;
+  const singleRole = typeof appMetadata.role === 'string' ? [appMetadata.role] : [];
+  const multipleRoles = Array.isArray(appMetadata.roles)
+    ? appMetadata.roles.filter((role): role is string => typeof role === 'string')
+    : [];
+
+  return [...singleRole, ...multipleRoles].some((role) => {
+    const normalized = role.trim().toLowerCase();
+    return normalized === 'reviewer' || normalized === 'admin';
+  });
+};
 
 const formatDate = (value: string): string =>
   new Date(value).toLocaleDateString(undefined, {
@@ -50,11 +81,11 @@ const formatDate = (value: string): string =>
   });
 
 const submissionBadgeStyle = (status: CommunitySubmission['status']) =>
-  status === 'approved'
+  status === 'published'
     ? styles.badgeSuccess
     : status === 'rejected'
       ? styles.badgeDanger
-      : status === 'reviewed'
+      : status === 'approved' || status === 'under_review'
         ? styles.badgeWarning
         : styles.badgeNeutral;
 
@@ -90,11 +121,45 @@ const buildSubmissionPayload = (input: {
     };
   }
 
-  if (input.submissionType === 'route_correction') {
+  if (input.submissionType === 'route_correction' || input.submissionType === 'route_update') {
     return {
       targetRouteOrPlaceId: input.routeId || 'community-route-correction',
       incorrectDetail: input.details,
       proposedCorrection: input.details,
+    };
+  }
+
+  if (input.submissionType === 'route_create') {
+    return {
+      routeCode: input.routeId || undefined,
+      displayName: input.destinationLabel || input.originLabel || 'Community proposed route',
+      origin: input.originLabel,
+      destination: input.destinationLabel,
+      note: input.details,
+    };
+  }
+
+  if (input.submissionType === 'route_deprecate' || input.submissionType === 'route_reactivate') {
+    return {
+      reason: input.details,
+      replacementRouteCode: input.routeId || undefined,
+      note: input.details,
+    };
+  }
+
+  if (input.submissionType === 'stop_correction') {
+    return {
+      stopName: input.originLabel || input.destinationLabel,
+      correctedName: input.destinationLabel || input.originLabel,
+      note: input.details,
+    };
+  }
+
+  if (input.submissionType === 'transfer_correction') {
+    return {
+      correctedWalkingDistanceM: 150,
+      correctedWalkingDurationMinutes: 3,
+      note: input.details,
     };
   }
 
@@ -178,6 +243,19 @@ export default function CommunityHubScreen({
   const [mySubmissions, setMySubmissions] = useState<CommunitySubmission[]>([]);
   const [myQuestions, setMyQuestions] = useState<CommunityQuestion[]>([]);
   const [recentQuestions, setRecentQuestions] = useState<CommunityQuestion[]>([]);
+  const [reviewQueue, setReviewQueue] = useState<CommunityReviewProposal[]>([]);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [selectedProposalDetail, setSelectedProposalDetail] =
+    useState<CommunityReviewProposalDetail | null>(null);
+  const [reviewChangeSummary, setReviewChangeSummary] = useState('');
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [reviewNote, setReviewNote] = useState('');
+  const [reviewedChangeSet, setReviewedChangeSet] = useState<CommunityReviewedChangeSet>(
+    createEmptyReviewedChangeSet('route_note')
+  );
+  const [isLoadingProposalDetail, setIsLoadingProposalDetail] = useState(false);
+  const [isGeneratingProposalAiDraft, setIsGeneratingProposalAiDraft] = useState(false);
+  const [isPublishingProposal, setIsPublishingProposal] = useState(false);
 
   const [originLabel, setOriginLabel] = useState(draft?.originLabel ?? '');
   const [destinationLabel, setDestinationLabel] = useState(draft?.destinationLabel ?? '');
@@ -186,7 +264,7 @@ export default function CommunityHubScreen({
   const [submissionTitle, setSubmissionTitle] = useState(
     draft?.title ?? 'Share a route or fare update'
   );
-  const [submissionType, setSubmissionType] = useState<CommunitySubmissionType>('missing_route');
+  const [submissionType, setSubmissionType] = useState<CommunitySubmissionType>('route_update');
   const [submissionDetails, setSubmissionDetails] = useState(draft?.body ?? '');
   const [affectedModeOrProduct, setAffectedModeOrProduct] = useState('');
   const [proposedAmount, setProposedAmount] = useState('');
@@ -195,6 +273,7 @@ export default function CommunityHubScreen({
     () => draft?.sourceContext,
     [draft]
   );
+  const isReviewer = hasReviewerRole(user?.appMetadata);
 
   const loadCommunityData = useCallback(
     async (mode: CommunityLoadMode) => {
@@ -215,15 +294,17 @@ export default function CommunityHubScreen({
       setErrorMessage(null);
 
       try {
-        const [submissions, questions, recent] = await Promise.all([
+        const [submissions, questions, recent, queue] = await Promise.all([
           getMyCommunitySubmissions(accessToken),
           getMyCommunityQuestions(accessToken),
           getRecentCommunityQuestions(accessToken),
+          isReviewer ? getCommunityReviewQueue(accessToken) : Promise.resolve([]),
         ]);
 
         setMySubmissions(submissions);
         setMyQuestions(questions);
         setRecentQuestions(recent);
+        setReviewQueue(queue);
       } catch (error) {
         setErrorMessage(
           error instanceof Error ? error.message : 'Unable to load community activity right now.'
@@ -238,7 +319,7 @@ export default function CommunityHubScreen({
         }
       }
     },
-    [accessToken]
+    [accessToken, isReviewer]
   );
 
   useEffect(() => {
@@ -259,6 +340,52 @@ export default function CommunityHubScreen({
     setSubmissionTitle(draft.title ?? 'Share a route or fare update');
     setSubmissionDetails(draft.body ?? '');
   }, [draft]);
+
+  const applyProposalAiDraft = (proposal: CommunityReviewProposalDetail) => {
+    if (!proposal.aiSuggestion) {
+      return;
+    }
+
+    setReviewChangeSummary(proposal.aiSuggestion.changeSummary);
+    setReviewNotes(proposal.aiSuggestion.reviewNotes);
+    setReviewNote(proposal.aiSuggestion.note ?? '');
+    setReviewedChangeSet(
+      coerceReviewedChangeSet(proposal.proposalType, proposal.aiSuggestion.reviewedChangeSet)
+    );
+  };
+
+  const loadProposalDetail = useCallback(
+    async (proposalId: string) => {
+      if (!accessToken) {
+        return;
+      }
+
+      setIsLoadingProposalDetail(true);
+      setErrorMessage(null);
+
+      try {
+        const detail = await getCommunityReviewProposalDetail(accessToken, proposalId);
+        setSelectedProposalId(proposalId);
+        setSelectedProposalDetail(detail);
+        setReviewChangeSummary(detail.aiSuggestion?.changeSummary ?? detail.summary ?? detail.title);
+        setReviewNotes(detail.aiSuggestion?.reviewNotes ?? detail.reviewNotes ?? '');
+        setReviewNote(detail.aiSuggestion?.note ?? detail.evidenceNote ?? detail.summary ?? '');
+        setReviewedChangeSet(
+          coerceReviewedChangeSet(
+            detail.proposalType,
+            detail.aiSuggestion?.reviewedChangeSet ?? detail.reviewedChangeSet
+          )
+        );
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Unable to load this proposal for review.'
+        );
+      } finally {
+        setIsLoadingProposalDetail(false);
+      }
+    },
+    [accessToken]
+  );
 
   const handleSubmitQuestion = async () => {
     if (!accessToken) {
@@ -318,6 +445,7 @@ export default function CommunityHubScreen({
           passengerType: draft?.passengerType ?? 'regular',
         }),
         sourceContext,
+        routeId: draft?.routeId,
       });
 
       setSubmissionDetails('');
@@ -331,6 +459,77 @@ export default function CommunityHubScreen({
       );
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleApproveReviewItem = async () => {
+    if (!accessToken || !selectedProposalDetail) {
+      return;
+    }
+
+    setIsPublishingProposal(true);
+    setErrorMessage(null);
+
+    try {
+      await approveCommunityProposal(accessToken, selectedProposalDetail.id, {
+        changeSummary: reviewChangeSummary.trim(),
+        reviewNotes: reviewNotes.trim() || undefined,
+        note: reviewNote.trim() || undefined,
+        reviewedChangeSet,
+      });
+      setSelectedProposalId(null);
+      setSelectedProposalDetail(null);
+      await loadCommunityData('background');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Unable to approve this community proposal.'
+      );
+    } finally {
+      setIsPublishingProposal(false);
+    }
+  };
+
+  const handleRejectReviewItem = async () => {
+    if (!accessToken || !selectedProposalDetail) {
+      return;
+    }
+
+    setIsPublishingProposal(true);
+    setErrorMessage(null);
+
+    try {
+      await rejectCommunityProposal(accessToken, selectedProposalDetail.id, {
+        reviewNotes: reviewNotes.trim() || 'Rejected after reviewer review.',
+      });
+      setSelectedProposalId(null);
+      setSelectedProposalDetail(null);
+      await loadCommunityData('background');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Unable to reject this community proposal.'
+      );
+    } finally {
+      setIsPublishingProposal(false);
+    }
+  };
+
+  const handleGenerateProposalAiDraft = async () => {
+    if (!accessToken || !selectedProposalId) {
+      return;
+    }
+
+    setIsGeneratingProposalAiDraft(true);
+    setErrorMessage(null);
+
+    try {
+      await generateCommunityProposalAiDraft(accessToken, selectedProposalId);
+      await loadProposalDetail(selectedProposalId);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Unable to generate an AI review draft.'
+      );
+    } finally {
+      setIsGeneratingProposalAiDraft(false);
     }
   };
 
@@ -624,6 +823,174 @@ export default function CommunityHubScreen({
             ))}
           </View>
         </View>
+
+        {isReviewer ? (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Reviewer queue</Text>
+              <Text style={styles.sectionSubtitle}>
+                Promote answers and publish route learning back into Sakai.
+              </Text>
+            </View>
+            <View style={styles.submissionSection}>
+              {reviewQueue.map((proposal) => (
+                <View key={proposal.id} style={styles.submissionCard}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.submissionTitle}>{proposal.title}</Text>
+                    <View style={[styles.badge, submissionBadgeStyle(proposal.reviewStatus)]}>
+                      <Text style={styles.badgeText}>{proposal.reviewStatus.replace(/_/g, ' ')}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.submissionMeta}>
+                    {proposal.proposalType.replace(/_/g, ' ')}
+                    {proposal.routeLabel ? ` • ${proposal.routeLabel}` : ''}
+                  </Text>
+                  {proposal.sourceQuestionTitle ? (
+                    <Text style={styles.submissionMeta}>Thread: {proposal.sourceQuestionTitle}</Text>
+                  ) : null}
+                  {proposal.sourceAnswerPreview ? (
+                    <Text style={styles.submissionMeta}>{proposal.sourceAnswerPreview}</Text>
+                  ) : null}
+                  {proposal.aiConfidence ? (
+                    <Text style={styles.submissionMeta}>
+                      AI confidence: {proposal.aiConfidence}
+                      {proposal.relatedProposalCount > 1
+                        ? ` • ${proposal.relatedProposalCount} related proposals`
+                        : ''}
+                    </Text>
+                  ) : null}
+                  <View style={styles.reviewActionRow}>
+                    <Pressable
+                      style={styles.inlineApproveButton}
+                      onPress={() => void loadProposalDetail(proposal.id)}
+                    >
+                      <Text style={styles.inlineApproveButtonText}>
+                        {selectedProposalId === proposal.id ? 'Reviewing' : 'Review'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+              {!isLoading && reviewQueue.length === 0 ? (
+                <Text style={styles.emptyText}>No proposals waiting for review.</Text>
+              ) : null}
+            </View>
+            {selectedProposalDetail ? (
+              <View style={styles.reviewDetailCard}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.sectionTitle}>Review detail</Text>
+                    <Pressable
+                      style={styles.dismissButton}
+                      onPress={() => {
+                        setSelectedProposalId(null);
+                        setSelectedProposalDetail(null);
+                      }}
+                    >
+                      <Text style={styles.dismissButtonText}>Close</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.sectionSubtitle}>{selectedProposalDetail.title}</Text>
+                </View>
+                {isLoadingProposalDetail ? <ActivityIndicator color={COLORS.primary} /> : null}
+                {!isLoadingProposalDetail ? (
+                  <>
+                    <Text style={styles.submissionMeta}>
+                      {selectedProposalDetail.proposalType.replace(/_/g, ' ')}
+                      {selectedProposalDetail.routeLabel ? ` • ${selectedProposalDetail.routeLabel}` : ''}
+                    </Text>
+                    {selectedProposalDetail.sourceQuestion ? (
+                      <Text style={styles.submissionMeta}>
+                        Thread: {selectedProposalDetail.sourceQuestion.title}
+                      </Text>
+                    ) : null}
+                    {selectedProposalDetail.sourceAnswer ? (
+                      <Text style={styles.submissionMeta}>
+                        Answer: {selectedProposalDetail.sourceAnswer.body}
+                      </Text>
+                    ) : null}
+                    {selectedProposalDetail.sourceSubmission ? (
+                      <Text style={styles.submissionMeta}>
+                        Submission: {selectedProposalDetail.sourceSubmission.title}
+                      </Text>
+                    ) : null}
+                    {selectedProposalDetail.aiSuggestion ? (
+                      <View style={styles.aiDraftCard}>
+                        <Text style={styles.aiDraftTitle}>
+                          AI draft {selectedProposalDetail.aiSuggestion.confidence}
+                        </Text>
+                        <Text style={styles.aiDraftText}>
+                          {selectedProposalDetail.aiSuggestion.reason}
+                        </Text>
+                        <Pressable
+                          style={styles.secondaryActionButton}
+                          onPress={() => applyProposalAiDraft(selectedProposalDetail)}
+                        >
+                          <Text style={styles.secondaryActionButtonText}>Apply AI draft</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
+                    <TextInput
+                      value={reviewChangeSummary}
+                      onChangeText={setReviewChangeSummary}
+                      placeholder="Change summary"
+                      placeholderTextColor="#8191A0"
+                      style={styles.input}
+                    />
+                    <TextInput
+                      value={reviewNotes}
+                      onChangeText={setReviewNotes}
+                      placeholder="Reviewer notes"
+                      placeholderTextColor="#8191A0"
+                      multiline
+                      style={[styles.input, styles.textArea]}
+                    />
+                    <TextInput
+                      value={reviewNote}
+                      onChangeText={setReviewNote}
+                      placeholder="Rider-facing route note"
+                      placeholderTextColor="#8191A0"
+                      multiline
+                      style={[styles.input, styles.textArea]}
+                    />
+                    <CommunityProposalChangeSetEditor
+                      proposalType={selectedProposalDetail.proposalType}
+                      value={reviewedChangeSet}
+                      onChange={setReviewedChangeSet}
+                    />
+                    <View style={styles.reviewActionRow}>
+                      <Pressable
+                        style={styles.secondaryActionButton}
+                        onPress={() => void handleGenerateProposalAiDraft()}
+                        disabled={isGeneratingProposalAiDraft}
+                      >
+                        <Text style={styles.secondaryActionButtonText}>
+                          {isGeneratingProposalAiDraft ? 'Generating...' : 'Refresh AI draft'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.inlineApproveButton}
+                        onPress={() => void handleApproveReviewItem()}
+                        disabled={isPublishingProposal}
+                      >
+                        <Text style={styles.inlineApproveButtonText}>
+                          {isPublishingProposal ? 'Publishing...' : 'Approve and publish'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.inlineRejectButton}
+                        onPress={() => void handleRejectReviewItem()}
+                        disabled={isPublishingProposal}
+                      >
+                        <Text style={styles.inlineRejectButtonText}>Reject</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
@@ -1007,6 +1374,82 @@ const styles = StyleSheet.create({
     color: '#5A6B79',
     fontFamily: FONTS.regular,
     fontSize: 11,
+  },
+  reviewActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  inlineApproveButton: {
+    borderRadius: RADIUS.full,
+    backgroundColor: '#0C7A43',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  inlineApproveButtonText: {
+    color: COLORS.white,
+    fontFamily: FONTS.semibold,
+    fontSize: 11,
+  },
+  inlineRejectButton: {
+    borderRadius: RADIUS.full,
+    backgroundColor: '#FCEAEA',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderWidth: 1,
+    borderColor: '#F3C7C7',
+  },
+  inlineRejectButtonText: {
+    color: COLORS.danger,
+    fontFamily: FONTS.semibold,
+    fontSize: 11,
+  },
+  reviewDetailCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#D8E4EC',
+    backgroundColor: '#F7FBFE',
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  aiDraftCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D8E4EC',
+    backgroundColor: COLORS.white,
+    padding: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  aiDraftTitle: {
+    color: COLORS.midnight,
+    fontFamily: FONTS.bold,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+  },
+  aiDraftText: {
+    color: '#5A6B79',
+    fontFamily: FONTS.regular,
+    fontSize: TYPOGRAPHY.fontSizes.small,
+    lineHeight: 18,
+  },
+  secondaryActionButton: {
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: '#D8E4EC',
+    backgroundColor: COLORS.white,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryActionButtonText: {
+    color: COLORS.midnight,
+    fontFamily: FONTS.semibold,
+    fontSize: 11,
+  },
+  reviewJsonTextArea: {
+    minHeight: 144,
+    textAlignVertical: 'top',
   },
   rowBetween: {
     flexDirection: 'row',

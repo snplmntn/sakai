@@ -1,12 +1,12 @@
 import { isRecord } from '../api/base';
-import type { PassengerType, RouteModifier, RoutePreference } from '../routes/types';
+import type { CommuteMode, PassengerType, RouteModifier, RoutePreference } from '../routes/types';
 import {
   DEFAULT_VOICE_LANGUAGE,
   isVoiceLanguagePreference,
   type VoiceLanguagePreference,
 } from '../voice/languages';
 
-export type { PassengerType, RouteModifier, RoutePreference } from '../routes/types';
+export type { CommuteMode, PassengerType, RouteModifier, RoutePreference } from '../routes/types';
 export type { VoiceLanguagePreference } from '../voice/languages';
 
 export interface PreferenceDraft {
@@ -14,6 +14,8 @@ export interface PreferenceDraft {
   passengerType: PassengerType;
   routeModifiers: RouteModifier[];
   voiceLanguage: VoiceLanguagePreference;
+  commuteModes: CommuteMode[];
+  allowCarAccess: boolean;
 }
 
 export interface UserPreferences extends PreferenceDraft {
@@ -29,6 +31,53 @@ export interface StoredPreferences extends PreferenceDraft {
 
 export const DEFAULT_ROUTE_PREFERENCE: RoutePreference = 'balanced';
 export const DEFAULT_PASSENGER_TYPE: PassengerType = 'regular';
+export const COMMUTE_MODE_OPTIONS: Array<{
+  value: CommuteMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'jeepney',
+    label: 'Jeepney',
+    description: 'Prefer jeepney legs when they fit the trip.',
+  },
+  {
+    value: 'train',
+    label: 'Train',
+    description: 'Prefer LRT and MRT segments when they help.',
+  },
+  {
+    value: 'uv',
+    label: 'UV',
+    description: 'Keep UV Express options competitive in mixed routes.',
+  },
+  {
+    value: 'bus',
+    label: 'Bus',
+    description: 'Prefer bus corridors when they are practical.',
+  },
+  {
+    value: 'tricycle',
+    label: 'Tricycle',
+    description: 'Use Sakai-supported tricycle legs for short station-to-destination trips.',
+  },
+];
+export const DEFAULT_COMMUTE_MODES: CommuteMode[] = COMMUTE_MODE_OPTIONS.map(
+  (option) => option.value
+);
+export const DEFAULT_ALLOW_CAR_ACCESS = false;
+export const toggleCommuteModeSelection = (
+  currentModes: CommuteMode[],
+  commuteMode: CommuteMode
+): CommuteMode[] => {
+  if (currentModes.includes(commuteMode)) {
+    return currentModes.length > 1
+      ? currentModes.filter((value) => value !== commuteMode)
+      : currentModes;
+  }
+
+  return [...currentModes, commuteMode];
+};
 
 export const createDefaultUserPreferences = (): UserPreferences => ({
   userId: null,
@@ -36,6 +85,8 @@ export const createDefaultUserPreferences = (): UserPreferences => ({
   passengerType: DEFAULT_PASSENGER_TYPE,
   routeModifiers: [],
   voiceLanguage: DEFAULT_VOICE_LANGUAGE,
+  commuteModes: [...DEFAULT_COMMUTE_MODES],
+  allowCarAccess: DEFAULT_ALLOW_CAR_ACCESS,
   isPersisted: false,
   createdAt: null,
   updatedAt: null,
@@ -116,6 +167,13 @@ const isPassengerType = (value: unknown): value is PassengerType =>
 const isRouteModifier = (value: unknown): value is RouteModifier =>
   value === 'jeep_if_possible' || value === 'less_walking';
 
+const isCommuteMode = (value: unknown): value is CommuteMode =>
+  value === 'jeepney' ||
+  value === 'train' ||
+  value === 'uv' ||
+  value === 'bus' ||
+  value === 'tricycle';
+
 const readVoiceLanguage = (value: unknown): VoiceLanguagePreference => {
   if (value === undefined) {
     return DEFAULT_VOICE_LANGUAGE;
@@ -144,6 +202,30 @@ const readRouteModifiers = (value: unknown): RouteModifier[] => {
   }
 
   return [...new Set(modifiers)];
+};
+
+const readCommuteModes = (value: unknown): CommuteMode[] => {
+  if (value === undefined) {
+    return [...DEFAULT_COMMUTE_MODES];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('Expected commuteModes to be an array');
+  }
+
+  const modes = value.filter(isCommuteMode);
+
+  if (modes.length !== value.length) {
+    throw new Error('Expected commuteModes to contain valid commute modes');
+  }
+
+  const uniqueModes = [...new Set(modes)];
+
+  if (uniqueModes.length === 0) {
+    throw new Error('Expected commuteModes to contain at least one commute mode');
+  }
+
+  return uniqueModes;
 };
 
 const readBoolean = (value: unknown, fieldName: string): boolean => {
@@ -184,6 +266,11 @@ export const parsePreferenceDraft = (value: unknown): PreferenceDraft => {
     passengerType: value.passengerType,
     routeModifiers: readRouteModifiers(value.routeModifiers),
     voiceLanguage: readVoiceLanguage(value.voiceLanguage),
+    commuteModes: readCommuteModes(value.commuteModes),
+    allowCarAccess:
+      value.allowCarAccess === undefined
+        ? DEFAULT_ALLOW_CAR_ACCESS
+        : readBoolean(value.allowCarAccess, 'allowCarAccess'),
   };
 };
 

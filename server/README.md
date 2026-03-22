@@ -39,8 +39,10 @@ Express + TypeScript backend for Sakai with a controller/model/route/middleware 
    `supabase/fix-mmda-permissions.sql`.
 10. Apply `supabase/seeds/fare-baseline.sql` for the feature 03 fare baseline
    This seeds fare versions, fare products, local LRT-1 and LRT-2 station places and stops, and deterministic train-fare lookups. LRT-1 is seeded as a full estimated station-step baseline, while LRT-2 currently seeds the exact Recto/Legarda/Pureza slice covered by the provided demo formula.
-11. Apply `supabase/seeds/alabang-pasay-route.sql` to import the current Alabang-to-Pasay jeepney line into the normalized route graph
-12. Run `npm run dev`
+11. Import simulator transit graph coverage into `transit_stops` and `transit_stop_edges`:
+   `npm run import:transit-graph`
+12. Apply `supabase/seeds/alabang-pasay-route.sql` to import the current Alabang-to-Pasay jeepney line into the normalized route graph
+13. Run `npm run dev`
 
 ### Importing A Route CSV
 
@@ -57,6 +59,20 @@ The importer writes to:
 - `routes` and `route_variants` for the logical route family and direction
 - `route_legs` for the ordered ride sequence used by `POST /api/routes/query`
 
+### Importing Transit Graph CSVs
+
+Use the transit graph importer to load simulator coverage into the transit planner tables:
+
+```bash
+npm run import:transit-graph -- --nodes ..\\simulator\\nodes_supabase.csv --edges ..\\simulator\\edges_supabase.csv
+```
+
+The importer writes to:
+- `transit_stops`
+- `transit_stop_edges`
+
+It is safe to re-run and uses deterministic upserts.
+
 CSV requirements:
 - header must be exactly `id,name,lat,lng`
 - rows must be ordered in travel sequence
@@ -71,6 +87,7 @@ Defaults are tuned for the current `Ruta.csv`, but every route-level field can b
 - `npm start`: run the compiled server
 - `npm run typecheck`: run TypeScript checks without emitting files
 - `npm test`: run the test suite
+- `npm run import:transit-graph`: import simulator transit graph CSV coverage into `transit_stops` and `transit_stop_edges`
 
 ## Project Structure
 
@@ -143,7 +160,7 @@ The separate seed pipeline should write directly into these normalized tables in
 - explicit structured place ambiguity or unresolved places return `422`
 - valid but unsupported trips return `200` with `options: []` and a coverage message
 - v1 route composition supports direct routes and routes with one explicit transfer point
-- Google Maps remains place and map infrastructure only; the backend does not delegate route generation to Google
+- Sakai transit graph (`transit_stops`/`transit_stop_edges`) is the primary route source; Google route fallback runs only when Sakai planners return zero options
 - `POST /api/speech/transcribe` uses `GOOGLE_API_KEY` for backend speech-to-text and feeds the same route-query flow as typed search
 
 ## Internal Fare Engine Foundation
