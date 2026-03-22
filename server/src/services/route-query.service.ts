@@ -809,7 +809,7 @@ const buildCandidateDraftForDestination = (
   };
 };
 
-const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+const roundUpFareAmount = (value: number) => Math.ceil(Math.max(0, value));
 
 const getFarePricingType = (
   trustLevel: fareModel.ActiveFareCatalog["ruleVersions"][number]["trustLevel"]
@@ -850,7 +850,7 @@ const buildDriveFareBreakdown = (
 
   const distanceKm = driveLeg.distanceMeters / 1_000;
   const billableDistanceKm = Math.max(0, distanceKm - fareProduct.minimumDistanceKm);
-  const amount = roundCurrency(
+  const amount = roundUpFareAmount(
     fareProduct.minimumFareRegular + billableDistanceKm * fareProduct.succeedingFareRegular
   );
 
@@ -1269,7 +1269,7 @@ const buildRouteOption = (
     ...pricedRideLegs.rideLegs.map((pricedRideLeg) => pricedRideLeg.fare.pricingType),
     ...driveFares.map((fare) => fare.pricingType)
   ];
-  const totalFare = roundCurrency(
+  const totalFare = roundUpFareAmount(
     pricedRideLegs.totalFare + driveFares.reduce((total, fare) => total + fare.amount, 0)
   );
   const fareAssumptions = [

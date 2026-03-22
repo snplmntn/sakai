@@ -20,7 +20,7 @@ export interface GeneratedTrainStationFare {
 
 const DISCOUNTED_PASSENGER_TYPES: readonly PassengerType[] = ["student", "senior", "pwd"];
 
-const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+const roundUpFareAmount = (value: number) => Math.ceil(Math.max(0, value));
 
 const normalizeStationName = (value: string) =>
   value
@@ -459,7 +459,7 @@ export const calculateLrt1Fare = (
   }
 
   const regularFare = 20 + (stationsTraveled - 1);
-  return roundCurrency(regularFare * resolveDiscountMultiplier(passengerType));
+  return roundUpFareAmount(regularFare * resolveDiscountMultiplier(passengerType));
 };
 
 export const calculateLrt2SliceFare = (
@@ -487,7 +487,7 @@ export const calculateLrt2SliceFare = (
     regularFare += segmentFareByStartIndex.get(stationIndex) ?? 0;
   }
 
-  return roundCurrency(regularFare * resolveDiscountMultiplier(passengerType));
+  return roundUpFareAmount(regularFare * resolveDiscountMultiplier(passengerType));
 };
 
 export const buildLrt1TrainStationFares = (): GeneratedTrainStationFare[] =>

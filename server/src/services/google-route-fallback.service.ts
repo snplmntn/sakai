@@ -64,7 +64,8 @@ const parseSecondsDuration = (value: string | undefined): number => {
 
 const roundMinutes = (seconds: number) => Math.max(1, Math.ceil(seconds / 60));
 
-const roundCurrency = (amount: number) => Math.round(amount * 100) / 100;
+const roundUpFareAmount = (amount: number) => Math.ceil(Math.max(0, amount));
+const roundDistanceKm = (amount: number) => Math.round(amount * 100) / 100;
 
 const readLocalizedText = (value: unknown): string | null => {
   if (typeof value === "string") {
@@ -91,7 +92,7 @@ const buildEstimatedFareBreakdown = (input: {
   fareProductCode?: string | null;
   assumptionText: string;
 }): FareBreakdown => ({
-  amount: roundCurrency(Math.max(0, input.amount)),
+  amount: roundUpFareAmount(input.amount),
   pricingType: "estimated",
   fareProductCode: input.fareProductCode ?? null,
   ruleVersionName: null,
@@ -154,7 +155,7 @@ const estimateRailFare = (
   const perKmFare = RAIL_ESTIMATE_PER_KM[mode];
   const regularAmount = baseFare + Math.max(0, distanceKm - 2) * perKmFare;
 
-  return passengerType === "regular" ? regularAmount : regularAmount * 0.8;
+  return passengerType === "regular" ? regularAmount : regularAmount * 0.5;
 };
 
 const getFareConfidenceFromPricingTypes = (
@@ -364,7 +365,7 @@ const enrichFallbackOptionFares = async (input: {
       ].filter((assumptionText): assumptionText is string => assumptionText.length > 0)
     )
   ];
-  const enrichedTotalFare = roundCurrency(
+  const enrichedTotalFare = roundUpFareAmount(
     enrichedLegs.reduce((total, leg) => total + leg.fare.amount, 0)
   );
 
@@ -505,7 +506,7 @@ const parseMoneyAmount = (value: unknown): number | null => {
     return null;
   }
 
-  return roundCurrency(units + nanos / 1_000_000_000);
+  return roundUpFareAmount(units + nanos / 1_000_000_000);
 };
 
 const getModeLabel = (mode: RouteQueryLeg["type"] extends never ? never : string) => {
@@ -818,7 +819,7 @@ const buildFallbackOption = (input: {
       }),
       routeLabel: lineName,
       distanceKm:
-        typeof typedStep.distanceMeters === "number" ? roundCurrency(typedStep.distanceMeters / 1000) : 0,
+        typeof typedStep.distanceMeters === "number" ? roundDistanceKm(typedStep.distanceMeters / 1000) : 0,
       durationMinutes: roundMinutes(stepSeconds),
       corridorTags: [],
       fare: createZeroFare("Leg-level fare is not available for Google fallback routes."),

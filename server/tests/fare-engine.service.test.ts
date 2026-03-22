@@ -66,9 +66,9 @@ describe("fare engine service", () => {
       "regular"
     );
 
-    expect(result.totalFare).toBe(16.6);
+    expect(result.totalFare).toBe(17);
     expect(result.fareConfidence).toBe("official");
-    expect(result.rideLegs[0]?.fare.amount).toBe(16.6);
+    expect(result.rideLegs[0]?.fare.amount).toBe(17);
   });
 
   it("prices discounted traditional jeepney rides with the shared base fare", async () => {
@@ -122,9 +122,9 @@ describe("fare engine service", () => {
       "student"
     );
 
-    expect(result.totalFare).toBe(15.88);
+    expect(result.totalFare).toBe(16);
     expect(result.fareConfidence).toBe("official");
-    expect(result.rideLegs[0]?.fare.amount).toBe(15.88);
+    expect(result.rideLegs[0]?.fare.amount).toBe(16);
     expect(result.rideLegs[0]?.fare.isDiscountApplied).toBe(true);
   });
 
@@ -230,7 +230,7 @@ describe("fare engine service", () => {
       "student"
     );
 
-    expect(result.totalFare).toBe(16);
+    expect(result.totalFare).toBe(10);
     expect(result.fareConfidence).toBe("official");
     expect(result.rideLegs[0]?.fare.isDiscountApplied).toBe(true);
   });

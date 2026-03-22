@@ -162,7 +162,7 @@ const CURATED_TRICYCLE_CONNECTORS = [
 const EARTH_RADIUS_METERS = 6_371_000;
 
 const roundMinutes = (value: number) => Math.max(1, Math.ceil(value));
-const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+const roundUpFareAmount = (value: number) => Math.ceil(Math.max(0, value));
 const toRadians = (value: number) => (value * Math.PI) / 180;
 const calculateDistanceMeters = (
   origin: { latitude: number; longitude: number },
@@ -250,7 +250,7 @@ const buildEstimatedFareBreakdown = (input: {
   fareProductCode?: string | null;
   assumptionText: string;
 }): FareBreakdown => ({
-  amount: roundCurrency(Math.max(0, input.amount)),
+  amount: roundUpFareAmount(input.amount),
   pricingType: "estimated",
   fareProductCode: input.fareProductCode ?? null,
   ruleVersionName: null,
@@ -388,7 +388,7 @@ const estimateRailFare = (
   const perKmFare = RAIL_ESTIMATE_PER_KM[mode];
   const regularAmount = baseFare + Math.max(0, distanceKm - 2) * perKmFare;
 
-  return passengerType === "regular" ? regularAmount : regularAmount * 0.8;
+  return passengerType === "regular" ? regularAmount : regularAmount * 0.5;
 };
 
 const buildEstimatedTricycleFare = (input: {
@@ -1580,7 +1580,7 @@ const buildTransitRouteOption = async (input: {
   const rideLegs = routeLegs.filter(
     (leg): leg is RouteQueryRideLeg => leg.type === "ride"
   );
-  const totalFare = roundCurrency(
+  const totalFare = roundUpFareAmount(
     rideLegs.reduce((total, rideLeg) => total + rideLeg.fare.amount, 0)
   );
 
