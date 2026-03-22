@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -20,6 +20,7 @@ export default function OnboardingRoutePreferenceScreen({
   navigation,
 }: OnboardingRoutePreferenceScreenProps) {
   const [selectedPreference, setSelectedPreference] = useState<RoutePreference>('balanced');
+  const proceedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -36,14 +37,17 @@ export default function OnboardingRoutePreferenceScreen({
 
     return () => {
       isMounted = false;
+      if (proceedTimerRef.current) clearTimeout(proceedTimerRef.current);
     };
   }, []);
 
   const handleSelect = (value: RoutePreference) => {
     setSelectedPreference(value);
-    navigation.navigate('OnboardingPassengerProfile', {
-      defaultPreference: value,
-    });
+    proceedTimerRef.current = setTimeout(() => {
+      navigation.navigate('OnboardingPassengerProfile', {
+        defaultPreference: value,
+      });
+    }, 180);
   };
 
   return (
@@ -89,17 +93,7 @@ export default function OnboardingRoutePreferenceScreen({
           );
         })}
 
-        <Text style={styles.helperText}>Tap one to continue.</Text>
       </View>
     </OnboardingPreferencesLayout>
   );
 }
-
-const styles = StyleSheet.create({
-  helperText: {
-    marginTop: 8,
-    textAlign: 'center',
-    color: '#42617C',
-    fontSize: 12,
-  },
-});

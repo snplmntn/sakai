@@ -4,7 +4,7 @@ const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
 const appIconAsset = './assets/647550748_1861598611332676_3411325275701079353_n.png';
 
 const config: ExpoConfig = {
-  name: 'sakai-app',
+  name: 'Sakai',
   slug: 'sakai-app',
   scheme: 'sakai',
   version: '1.0.0',

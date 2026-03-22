@@ -1,4 +1,4 @@
-import { createSupabaseUserClient, getSupabaseAdminClient } from "../config/supabase.js";
+import { createSupabaseUserClient } from "../config/supabase.js";
 import type {
   CreateCommunityAnswerInput,
   CreateCommunityQuestionInput
@@ -184,9 +184,14 @@ export const getQuestionDetail = async (
     throw new HttpError(500, `Failed to fetch question answers: ${answersError.message}`);
   }
 
+  const mappedAnswers = (answers ?? []).map(mapAnswer);
+
   return {
-    question: mapQuestion(question),
-    answers: (answers ?? []).map(mapAnswer)
+    question: {
+      ...mapQuestion(question),
+      replyCount: mappedAnswers.length
+    },
+    answers: mappedAnswers
   };
 };
 
@@ -212,31 +217,19 @@ export const createAnswer = async (
     throw new HttpError(500, `Failed to create answer: ${error.message}`);
   }
 
-  const adminClient = getSupabaseAdminClient();
-  const { data: question, error: questionError } = await adminClient
-    .from("community_questions")
-    .select("reply_count")
-    .eq("id", questionId)
-    .maybeSingle();
+  const { error: replyCountError } = await userClient.rpc(
+    "increment_community_question_reply_count",
+    {
+      question_id_input: questionId
+    }
+  );
 
-  if (questionError) {
-    throw new HttpError(500, `Failed to load question reply count: ${questionError.message}`);
-  }
-
-  if (!question) {
-    throw new HttpError(404, "Community question not found");
-  }
-
-  const { error: updateError } = await adminClient
-    .from("community_questions")
-    .update({
-      reply_count: question.reply_count + 1,
-      last_answered_at: new Date().toISOString()
-    })
-    .eq("id", questionId);
-
-  if (updateError) {
-    throw new HttpError(500, `Failed to update question reply count: ${updateError.message}`);
+  if (replyCountError) {
+    console.warn("Failed to increment community question reply count after answer insert", {
+      questionId,
+      answerId: data.id,
+      reason: replyCountError.message
+    });
   }
 
   return mapAnswer(data);

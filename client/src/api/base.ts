@@ -9,7 +9,7 @@ export interface RequestOptions {
   timeoutMs?: number;
 }
 
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 120000;
 const NETWORK_ERROR_STATUS_CODE = 0;
 const LOOPBACK_API_HOSTS = new Set(['localhost', '127.0.0.1', '10.0.2.2']);
 const REQUEST_TIMEOUT_MESSAGE =
@@ -149,6 +149,8 @@ const redactHeaders = (headers: Record<string, string>): Record<string, string> 
   return redactedHeaders;
 };
 
+const shouldLogApiTraffic = (path: string): boolean => path !== '/api/routes/query';
+
 const performRequest = async (
   options: RequestOptions,
   headers: Record<string, string>
@@ -159,10 +161,12 @@ const performRequest = async (
     controller.abort();
   }, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
-  console.log(`[API Request] ${options.method} ${url}`, {
-    body: redactSensitiveData(options.body),
-    headers: redactHeaders(headers),
-  });
+  if (shouldLogApiTraffic(options.path)) {
+    console.log(`[API Request] ${options.method} ${url}`, {
+      body: redactSensitiveData(options.body),
+      headers: redactHeaders(headers),
+    });
+  }
 
   try {
     const response = await fetch(url, {
@@ -236,7 +240,9 @@ export const requestData = async <T>(
   const response = await performRequest(options, headers);
   const responseBody = await parseJsonBody(response);
 
-  console.log(`[API Response] ${response.status} ${options.path}`, responseBody);
+  if (shouldLogApiTraffic(options.path)) {
+    console.log(`[API Response] ${response.status} ${options.path}`, responseBody);
+  }
 
   if (!response.ok) {
     const details = isRecord(responseBody) ? (responseBody.details ?? null) : null;
@@ -263,7 +269,9 @@ export const requestWithoutData = async (options: RequestOptions): Promise<void>
   const response = await performRequest(options, headers);
   const responseBody = await parseJsonBody(response);
 
-  console.log(`[API Response] ${response.status} ${options.path}`, responseBody);
+  if (shouldLogApiTraffic(options.path)) {
+    console.log(`[API Response] ${response.status} ${options.path}`, responseBody);
+  }
 
   if (!response.ok) {
     const details = isRecord(responseBody) ? (responseBody.details ?? null) : null;

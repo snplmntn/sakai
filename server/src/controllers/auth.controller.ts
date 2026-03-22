@@ -38,14 +38,42 @@ const getRequestOrigin = (req: Request): string => {
   return `${protocol}://${host}`;
 };
 
+const LOCALHOST_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+
+const isLocalhostHostname = (hostname: string): boolean =>
+  LOCALHOST_HOSTNAMES.has(hostname.trim().toLowerCase());
+
 const getGoogleCallbackUrl = (req: Request): string => {
   const configuredCallbackUrl = process.env.AUTH_GOOGLE_REDIRECT_URI?.trim();
+  const requestCallbackUrl = new URL("/api/auth/google/callback", getRequestOrigin(req)).toString();
 
-  if (configuredCallbackUrl) {
+  if (!configuredCallbackUrl) {
+    return requestCallbackUrl;
+  }
+
+  try {
+    const configuredUrl = new URL(configuredCallbackUrl);
+    const requestUrl = new URL(requestCallbackUrl);
+
+    // A localhost-only callback breaks emulator and deployed OAuth flows.
+    if (
+      isLocalhostHostname(configuredUrl.hostname) &&
+      !isLocalhostHostname(requestUrl.hostname)
+    ) {
+      console.warn(
+        "[Auth] Ignoring localhost AUTH_GOOGLE_REDIRECT_URI for non-local request origin",
+        {
+          configuredCallbackUrl,
+          requestOrigin: requestUrl.origin
+        }
+      );
+      return requestCallbackUrl;
+    }
+  } catch {
     return configuredCallbackUrl;
   }
 
-  return new URL("/api/auth/google/callback", getRequestOrigin(req)).toString();
+  return configuredCallbackUrl;
 };
 
 const prefersJsonResponse = (req: Request): boolean => {

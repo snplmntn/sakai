@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Text,
@@ -34,6 +34,7 @@ export default function OnboardingPassengerProfileScreen({
 }: OnboardingPassengerProfileScreenProps) {
   const [passengerType, setPassengerType] = useState<PassengerType>('regular');
   const [isContinuing, setIsContinuing] = useState(false);
+  const proceedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { defaultPreference } = route.params;
 
@@ -52,33 +53,36 @@ export default function OnboardingPassengerProfileScreen({
 
     return () => {
       isMounted = false;
+      if (proceedTimerRef.current) clearTimeout(proceedTimerRef.current);
     };
   }, []);
 
-  const handleContinue = async (destination: 'Signup' | 'Login') => {
-    if (isContinuing) {
-      return;
-    }
+  const handleSelect = (selected: PassengerType) => {
+    if (isContinuing) return;
+    setPassengerType(selected);
 
-    setIsContinuing(true);
+    proceedTimerRef.current = setTimeout(() => {
+      setIsContinuing(true);
+      void (async () => {
+        try {
+          const storedDraft = await readStoredPreferenceDraft();
+          const localDefaults = createDefaultUserPreferences();
 
-    try {
-      const storedDraft = await readStoredPreferenceDraft();
-      const localDefaults = createDefaultUserPreferences();
+          await writeStoredPreferenceDraft({
+            defaultPreference,
+            passengerType: selected,
+            routeModifiers: storedDraft?.routeModifiers ?? localDefaults.routeModifiers,
+            voiceLanguage: storedDraft?.voiceLanguage ?? localDefaults.voiceLanguage,
+            commuteModes: storedDraft?.commuteModes ?? localDefaults.commuteModes,
+            allowCarAccess: storedDraft?.allowCarAccess ?? localDefaults.allowCarAccess,
+          });
 
-      await writeStoredPreferenceDraft({
-        defaultPreference,
-        passengerType,
-        routeModifiers: storedDraft?.routeModifiers ?? localDefaults.routeModifiers,
-        voiceLanguage: storedDraft?.voiceLanguage ?? localDefaults.voiceLanguage,
-        commuteModes: storedDraft?.commuteModes ?? localDefaults.commuteModes,
-        allowCarAccess: storedDraft?.allowCarAccess ?? localDefaults.allowCarAccess,
-      });
-
-      navigation.navigate(destination);
-    } finally {
-      setIsContinuing(false);
-    }
+          navigation.navigate('Signup');
+        } finally {
+          setIsContinuing(false);
+        }
+      })();
+    }, 180);
   };
 
   return (
@@ -88,22 +92,11 @@ export default function OnboardingPassengerProfileScreen({
       activeStep={1}
       onBack={() => navigation.goBack()}
       footer={
-        <>
-          <TouchableOpacity
-            style={[preferenceStyles.primaryButton, isContinuing && preferenceStyles.buttonDisabled]}
-            onPress={() => {
-              void handleContinue('Signup');
-            }}
-            activeOpacity={0.88}
-            disabled={isContinuing}
-          >
-            {isContinuing ? (
-              <ActivityIndicator color={COLORS.white} />
-            ) : (
-              <Text style={preferenceStyles.primaryButtonText}>Continue</Text>
-            )}
-          </TouchableOpacity>
-        </>
+        isContinuing ? (
+          <View style={preferenceStyles.primaryButton}>
+            <ActivityIndicator color={COLORS.white} />
+          </View>
+        ) : null
       }
     >
       <View>
@@ -118,8 +111,9 @@ export default function OnboardingPassengerProfileScreen({
                   preferenceStyles.passengerCard,
                   isSelected && preferenceStyles.passengerCardSelected,
                 ]}
-                onPress={() => setPassengerType(option.value)}
+                onPress={() => handleSelect(option.value)}
                 activeOpacity={0.88}
+                disabled={isContinuing}
               >
                 <Text
                   style={[

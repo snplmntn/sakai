@@ -1698,26 +1698,12 @@ export const queryRoutes = async (input: {
       }
     });
 
-    console.info("Route query selected transit planner result", {
-      operation: "route_query_planner_select",
-      requestId: transitAttempt.traceSummary.requestId,
-      planner: "transit",
-      optionCount: finalizedTransitOptions.options.length
-    });
-
     return {
       ...transitAttempt.result,
       options: await attachRouteCommunityMetadata(finalizedTransitOptions.options),
       googleFallback: finalizedTransitOptions.googleFallback
     };
   }
-
-  console.info("Route query falling back from transit planner to legacy graph", {
-    operation: "route_query_planner_fallback",
-    requestId: transitAttempt.traceSummary.requestId,
-    transitStatus: transitAttempt.status,
-    transitReason: transitAttempt.traceSummary.finalReason
-  });
 
   const normalizedQuery = fallbackNormalizedQuery;
   let legacyOptions: RouteQueryOption[] = [];
@@ -1833,26 +1819,12 @@ export const queryRoutes = async (input: {
       }
     });
 
-    console.info("Route query selected legacy planner result", {
-      operation: "route_query_planner_select",
-      requestId: transitAttempt.traceSummary.requestId,
-      planner: "legacy_graph",
-      optionCount: finalizedLegacyOptions.options.length
-    });
-
     return {
       normalizedQuery,
       options: await attachRouteCommunityMetadata(finalizedLegacyOptions.options),
       googleFallback: finalizedLegacyOptions.googleFallback
     };
   }
-
-  console.info("Route query legacy planner produced no route options", {
-    operation: "route_query_planner_empty",
-    requestId: transitAttempt.traceSummary.requestId,
-    transitStatus: transitAttempt.status,
-    transitReason: transitAttempt.traceSummary.finalReason
-  });
 
   const googleFallback = await queryGoogleFallbackSafely({
     normalizedQuery,

@@ -246,6 +246,28 @@ describe("app routes", () => {
     });
   });
 
+  it("ignores localhost AUTH_GOOGLE_REDIRECT_URI for emulator google start requests", async () => {
+    process.env.AUTH_GOOGLE_REDIRECT_URI = "http://localhost:3000/api/auth/google/callback";
+    mockedAuthModel.getGoogleSignInUrl.mockResolvedValue({
+      url: "https://supabase.example.com/auth/v1/authorize?provider=google"
+    });
+
+    const response = await invokeApp({
+      method: "GET",
+      url: "/api/auth/google/start",
+      headers: {
+        accept: "application/json",
+        host: "10.0.2.2:3000"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockedAuthModel.getGoogleSignInUrl).toHaveBeenCalledWith({
+      callbackUrl: "http://10.0.2.2:3000/api/auth/google/callback",
+      appRedirectUri: undefined
+    });
+  });
+
   it("passes the app redirect uri through google start", async () => {
     mockedAuthModel.getGoogleSignInUrl.mockResolvedValue({
       url: "https://supabase.example.com/auth/v1/authorize?provider=google"
