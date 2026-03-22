@@ -103,7 +103,6 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
           <View style={styles.placeholderIconWrap}>
             <HugeiconsIcon icon={item.icon} size={48} color={COLORS.white} />
           </View>
-          <Text style={styles.placeholderLabel}>Image Placeholder</Text>
         </View>
       </LinearGradient>
 
@@ -410,12 +409,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16,32,51,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: SPACING.sm,
-  },
-  placeholderLabel: {
-    fontSize: TYPOGRAPHY.fontSizes.small,
-    fontFamily: FONTS.semibold,
-    color: COLORS.white,
   },
   floatingBadge: {
     position: 'absolute',
